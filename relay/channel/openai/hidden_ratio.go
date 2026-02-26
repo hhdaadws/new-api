@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
 // applyHiddenRatio multiplies all token counts in usage by the hidden ratio.
@@ -13,6 +14,22 @@ func applyHiddenRatio(info *relaycommon.RelayInfo, usage *dto.Usage) bool {
 	hr := info.PriceData.HiddenRatio
 	if hr == 0 || hr == 1.0 {
 		return false
+	}
+
+	// Smart truncation: cap hr so inflated total doesn't exceed model context limit
+	actualTotal := usage.PromptTokens + usage.CompletionTokens
+	if actualTotal > 0 {
+		modelLimit := ratio_setting.GetModelContextLimit(info.OriginModelName)
+		if modelLimit > 0 {
+			safeLimit := float64(modelLimit) * 0.95 // 5% safety margin
+			maxRatio := safeLimit / float64(actualTotal)
+			if hr > maxRatio {
+				hr = maxRatio
+			}
+			if hr <= 1.0 {
+				return false
+			}
+		}
 	}
 
 	usage.PromptTokens = int(math.Round(float64(usage.PromptTokens) * hr))

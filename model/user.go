@@ -50,17 +50,19 @@ type User struct {
 	Setting          string         `json:"setting" gorm:"type:text;column:setting"`
 	Remark           string         `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
 	StripeCustomer   string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
+	PersonalRatio    float64        `json:"personal_ratio" gorm:"type:double;default:1;column:personal_ratio"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
 	cache := &UserBase{
-		Id:       user.Id,
-		Group:    user.Group,
-		Quota:    user.Quota,
-		Status:   user.Status,
-		Username: user.Username,
-		Setting:  user.Setting,
-		Email:    user.Email,
+		Id:            user.Id,
+		Group:         user.Group,
+		Quota:         user.Quota,
+		Status:        user.Status,
+		Username:      user.Username,
+		Setting:       user.Setting,
+		Email:         user.Email,
+		PersonalRatio: user.PersonalRatio,
 	}
 	return cache
 }
@@ -520,11 +522,12 @@ func (user *User) Edit(updatePassword bool) error {
 
 	newUser := *user
 	updates := map[string]interface{}{
-		"username":     newUser.Username,
-		"display_name": newUser.DisplayName,
-		"group":        newUser.Group,
-		"quota":        newUser.Quota,
-		"remark":       newUser.Remark,
+		"username":       newUser.Username,
+		"display_name":   newUser.DisplayName,
+		"group":          newUser.Group,
+		"quota":          newUser.Quota,
+		"remark":         newUser.Remark,
+		"personal_ratio": newUser.PersonalRatio,
 	}
 	if updatePassword {
 		updates["password"] = newUser.Password

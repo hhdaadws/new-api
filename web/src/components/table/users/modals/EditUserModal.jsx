@@ -87,6 +87,7 @@ const EditUserModal = (props) => {
     quota: 0,
     group: 'default',
     remark: '',
+    personal_ratio: 1,
   });
 
   const fetchGroups = async () => {
@@ -322,6 +323,20 @@ const EditUserModal = (props) => {
                             onClick={() => setIsModalOpen(true)}
                           />
                         </Form.Slot>
+                      </Col>
+
+                      <Col span={24}>
+                        <Form.InputNumber
+                          field='personal_ratio'
+                          label={t('个人倍率')}
+                          placeholder='1.0'
+                          extraText={t('默认1.0，不额外计费')}
+                          min={0.1}
+                          max={10}
+                          step={0.1}
+                          precision={1}
+                          style={{ width: '100%' }}
+                        />
                       </Col>
                     </Row>
                   </Card>

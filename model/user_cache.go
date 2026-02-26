@@ -15,13 +15,14 @@ import (
 
 // UserBase struct remains the same as it represents the cached data structure
 type UserBase struct {
-	Id       int    `json:"id"`
-	Group    string `json:"group"`
-	Email    string `json:"email"`
-	Quota    int    `json:"quota"`
-	Status   int    `json:"status"`
-	Username string `json:"username"`
-	Setting  string `json:"setting"`
+	Id            int     `json:"id"`
+	Group         string  `json:"group"`
+	Email         string  `json:"email"`
+	Quota         int     `json:"quota"`
+	Status        int     `json:"status"`
+	Username      string  `json:"username"`
+	Setting       string  `json:"setting"`
+	PersonalRatio float64 `json:"personal_ratio"`
 }
 
 func (user *UserBase) WriteContext(c *gin.Context) {
@@ -31,6 +32,7 @@ func (user *UserBase) WriteContext(c *gin.Context) {
 	common.SetContextKey(c, constant.ContextKeyUserEmail, user.Email)
 	common.SetContextKey(c, constant.ContextKeyUserName, user.Username)
 	common.SetContextKey(c, constant.ContextKeyUserSetting, user.GetSetting())
+	common.SetContextKey(c, constant.ContextKeyPersonalRatio, user.PersonalRatio)
 }
 
 func (user *UserBase) GetSetting() dto.UserSetting {
@@ -100,13 +102,14 @@ func GetUserCache(userId int) (userCache *UserBase, err error) {
 
 	// Create cache object from user data
 	userCache = &UserBase{
-		Id:       user.Id,
-		Group:    user.Group,
-		Quota:    user.Quota,
-		Status:   user.Status,
-		Username: user.Username,
-		Setting:  user.Setting,
-		Email:    user.Email,
+		Id:            user.Id,
+		Group:         user.Group,
+		Quota:         user.Quota,
+		Status:        user.Status,
+		Username:      user.Username,
+		Setting:       user.Setting,
+		Email:         user.Email,
+		PersonalRatio: user.PersonalRatio,
 	}
 
 	return userCache, nil

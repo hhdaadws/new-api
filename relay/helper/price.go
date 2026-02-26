@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -49,7 +50,18 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
 
 	groupRatioInfo := HandleGroupRatio(c, info)
-	hiddenRatio := ratio_setting.GetHiddenGroupRatio(info.UsingGroup)
+
+	// per-user personal ratio takes priority, per-group hidden ratio as fallback
+	personalRatio, _ := common.GetContextKeyType[float64](c, constant.ContextKeyPersonalRatio)
+	if personalRatio == 0 {
+		personalRatio = 1.0
+	}
+	var hiddenRatio float64
+	if personalRatio != 1.0 {
+		hiddenRatio = personalRatio
+	} else {
+		hiddenRatio = ratio_setting.GetHiddenGroupRatio(info.UsingGroup)
+	}
 
 	var preConsumedQuota int
 	var modelRatio float64

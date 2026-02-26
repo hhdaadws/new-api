@@ -37,6 +37,7 @@ export default function GroupRatioSettings(props) {
     UserUsableGroups: '',
     GroupGroupRatio: '',
     HiddenGroupRatio: '',
+    ModelContextLimit: '',
     'group_ratio_setting.group_special_usable_group': '',
     AutoGroups: '',
     DefaultUseAutoGroup: false,
@@ -207,6 +208,30 @@ export default function GroupRatioSettings(props) {
               ]}
               onChange={(value) =>
                 setInputs({ ...inputs, HiddenGroupRatio: value })
+              }
+            />
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col xs={24} sm={16}>
+            <Form.TextArea
+              label={t('模型上下文限制')}
+              placeholder={t('为一个 JSON 文本，键为模型名称，值为上下文窗口大小（token数）')}
+              extraText={t(
+                '用于隐藏倍率截断：当实际token乘以倍率超过模型上下文窗口时，自动降低倍率以避免用户发现异常。支持前缀匹配（如配置 claude-opus-4 可匹配 claude-opus-4-6-20250514）。格式如：{"claude-opus-4": 200000, "gpt-4o": 128000}',
+              )}
+              field={'ModelContextLimit'}
+              autosize={{ minRows: 6, maxRows: 12 }}
+              trigger='blur'
+              stopValidateWithError
+              rules={[
+                {
+                  validator: (rule, value) => verifyJSON(value),
+                  message: t('不是合法的 JSON 字符串'),
+                },
+              ]}
+              onChange={(value) =>
+                setInputs({ ...inputs, ModelContextLimit: value })
               }
             />
           </Col>
