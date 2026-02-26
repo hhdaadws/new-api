@@ -1,12 +1,14 @@
 package dto
 
 type ChannelSettings struct {
-	ForceFormat            bool   `json:"force_format,omitempty"`
-	ThinkingToContent      bool   `json:"thinking_to_content,omitempty"`
-	Proxy                  string `json:"proxy"`
-	PassThroughBodyEnabled bool   `json:"pass_through_body_enabled,omitempty"`
-	SystemPrompt           string `json:"system_prompt,omitempty"`
-	SystemPromptOverride   bool   `json:"system_prompt_override,omitempty"`
+	ForceFormat            bool              `json:"force_format,omitempty"`
+	ThinkingToContent      bool              `json:"thinking_to_content,omitempty"`
+	Proxy                  string            `json:"proxy"`
+	PassThroughBodyEnabled bool              `json:"pass_through_body_enabled,omitempty"`
+	SystemPrompt           string            `json:"system_prompt,omitempty"`
+	SystemPromptOverride   bool              `json:"system_prompt_override,omitempty"`
+	HeaderAuditEnabled     bool              `json:"header_audit_enabled,omitempty"`
+	HeaderAuditRules       map[string]string `json:"header_audit_rules,omitempty"`
 }
 
 type VertexKeyType string

@@ -132,6 +132,12 @@ function renderType(type, t) {
           {t('退款')}
         </Tag>
       );
+    case 7:
+      return (
+        <Tag color='amber' shape='circle'>
+          {t('请求头审核')}
+        </Tag>
+      );
     default:
       return (
         <Tag color='grey' shape='circle'>

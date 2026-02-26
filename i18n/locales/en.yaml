@@ -143,6 +143,13 @@ channel.no_valid_upstream: "No valid upstream channel"
 channel.upstream_saturated: "Current group upstream load is saturated, please try again later"
 channel.get_available_failed: "Failed to get available channels for model {{.Model}} under group {{.Group}}"
 
+# Channel header audit messages
+channel.header_audit_failed: "Request header validation failed"
+channel.header_audit_missing: "Required header '{{.Header}}' is missing"
+channel.header_audit_mismatch: "Header '{{.Header}}' value does not match the required pattern"
+channel.header_audit_invalid_regex: "Invalid regex pattern for header '{{.Header}}': {{.Error}}"
+channel.header_audit_rules_empty: "Header audit is enabled but no rules are configured"
+
 # Model messages
 model.name_empty: "Model name cannot be empty"
 model.name_exists: "Model name already exists"

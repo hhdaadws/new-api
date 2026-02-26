@@ -134,7 +134,7 @@ func Distribute() func(c *gin.Context) {
 						if usingGroup == "auto" {
 							showGroup = fmt.Sprintf("auto(%s)", selectGroup)
 						}
-						message := i18n.T(c, i18n.MsgDistributorGetChannelFailed, map[string]any{"Group": showGroup, "Model": modelRequest.Model, "Error": err.Error()})
+						message := i18n.T(c, i18n.MsgDistributorGetChannelFailed, map[string]any{"Group": showGroup, "Model": modelRequest.Model, "Error": common.MaskSensitiveInfo(err.Error())})
 						// 如果错误，但是渠道不为空，说明是数据库一致性问题
 						//if channel != nil {
 						//	common.SysError(fmt.Sprintf("渠道不存在：%d", channel.Id))
@@ -152,6 +152,16 @@ func Distribute() func(c *gin.Context) {
 		}
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
 		SetupContextForSelectedChannel(c, channel, modelRequest.Model)
+
+		// Header audit check
+		if msg, ok := CheckHeaderAudit(c); !ok {
+			abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgChannelHeaderAuditFailed), types.ErrorCodeChannelHeaderAuditFailed)
+			if constant.ErrorLogEnabled {
+				model.RecordHeaderAuditLog(c, i18n.T(c, i18n.MsgChannelHeaderAuditFailed), msg)
+			}
+			return
+		}
+
 		c.Next()
 		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
 			service.RecordChannelAffinity(c, channel.Id)

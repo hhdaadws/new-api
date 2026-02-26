@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -847,6 +848,18 @@ func (channel *Channel) ValidateSettings() error {
 		err := common.Unmarshal([]byte(*channel.Setting), channelParams)
 		if err != nil {
 			return err
+		}
+		// Validate header audit rules
+		if channelParams.HeaderAuditEnabled {
+			if len(channelParams.HeaderAuditRules) == 0 {
+				return errors.New("header audit is enabled but no rules are configured")
+			}
+			for header, pattern := range channelParams.HeaderAuditRules {
+				_, err := regexp.Compile(pattern)
+				if err != nil {
+					return fmt.Errorf("invalid regex pattern for header '%s': %v", header, err)
+				}
+			}
 		}
 	}
 	return nil

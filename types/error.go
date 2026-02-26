@@ -55,6 +55,7 @@ const (
 	ErrorCodeChannelNoAvailableKey        ErrorCode = "channel:no_available_key"
 	ErrorCodeChannelParamOverrideInvalid  ErrorCode = "channel:param_override_invalid"
 	ErrorCodeChannelHeaderOverrideInvalid ErrorCode = "channel:header_override_invalid"
+	ErrorCodeChannelHeaderAuditFailed     ErrorCode = "channel:header_audit_failed"
 	ErrorCodeChannelModelMappedError      ErrorCode = "channel:model_mapped_error"
 	ErrorCodeChannelAwsClientError        ErrorCode = "channel:aws_client_error"
 	ErrorCodeChannelInvalidKey            ErrorCode = "channel:invalid_key"

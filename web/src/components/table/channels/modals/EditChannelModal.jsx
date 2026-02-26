@@ -190,6 +190,8 @@ const EditChannelModal = (props) => {
     pass_through_body_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
+    header_audit_enabled: false,
+    header_audit_rules: '',
     settings: '',
     // 仅 Vertex: 密钥格式（存入 settings.vertex_key_type）
     vertex_key_type: 'json',
@@ -215,6 +217,7 @@ const EditChannelModal = (props) => {
   const [multiKeyMode, setMultiKeyMode] = useState('random');
   const [autoBan, setAutoBan] = useState(true);
   const [inputs, setInputs] = useState(originInputs);
+  const [headerAuditError, setHeaderAuditError] = useState('');
   const [originModelOptions, setOriginModelOptions] = useState([]);
   const [modelOptions, setModelOptions] = useState([]);
   const [groupOptions, setGroupOptions] = useState([]);
@@ -845,6 +848,11 @@ const EditChannelModal = (props) => {
           data.system_prompt = parsedSettings.system_prompt || '';
           data.system_prompt_override =
             parsedSettings.system_prompt_override || false;
+          data.header_audit_enabled =
+            parsedSettings.header_audit_enabled || false;
+          data.header_audit_rules = parsedSettings.header_audit_rules
+            ? JSON.stringify(parsedSettings.header_audit_rules, null, 2)
+            : '';
         } catch (error) {
           console.error('解析渠道设置失败:', error);
           data.force_format = false;
@@ -853,6 +861,8 @@ const EditChannelModal = (props) => {
           data.pass_through_body_enabled = false;
           data.system_prompt = '';
           data.system_prompt_override = false;
+          data.header_audit_enabled = false;
+          data.header_audit_rules = '';
         }
       } else {
         data.force_format = false;
@@ -1690,7 +1700,16 @@ const EditChannelModal = (props) => {
       pass_through_body_enabled: localInputs.pass_through_body_enabled || false,
       system_prompt: localInputs.system_prompt || '',
       system_prompt_override: localInputs.system_prompt_override || false,
+      header_audit_enabled: localInputs.header_audit_enabled || false,
     };
+    if (localInputs.header_audit_enabled && localInputs.header_audit_rules) {
+      try {
+        channelExtraSettings.header_audit_rules = JSON.parse(localInputs.header_audit_rules);
+      } catch (e) {
+        showError(t('请求头审核规则无效'));
+        return;
+      }
+    }
     localInputs.setting = JSON.stringify(channelExtraSettings);
 
     // 处理 settings 字段（包括企业账户设置和字段透传控制）
@@ -1770,6 +1789,8 @@ const EditChannelModal = (props) => {
     delete localInputs.pass_through_body_enabled;
     delete localInputs.system_prompt;
     delete localInputs.system_prompt_override;
+    delete localInputs.header_audit_enabled;
+    delete localInputs.header_audit_rules;
     delete localInputs.is_enterprise_account;
     // 顶层的 vertex_key_type 不应发送给后端
     delete localInputs.vertex_key_type;
@@ -3924,6 +3945,73 @@ const EditChannelModal = (props) => {
                         '如果用户请求中包含系统提示词，则使用此设置拼接到用户的系统提示词前面',
                       )}
                     />
+
+                    <Form.Switch
+                      field='header_audit_enabled'
+                      label={t('请求头审核')}
+                      checkedText={t('开')}
+                      uncheckedText={t('关')}
+                      onChange={(value) =>
+                        handleChannelSettingsChange(
+                          'header_audit_enabled',
+                          value,
+                        )
+                      }
+                      extraText={t('启用后，用户请求必须携带符合规则的请求头，否则将被拒绝')}
+                    />
+
+                    {inputs.header_audit_enabled && (
+                      <Form.TextArea
+                        field='header_audit_rules'
+                        label={t('请求头审核规则')}
+                        placeholder={'{\n  "User-Agent": "^MyApp/.*$",\n  "X-Custom-Id": "^[a-f0-9]{32}$"\n}'}
+                        onChange={(value) => {
+                          handleChannelSettingsChange(
+                            'header_audit_rules',
+                            value,
+                          );
+                          // 实时校验
+                          if (!value || value.trim() === '') {
+                            setHeaderAuditError('');
+                            return;
+                          }
+                          let parsed;
+                          try {
+                            parsed = JSON.parse(value);
+                          } catch (e) {
+                            setHeaderAuditError(t('请求头审核规则无效') + ': ' + e.message);
+                            return;
+                          }
+                          if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+                            setHeaderAuditError(t('请求头审核规则必须是 JSON 对象'));
+                            return;
+                          }
+                          for (const [header, pattern] of Object.entries(parsed)) {
+                            if (typeof pattern !== 'string') {
+                              setHeaderAuditError(t('请求头审核正则必须是字符串') + ': ' + header);
+                              return;
+                            }
+                            try {
+                              new RegExp(pattern);
+                            } catch (e) {
+                              setHeaderAuditError(t('请求头审核正则无效') + ` "${header}": ` + e.message);
+                              return;
+                            }
+                          }
+                          setHeaderAuditError('');
+                        }}
+                        autosize
+                        showClear
+                        validateStatus={headerAuditError ? 'error' : 'default'}
+                        extraText={
+                          headerAuditError ? (
+                            <span style={{ color: 'var(--semi-color-danger)' }}>{headerAuditError}</span>
+                          ) : (
+                            t('请求头审核规则说明')
+                          )
+                        }
+                      />
+                    )}
                   </Card>
                 </div>
               </div>

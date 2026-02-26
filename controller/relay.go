@@ -312,6 +312,10 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	if newAPIError != nil {
 		return nil, newAPIError
 	}
+	// Re-check header audit for the new channel
+	if msg, ok := middleware.CheckHeaderAudit(c); !ok {
+		return nil, types.NewError(fmt.Errorf("%s", msg), types.ErrorCodeChannelHeaderAuditFailed, types.ErrOptionWithSkipRetry())
+	}
 	return channel, nil
 }
 
@@ -398,8 +402,9 @@ func RelayMidjourney(c *gin.Context) {
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatMjProxy, nil, nil)
 
 	if err != nil {
+		logger.LogError(c, fmt.Sprintf("failed to generate relay info: %s", err.Error()))
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"description": fmt.Sprintf("failed to generate relay info: %s", err.Error()),
+			"description": "failed to generate relay info",
 			"type":        "upstream_error",
 			"code":        4,
 		})
@@ -427,13 +432,14 @@ func RelayMidjourney(c *gin.Context) {
 			mjErr.Result = "当前分组负载已饱和，请稍后再试，或升级账户以提升服务质量。"
 			statusCode = http.StatusTooManyRequests
 		}
+		maskedDesc := common.MaskSensitiveInfo(fmt.Sprintf("%s %s", mjErr.Description, mjErr.Result))
 		c.JSON(statusCode, gin.H{
-			"description": fmt.Sprintf("%s %s", mjErr.Description, mjErr.Result),
+			"description": maskedDesc,
 			"type":        "upstream_error",
 			"code":        mjErr.Code,
 		})
 		channelId := c.GetInt("channel_id")
-		logger.LogError(c, fmt.Sprintf("relay error (channel #%d, status code %d): %s", channelId, statusCode, fmt.Sprintf("%s %s", mjErr.Description, mjErr.Result)))
+		logger.LogError(c, fmt.Sprintf("relay error (channel #%d, status code %d): %s %s", channelId, statusCode, mjErr.Description, mjErr.Result))
 	}
 }
 
@@ -466,7 +472,7 @@ func RelayTaskFetch(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, &dto.TaskError{
 			Code:       "gen_relay_info_failed",
-			Message:    err.Error(),
+			Message:    common.MaskSensitiveInfo(err.Error()),
 			StatusCode: http.StatusInternalServerError,
 		})
 		return
@@ -481,7 +487,7 @@ func RelayTask(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, &dto.TaskError{
 			Code:       "gen_relay_info_failed",
-			Message:    err.Error(),
+			Message:    common.MaskSensitiveInfo(err.Error()),
 			StatusCode: http.StatusInternalServerError,
 		})
 		return
@@ -515,6 +521,11 @@ func RelayTask(c *gin.Context) {
 			if retryParam.GetRetry() > 0 {
 				if setupErr := middleware.SetupContextForSelectedChannel(c, channel, relayInfo.OriginModelName); setupErr != nil {
 					taskErr = service.TaskErrorWrapperLocal(setupErr.Err, "setup_locked_channel_failed", http.StatusInternalServerError)
+					break
+				}
+				// Re-check header audit for the retried locked channel
+				if msg, ok := middleware.CheckHeaderAudit(c); !ok {
+					taskErr = service.TaskErrorWrapperLocal(fmt.Errorf("%s", msg), "header_audit_failed", http.StatusForbidden)
 					break
 				}
 			}

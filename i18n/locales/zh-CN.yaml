@@ -144,6 +144,13 @@ channel.no_valid_upstream: "无有效上游渠道"
 channel.upstream_saturated: "当前分组上游负载已饱和，请稍后再试"
 channel.get_available_failed: "获取分组 {{.Group}} 下模型 {{.Model}} 的可用渠道失败"
 
+# Channel header audit messages
+channel.header_audit_failed: "请求头验证失败"
+channel.header_audit_missing: "缺少必需的请求头 '{{.Header}}'"
+channel.header_audit_mismatch: "请求头 '{{.Header}}' 的值不符合要求的格式"
+channel.header_audit_invalid_regex: "请求头 '{{.Header}}' 的正则表达式无效：{{.Error}}"
+channel.header_audit_rules_empty: "已启用请求头审核但未配置任何规则"
+
 # Model messages
 model.name_empty: "模型名称不能为空"
 model.name_exists: "模型名称已存在"

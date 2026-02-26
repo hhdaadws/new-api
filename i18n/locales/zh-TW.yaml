@@ -144,6 +144,13 @@ channel.no_valid_upstream: "無有效上游管道"
 channel.upstream_saturated: "當前分組上游負載已飽和，請稍後再試"
 channel.get_available_failed: "獲取分組 {{.Group}} 下模型 {{.Model}} 的可用管道失敗"
 
+# Channel header audit messages
+channel.header_audit_failed: "請求頭驗證失敗"
+channel.header_audit_missing: "缺少必需的請求頭 '{{.Header}}'"
+channel.header_audit_mismatch: "請求頭 '{{.Header}}' 的值不符合要求的格式"
+channel.header_audit_invalid_regex: "請求頭 '{{.Header}}' 的正則表達式無效：{{.Error}}"
+channel.header_audit_rules_empty: "已啟用請求頭審核但未設定任何規則"
+
 # Model messages
 model.name_empty: "模型名稱不能為空"
 model.name_exists: "模型名稱已存在"

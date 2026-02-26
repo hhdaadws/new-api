@@ -46,9 +46,13 @@ func GetAPIVersion(c *gin.Context) string {
 }
 
 func createTaskError(err error, code string, statusCode int, localError bool) *dto.TaskError {
+	message := err.Error()
+	if !localError {
+		message = common.MaskSensitiveInfo(message)
+	}
 	return &dto.TaskError{
 		Code:       code,
-		Message:    err.Error(),
+		Message:    message,
 		StatusCode: statusCode,
 		LocalError: localError,
 		Error:      err,

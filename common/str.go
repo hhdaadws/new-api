@@ -18,6 +18,16 @@ var (
 	maskIPPattern     = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
 	// maskApiKeyPattern matches patterns like 'api_key:xxx' or "api_key:xxx" to mask the API key value
 	maskApiKeyPattern = regexp.MustCompile(`(['"]?)api_key:([^\s'"]+)(['"]?)`)
+	// maskSkKeyPattern matches OpenAI-style secret keys (sk-proj-xxx, sk-org-xxx, sk-xxx)
+	maskSkKeyPattern = regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{20,}\b`)
+	// maskGoogleKeyPattern matches Google API keys starting with AIzaSy
+	maskGoogleKeyPattern = regexp.MustCompile(`\bAIzaSy[A-Za-z0-9_-]{20,}\b`)
+	// maskAwsKeyPattern matches AWS access key IDs starting with AKIA
+	maskAwsKeyPattern = regexp.MustCompile(`\bAKIA[A-Z0-9]{16}\b`)
+	// maskBearerPattern matches Bearer tokens in text
+	maskBearerPattern = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9_.+/=-]{20,}\b`)
+	// maskOrgIdPattern matches OpenAI organization IDs (org-xxx)
+	maskOrgIdPattern = regexp.MustCompile(`\borg-[A-Za-z0-9]{20,}\b`)
 )
 
 func GetStringIfEmpty(str string, defaultValue string) string {
@@ -249,6 +259,21 @@ func MaskSensitiveInfo(str string) string {
 
 	// Mask API keys (e.g., "api_key:AIzaSyAAAaUooTUni8AdaOkSRMda30n_Q4vrV70" -> "api_key:***")
 	str = maskApiKeyPattern.ReplaceAllString(str, "${1}api_key:***${3}")
+
+	// Mask sk-* secret keys (e.g., "sk-proj-abc123..." -> "sk-***")
+	str = maskSkKeyPattern.ReplaceAllString(str, "sk-***")
+
+	// Mask Google API keys (e.g., "AIzaSyABC123..." -> "AIza***")
+	str = maskGoogleKeyPattern.ReplaceAllString(str, "AIza***")
+
+	// Mask AWS access key IDs (e.g., "AKIAIOSFODNN7EXAMPLE" -> "AKIA***")
+	str = maskAwsKeyPattern.ReplaceAllString(str, "AKIA***")
+
+	// Mask Bearer tokens (e.g., "Bearer eyJhbGciOi..." -> "Bearer ***")
+	str = maskBearerPattern.ReplaceAllString(str, "Bearer ***")
+
+	// Mask org IDs (e.g., "org-abc123def456ghi789jkl" -> "org-***")
+	str = maskOrgIdPattern.ReplaceAllString(str, "org-***")
 
 	return str
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/types"
 
@@ -47,11 +48,14 @@ const (
 	LogTypeManage  = 3
 	LogTypeSystem  = 4
 	LogTypeError   = 5
-	LogTypeRefund  = 6
+	LogTypeRefund      = 6
+	LogTypeHeaderAudit = 7
 )
 
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
+		// Strip channel info from struct fields
+		logs[i].ChannelId = 0
 		logs[i].ChannelName = ""
 		var otherMap map[string]interface{}
 		otherMap, _ = common.StrToMap(logs[i].Other)
@@ -59,6 +63,12 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			// Remove admin-only debug fields.
 			delete(otherMap, "admin_info")
 			delete(otherMap, "reject_reason")
+			// Remove internal channel/upstream info from user-facing logs.
+			delete(otherMap, "channel_id")
+			delete(otherMap, "channel_name")
+			delete(otherMap, "channel_type")
+			delete(otherMap, "upstream_model_name")
+			delete(otherMap, "is_model_mapped")
 		}
 		logs[i].Other = common.MapToJsonStr(otherMap)
 		logs[i].Id = startIdx + i + 1
@@ -130,6 +140,62 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	err := LOG_DB.Create(log).Error
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
+	}
+}
+
+func RecordHeaderAuditLog(c *gin.Context, content string, adminDetail string) {
+	userId := c.GetInt("id")
+	username := c.GetString("username")
+	channelId := common.GetContextKeyInt(c, constant.ContextKeyChannelId)
+	channelName := common.GetContextKeyString(c, constant.ContextKeyChannelName)
+	channelType := common.GetContextKeyInt(c, constant.ContextKeyChannelType)
+	tokenName := c.GetString("token_name")
+	tokenId := c.GetInt("token_id")
+	modelName := c.GetString("original_model")
+	group := c.GetString("group")
+	requestId := c.GetString(common.RequestIdKey)
+
+	other := map[string]interface{}{
+		"error_code":   types.ErrorCodeChannelHeaderAuditFailed,
+		"channel_id":   channelId,
+		"channel_name": channelName,
+		"channel_type": channelType,
+		"admin_info":   adminDetail,
+		"request_path": c.Request.URL.Path,
+		"status_code":  403,
+	}
+	otherStr := common.MapToJsonStr(other)
+
+	needRecordIp := false
+	if settingMap, err := GetUserSetting(userId, false); err == nil {
+		if settingMap.RecordIpLog {
+			needRecordIp = true
+		}
+	}
+
+	log := &Log{
+		UserId:    userId,
+		Username:  username,
+		CreatedAt: common.GetTimestamp(),
+		Type:      LogTypeHeaderAudit,
+		Content:   content,
+		TokenName: tokenName,
+		ModelName: modelName,
+		ChannelId: channelId,
+		TokenId:   tokenId,
+		Group:     group,
+		Ip: func() string {
+			if needRecordIp {
+				return c.ClientIP()
+			}
+			return ""
+		}(),
+		RequestId: requestId,
+		Other:     otherStr,
+	}
+	err := LOG_DB.Create(log).Error
+	if err != nil {
+		logger.LogError(c, "failed to record header audit log: "+err.Error())
 	}
 }
 
