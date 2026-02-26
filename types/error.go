@@ -461,24 +461,30 @@ func (e *NewAPIError) SanitizeForUser(requestId string) {
 	e.Err = errors.New(userMessage)
 
 	// Rebuild RelayError with sanitized content
+	sanitizedType := string(e.errorType)
 	sanitizedCode := string(e.errorCode)
+	if e.fromUpstream {
+		// Replace upstream-specific type/code with our generic identifier
+		sanitizedType = string(ErrorTypeUpstreamError)
+		sanitizedCode = string(ErrorTypeUpstreamError)
+	}
 	switch e.errorType {
 	case ErrorTypeOpenAIError:
 		e.RelayError = OpenAIError{
 			Message: userMessage,
-			Type:    sanitizedCode,
-			Code:    e.errorCode,
+			Type:    sanitizedType,
+			Code:    ErrorCode(sanitizedCode),
 		}
 	case ErrorTypeClaudeError:
 		e.RelayError = ClaudeError{
 			Message: userMessage,
-			Type:    sanitizedCode,
+			Type:    sanitizedType,
 		}
 	default:
 		e.RelayError = OpenAIError{
 			Message: userMessage,
-			Type:    string(e.errorType),
-			Code:    e.errorCode,
+			Type:    sanitizedType,
+			Code:    ErrorCode(sanitizedCode),
 		}
 	}
 	e.Metadata = nil
