@@ -31,7 +31,7 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
 	if oaiError := responsesResponse.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
-		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
+		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode, types.ErrOptionFromUpstream())
 	}
 
 	if responsesResponse.HasImageGenerationCall() {
@@ -54,6 +54,9 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		}
 	}
 	if info == nil || info.ResponsesUsageInfo == nil || info.ResponsesUsageInfo.BuiltInTools == nil {
+		if info != nil {
+			applyHiddenRatio(info, &usage)
+		}
 		return &usage, nil
 	}
 	// 解析 Tools 用量
@@ -65,6 +68,7 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		}
 		buildToolinfo.CallCount++
 	}
+	applyHiddenRatio(info, &usage)
 	return &usage, nil
 }
 
@@ -145,6 +149,8 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	}
 
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+
+	applyHiddenRatio(info, usage)
 
 	return usage, nil
 }

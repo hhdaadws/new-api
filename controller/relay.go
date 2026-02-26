@@ -88,7 +88,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	defer func() {
 		if newAPIError != nil {
 			logger.LogError(c, fmt.Sprintf("relay error: %s", newAPIError.Error()))
-			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
+			newAPIError.SanitizeForUser(requestId)
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
@@ -376,6 +376,9 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		other["error_type"] = err.GetErrorType()
 		other["error_code"] = err.GetErrorCode()
 		other["status_code"] = err.StatusCode
+		if err.IsFromUpstream() {
+			other["user_error_message"] = types.GenericUpstreamMessage(err.StatusCode)
+		}
 		other["channel_id"] = channelId
 		other["channel_name"] = c.GetString("channel_name")
 		other["channel_type"] = c.GetInt("channel_type")
@@ -607,10 +610,12 @@ func RelayTask(c *gin.Context) {
 	}
 }
 
-// respondTaskError 统一输出 Task 错误响应（含 429 限流提示改写）
+// respondTaskError 统一输出 Task 错误响应（含 429 限流提示改写 + 上游错误脱敏）
 func respondTaskError(c *gin.Context, taskErr *dto.TaskError) {
 	if taskErr.StatusCode == http.StatusTooManyRequests {
 		taskErr.Message = "当前分组上游负载已饱和，请稍后再试"
+	} else if !taskErr.LocalError {
+		taskErr.Message = types.GenericUpstreamMessage(taskErr.StatusCode)
 	}
 	c.JSON(taskErr.StatusCode, taskErr)
 }

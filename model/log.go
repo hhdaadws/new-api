@@ -60,6 +60,16 @@ func formatUserLogs(logs []*Log, startIdx int) {
 		var otherMap map[string]interface{}
 		otherMap, _ = common.StrToMap(logs[i].Other)
 		if otherMap != nil {
+			// Sanitize error log Content: replace with generic message for upstream errors
+			if logs[i].Type == LogTypeError {
+				if userMsg, ok := otherMap["user_error_message"].(string); ok && userMsg != "" {
+					logs[i].Content = userMsg
+				}
+				// Strip upstream error metadata from user-facing logs
+				delete(otherMap, "error_type")
+				delete(otherMap, "error_code")
+				delete(otherMap, "user_error_message")
+			}
 			// Remove admin-only debug fields.
 			delete(otherMap, "admin_info")
 			delete(otherMap, "reject_reason")
@@ -68,6 +78,8 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			delete(otherMap, "channel_name")
 			delete(otherMap, "channel_type")
 			delete(otherMap, "upstream_model_name")
+			delete(otherMap, "upstream_error_type")
+			delete(otherMap, "upstream_error_code")
 			delete(otherMap, "is_model_mapped")
 		}
 		logs[i].Other = common.MapToJsonStr(otherMap)

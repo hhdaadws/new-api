@@ -93,6 +93,7 @@ type NewAPIError struct {
 	RelayError     any
 	skipRetry      bool
 	recordErrorLog *bool
+	fromUpstream   bool
 	errorType      ErrorType
 	errorCode      ErrorCode
 	StatusCode     int
@@ -409,4 +410,76 @@ func IsRecordErrorLog(e *NewAPIError) bool {
 		return true
 	}
 	return *e.recordErrorLog
+}
+
+func ErrOptionFromUpstream() NewAPIErrorOptions {
+	return func(e *NewAPIError) {
+		e.fromUpstream = true
+	}
+}
+
+func (e *NewAPIError) IsFromUpstream() bool {
+	if e == nil {
+		return false
+	}
+	return e.fromUpstream
+}
+
+// GenericUpstreamMessage returns a user-friendly generic error message based on the HTTP status code.
+func GenericUpstreamMessage(statusCode int) string {
+	switch {
+	case statusCode == http.StatusBadRequest:
+		return "请求参数有误，请检查后重试"
+	case statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden:
+		return "当前分组的上游渠道授权失败，请联系管理员"
+	case statusCode == http.StatusNotFound:
+		return "请求的资源不存在，请检查模型名称"
+	case statusCode == http.StatusTooManyRequests:
+		return "当前分组上游负载已饱和，请稍后再试"
+	case statusCode >= 500:
+		return "上游服务暂时不可用，请稍后再试"
+	default:
+		return fmt.Sprintf("上游服务返回错误 (HTTP %d)", statusCode)
+	}
+}
+
+// SanitizeForUser replaces upstream error details with a generic message and appends the request ID.
+// Internal callers (ShouldDisableChannel, violation_fee) that read raw data run BEFORE this method.
+func (e *NewAPIError) SanitizeForUser(requestId string) {
+	if e == nil {
+		return
+	}
+
+	var userMessage string
+	if e.fromUpstream {
+		userMessage = GenericUpstreamMessage(e.StatusCode)
+	} else {
+		userMessage = e.MaskSensitiveError()
+	}
+
+	userMessage = common.MessageWithRequestId(userMessage, requestId)
+	e.Err = errors.New(userMessage)
+
+	// Rebuild RelayError with sanitized content
+	sanitizedCode := string(e.errorCode)
+	switch e.errorType {
+	case ErrorTypeOpenAIError:
+		e.RelayError = OpenAIError{
+			Message: userMessage,
+			Type:    sanitizedCode,
+			Code:    e.errorCode,
+		}
+	case ErrorTypeClaudeError:
+		e.RelayError = ClaudeError{
+			Message: userMessage,
+			Type:    sanitizedCode,
+		}
+	default:
+		e.RelayError = OpenAIError{
+			Message: userMessage,
+			Type:    string(e.errorType),
+			Code:    e.errorCode,
+		}
+	}
+	e.Metadata = nil
 }

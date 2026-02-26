@@ -170,6 +170,17 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		logger.LogError(c, fmt.Sprintf("error handling last response: %s, lastStreamData: [%s]", err.Error(), lastStreamData))
 	}
 
+	// Apply hidden ratio before sending lastStreamData to user
+	if applyHiddenRatio(info, usage) && containStreamUsage {
+		var lastChunkMap map[string]interface{}
+		if err := common.Unmarshal([]byte(lastStreamData), &lastChunkMap); err == nil {
+			lastChunkMap["usage"] = usage
+			if newData, err := common.Marshal(lastChunkMap); err == nil {
+				lastStreamData = string(newData)
+			}
+		}
+	}
+
 	if info.RelayFormat == types.RelayFormatOpenAI {
 		if shouldSendLastResp {
 			_ = sendStreamData(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent)
@@ -184,6 +195,7 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	if !containStreamUsage {
 		usage = service.ResponseText2Usage(c, responseTextBuilder.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
 		usage.CompletionTokens += toolCount * 7
+		applyHiddenRatio(info, usage)
 	}
 
 	applyUsagePostProcessing(info, usage, common.StringToByteSlice(lastStreamData))
@@ -226,7 +238,7 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	}
 
 	if oaiError := simpleResponse.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
-		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
+		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode, types.ErrOptionFromUpstream())
 	}
 
 	for _, choice := range simpleResponse.Choices {
@@ -259,6 +271,10 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	}
 
 	applyUsagePostProcessing(info, &simpleResponse.Usage, responseBody)
+
+	if applyHiddenRatio(info, &simpleResponse.Usage) {
+		usageModified = true
+	}
 
 	switch info.RelayFormat {
 	case types.RelayFormatOpenAI:
@@ -590,6 +606,7 @@ func OpenaiHandlerWithUsage(c *gin.Context, info *relaycommon.RelayInfo, resp *h
 		usageResp.PromptTokensDetails.TextTokens += usageResp.InputTokensDetails.TextTokens
 	}
 	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)
+	applyHiddenRatio(info, &usageResp.Usage)
 	return &usageResp.Usage, nil
 }
 
