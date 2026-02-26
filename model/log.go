@@ -166,13 +166,6 @@ func RecordHeaderAuditLog(c *gin.Context, content string, adminDetail string) {
 	}
 	otherStr := common.MapToJsonStr(other)
 
-	needRecordIp := false
-	if settingMap, err := GetUserSetting(userId, false); err == nil {
-		if settingMap.RecordIpLog {
-			needRecordIp = true
-		}
-	}
-
 	log := &Log{
 		UserId:    userId,
 		Username:  username,
@@ -184,12 +177,7 @@ func RecordHeaderAuditLog(c *gin.Context, content string, adminDetail string) {
 		ChannelId: channelId,
 		TokenId:   tokenId,
 		Group:     group,
-		Ip: func() string {
-			if needRecordIp {
-				return c.ClientIP()
-			}
-			return ""
-		}(),
+		Ip:        c.ClientIP(),
 		RequestId: requestId,
 		Other:     otherStr,
 	}
