@@ -110,6 +110,25 @@ func UpdateGroupGroupRatioByJSONString(jsonStr string) error {
 	return types.LoadFromJsonString(groupGroupRatioMap, jsonStr)
 }
 
+// Hidden group ratio — multiplied into token counts, invisible to users
+var hiddenGroupRatioMap = types.NewRWMap[string, float64]()
+
+func GetHiddenGroupRatio(group string) float64 {
+	ratio, ok := hiddenGroupRatioMap.Get(group)
+	if !ok {
+		return 1.0
+	}
+	return ratio
+}
+
+func HiddenGroupRatio2JSONString() string {
+	return hiddenGroupRatioMap.MarshalJSONString()
+}
+
+func UpdateHiddenGroupRatioByJSONString(jsonStr string) error {
+	return types.LoadFromJsonString(hiddenGroupRatioMap, jsonStr)
+}
+
 func CheckGroupRatio(jsonStr string) error {
 	checkGroupRatio := make(map[string]float64)
 	err := json.Unmarshal([]byte(jsonStr), &checkGroupRatio)

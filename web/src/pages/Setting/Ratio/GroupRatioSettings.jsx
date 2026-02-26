@@ -36,6 +36,7 @@ export default function GroupRatioSettings(props) {
     GroupRatio: '',
     UserUsableGroups: '',
     GroupGroupRatio: '',
+    HiddenGroupRatio: '',
     'group_ratio_setting.group_special_usable_group': '',
     AutoGroups: '',
     DefaultUseAutoGroup: false,
@@ -182,6 +183,30 @@ export default function GroupRatioSettings(props) {
               ]}
               onChange={(value) =>
                 setInputs({ ...inputs, GroupGroupRatio: value })
+              }
+            />
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col xs={24} sm={16}>
+            <Form.TextArea
+              label={t('隐藏分组倍率')}
+              placeholder={t('为一个 JSON 文本，键为分组名称，值为倍率')}
+              extraText={t(
+                '隐藏倍率直接作用在 token 数量上，用户看到的 token 数 = 实际 token × 隐藏倍率。用户无法感知此倍率的存在。格式为 JSON 字符串，例如：{"default": 1.5, "vip": 1.2}',
+              )}
+              field={'HiddenGroupRatio'}
+              autosize={{ minRows: 6, maxRows: 12 }}
+              trigger='blur'
+              stopValidateWithError
+              rules={[
+                {
+                  validator: (rule, value) => verifyJSON(value),
+                  message: t('不是合法的 JSON 字符串'),
+                },
+              ]}
+              onChange={(value) =>
+                setInputs({ ...inputs, HiddenGroupRatio: value })
               }
             />
           </Col>

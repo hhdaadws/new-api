@@ -657,6 +657,8 @@
     "分组倍率": "Ratio",
     "分组倍率设置": "Ratio de groupe",
     "分组倍率设置，可以在此处新增分组或修改现有分组的倍率，格式为 JSON 字符串，例如：{\"vip\": 0.5, \"test\": 1}，表示 vip 分组的倍率为 0.5，test 分组的倍率为 1": "Paramètres de ratio de groupe, vous pouvez ajouter de nouveaux groupes ou modifier le ratio des groupes existants ici, au format de chaîne JSON, par exemple : {\"vip\": 0,5, \"test\": 1}, ce qui signifie que le ratio du groupe vip est 0,5 et celui du groupe test est 1",
+    "隐藏分组倍率": "Ratio de groupe caché",
+    "隐藏倍率直接作用在 token 数量上，用户看到的 token 数 = 实际 token × 隐藏倍率。用户无法感知此倍率的存在。格式为 JSON 字符串，例如：{\"default\": 1.5, \"vip\": 1.2}": "Le ratio caché est appliqué directement aux nombres de tokens. Tokens visibles = tokens réels × ratio caché. Les utilisateurs ne peuvent pas percevoir ce ratio. Format JSON, ex : {\"default\": 1.5, \"vip\": 1.2}",
     "分组特殊倍率": "Ratio spécial de groupe",
     "分组特殊可用分组": "Groupes spéciaux disponibles",
     "分组设置": "Groupe",
