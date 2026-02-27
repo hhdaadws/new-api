@@ -38,6 +38,7 @@ export default function GroupRatioSettings(props) {
     GroupGroupRatio: '',
     HiddenGroupRatio: '',
     ModelContextLimit: '',
+    ModelMaxOutput: '',
     'group_ratio_setting.group_special_usable_group': '',
     AutoGroups: '',
     DefaultUseAutoGroup: false,
@@ -232,6 +233,30 @@ export default function GroupRatioSettings(props) {
               ]}
               onChange={(value) =>
                 setInputs({ ...inputs, ModelContextLimit: value })
+              }
+            />
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col xs={24} sm={16}>
+            <Form.TextArea
+              label={t('模型最大输出限制')}
+              placeholder={t('为一个 JSON 文本，键为模型名称，值为最大输出token数')}
+              extraText={t(
+                '用于隐藏倍率截断：确保放大后的输出token数不超过模型的最大输出限制。例如 Claude 3.5 Sonnet 最大输出 8192，如果实际输出 6000 乘以 1.5 = 9000 会超限。同样支持前缀匹配。格式如：{"claude-3-5-sonnet": 8192, "claude-opus-4": 32000}',
+              )}
+              field={'ModelMaxOutput'}
+              autosize={{ minRows: 6, maxRows: 12 }}
+              trigger='blur'
+              stopValidateWithError
+              rules={[
+                {
+                  validator: (rule, value) => verifyJSON(value),
+                  message: t('不是合法的 JSON 字符串'),
+                },
+              ]}
+              onChange={(value) =>
+                setInputs({ ...inputs, ModelMaxOutput: value })
               }
             />
           </Col>

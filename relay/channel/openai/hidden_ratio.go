@@ -16,9 +16,10 @@ func applyHiddenRatio(info *relaycommon.RelayInfo, usage *dto.Usage) bool {
 		return false
 	}
 
-	// Smart truncation: cap hr so inflated total doesn't exceed model context limit
+	// Smart truncation: cap hr so inflated tokens don't exceed model limits
 	actualTotal := usage.PromptTokens + usage.CompletionTokens
 	if actualTotal > 0 {
+		// Constraint 1: total (input+output) must not exceed context window
 		modelLimit := ratio_setting.GetModelContextLimit(info.OriginModelName)
 		if modelLimit > 0 {
 			safeLimit := float64(modelLimit) * 0.95 // 5% safety margin
@@ -26,9 +27,22 @@ func applyHiddenRatio(info *relaycommon.RelayInfo, usage *dto.Usage) bool {
 			if hr > maxRatio {
 				hr = maxRatio
 			}
-			if hr <= 1.0 {
-				return false
+		}
+
+		// Constraint 2: completion tokens must not exceed max output limit
+		if usage.CompletionTokens > 0 {
+			maxOutput := ratio_setting.GetModelMaxOutput(info.OriginModelName)
+			if maxOutput > 0 {
+				safeOutput := float64(maxOutput) * 0.95
+				maxOutputRatio := safeOutput / float64(usage.CompletionTokens)
+				if hr > maxOutputRatio {
+					hr = maxOutputRatio
+				}
 			}
+		}
+
+		if hr <= 1.0 {
+			return false
 		}
 	}
 

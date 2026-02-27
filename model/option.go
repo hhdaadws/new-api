@@ -120,6 +120,7 @@ func InitOptionMap() {
 	common.OptionMap["GroupGroupRatio"] = ratio_setting.GroupGroupRatio2JSONString()
 	common.OptionMap["HiddenGroupRatio"] = ratio_setting.HiddenGroupRatio2JSONString()
 	common.OptionMap["ModelContextLimit"] = ratio_setting.ModelContextLimit2JSONString()
+	common.OptionMap["ModelMaxOutput"] = ratio_setting.ModelMaxOutput2JSONString()
 	common.OptionMap["UserUsableGroups"] = setting.UserUsableGroups2JSONString()
 	common.OptionMap["CompletionRatio"] = ratio_setting.CompletionRatio2JSONString()
 	common.OptionMap["ImageRatio"] = ratio_setting.ImageRatio2JSONString()
@@ -426,6 +427,8 @@ func updateOptionMap(key string, value string) (err error) {
 		err = ratio_setting.UpdateHiddenGroupRatioByJSONString(value)
 	case "ModelContextLimit":
 		err = ratio_setting.UpdateModelContextLimitByJSONString(value)
+	case "ModelMaxOutput":
+		err = ratio_setting.UpdateModelMaxOutputByJSONString(value)
 	case "UserUsableGroups":
 		err = setting.UpdateUserUsableGroupsByJSONString(value)
 	case "CompletionRatio":
