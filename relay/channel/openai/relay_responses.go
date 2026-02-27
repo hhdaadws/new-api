@@ -40,11 +40,9 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		c.Set("image_generation_call_size", responsesResponse.GetSize())
 	}
 
-	// 写入新的 response body
-	service.IOCopyBytesGracefully(c, resp, responseBody)
-
-	// compute usage
+	// compute usage before sending response to client
 	usage := dto.Usage{}
+	usageModified := false
 	if responsesResponse.Usage != nil {
 		usage.PromptTokens = responsesResponse.Usage.InputTokens
 		usage.CompletionTokens = responsesResponse.Usage.OutputTokens
@@ -52,11 +50,22 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		if responsesResponse.Usage.InputTokensDetails != nil {
 			usage.PromptTokensDetails.CachedTokens = responsesResponse.Usage.InputTokensDetails.CachedTokens
 		}
-	}
-	if info == nil || info.ResponsesUsageInfo == nil || info.ResponsesUsageInfo.BuiltInTools == nil {
-		if info != nil {
-			applyHiddenRatio(info, &usage)
+		// Apply hidden ratio before sending to client
+		if info != nil && applyHiddenRatio(info, &usage) {
+			responsesResponse.Usage.InputTokens = usage.PromptTokens
+			responsesResponse.Usage.OutputTokens = usage.CompletionTokens
+			responsesResponse.Usage.TotalTokens = usage.TotalTokens
+			if newBody, err := common.Marshal(responsesResponse); err == nil {
+				responseBody = newBody
+			}
+			usageModified = true
 		}
+	}
+
+	// 写入 response body（usage 已被修改）
+	service.IOCopyBytesGracefully(c, resp, responseBody)
+
+	if info == nil || info.ResponsesUsageInfo == nil || info.ResponsesUsageInfo.BuiltInTools == nil {
 		return &usage, nil
 	}
 	// 解析 Tools 用量
@@ -68,7 +77,7 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		}
 		buildToolinfo.CallCount++
 	}
-	applyHiddenRatio(info, &usage)
+	_ = usageModified // usage already applied above
 	return &usage, nil
 }
 
@@ -82,13 +91,13 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 
 	var usage = &dto.Usage{}
 	var responseTextBuilder strings.Builder
+	var hiddenRatioApplied bool
 
 	helper.StreamScannerHandler(c, resp, info, func(data string) bool {
 
 		// 检查当前数据是否包含 completed 状态和 usage 信息
 		var streamResponse dto.ResponsesStreamResponse
 		if err := common.UnmarshalJsonStr(data, &streamResponse); err == nil {
-			sendResponsesStreamData(c, streamResponse, data)
 			switch streamResponse.Type {
 			case "response.completed":
 				if streamResponse.Response != nil {
@@ -104,6 +113,16 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 						}
 						if streamResponse.Response.Usage.InputTokensDetails != nil {
 							usage.PromptTokensDetails.CachedTokens = streamResponse.Response.Usage.InputTokensDetails.CachedTokens
+						}
+						// Apply hidden ratio and rewrite usage in the event before sending
+						if applyHiddenRatio(info, usage) {
+							hiddenRatioApplied = true
+							streamResponse.Response.Usage.InputTokens = usage.PromptTokens
+							streamResponse.Response.Usage.OutputTokens = usage.CompletionTokens
+							streamResponse.Response.Usage.TotalTokens = usage.TotalTokens
+							if newData, err := common.Marshal(streamResponse); err == nil {
+								data = string(newData)
+							}
 						}
 					}
 					if streamResponse.Response.HasImageGenerationCall() {
@@ -128,6 +147,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 					}
 				}
 			}
+			sendResponsesStreamData(c, streamResponse, data)
 		} else {
 			logger.LogError(c, "failed to unmarshal stream response: "+err.Error())
 		}
@@ -150,7 +170,9 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 
-	applyHiddenRatio(info, usage)
+	if !hiddenRatioApplied {
+		applyHiddenRatio(info, usage)
+	}
 
 	return usage, nil
 }
