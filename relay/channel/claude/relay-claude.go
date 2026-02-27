@@ -547,12 +547,13 @@ func ResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.OpenAITextRe
 }
 
 type ClaudeResponseInfo struct {
-	ResponseId   string
-	Created      int64
-	Model        string
-	ResponseText strings.Builder
-	Usage        *dto.Usage
-	Done         bool
+	ResponseId         string
+	Created            int64
+	Model              string
+	ResponseText       strings.Builder
+	Usage              *dto.Usage
+	Done               bool
+	HiddenRatioApplied bool
 }
 
 func buildMessageDeltaPatchUsage(claudeResponse *dto.ClaudeResponse, claudeInfo *ClaudeResponseInfo) *dto.ClaudeUsage {
@@ -625,6 +626,65 @@ func setMessageDeltaUsageInt(data string, path string, localValue int) string {
 		return data
 	}
 	return patchedData
+}
+
+// rewriteClaudeUsageInJSON rewrites Claude usage fields in raw JSON using sjson,
+// preserving all other upstream fields that might not be in our DTO.
+func rewriteClaudeUsageInJSON(data []byte, usage *dto.Usage) []byte {
+	s := string(data)
+	s, _ = sjson.Set(s, "usage.input_tokens", usage.PromptTokens)
+	s, _ = sjson.Set(s, "usage.output_tokens", usage.CompletionTokens)
+	if usage.PromptTokensDetails.CachedTokens > 0 {
+		s, _ = sjson.Set(s, "usage.cache_read_input_tokens", usage.PromptTokensDetails.CachedTokens)
+	}
+	if usage.PromptTokensDetails.CachedCreationTokens > 0 {
+		s, _ = sjson.Set(s, "usage.cache_creation_input_tokens", usage.PromptTokensDetails.CachedCreationTokens)
+	}
+	if usage.ClaudeCacheCreation5mTokens > 0 {
+		s, _ = sjson.Set(s, "usage.cache_creation.ephemeral_5m_input_tokens", usage.ClaudeCacheCreation5mTokens)
+	}
+	if usage.ClaudeCacheCreation1hTokens > 0 {
+		s, _ = sjson.Set(s, "usage.cache_creation.ephemeral_1h_input_tokens", usage.ClaudeCacheCreation1hTokens)
+	}
+	return []byte(s)
+}
+
+// rewriteClaudeUsageInJSONStr is the string variant for streaming event data.
+func rewriteClaudeUsageInJSONStr(data string, usage *dto.Usage) string {
+	data, _ = sjson.Set(data, "usage.input_tokens", usage.PromptTokens)
+	data, _ = sjson.Set(data, "usage.output_tokens", usage.CompletionTokens)
+	if usage.PromptTokensDetails.CachedTokens > 0 {
+		data, _ = sjson.Set(data, "usage.cache_read_input_tokens", usage.PromptTokensDetails.CachedTokens)
+	}
+	if usage.PromptTokensDetails.CachedCreationTokens > 0 {
+		data, _ = sjson.Set(data, "usage.cache_creation_input_tokens", usage.PromptTokensDetails.CachedCreationTokens)
+	}
+	if usage.ClaudeCacheCreation5mTokens > 0 {
+		data, _ = sjson.Set(data, "usage.cache_creation.ephemeral_5m_input_tokens", usage.ClaudeCacheCreation5mTokens)
+	}
+	if usage.ClaudeCacheCreation1hTokens > 0 {
+		data, _ = sjson.Set(data, "usage.cache_creation.ephemeral_1h_input_tokens", usage.ClaudeCacheCreation1hTokens)
+	}
+	return data
+}
+
+// rewriteClaudeMessageStartUsage rewrites usage in a message_start event.
+// In message_start, usage is nested at message.usage.*.
+func rewriteClaudeMessageStartUsage(data string, usage *dto.Usage) string {
+	data, _ = sjson.Set(data, "message.usage.input_tokens", usage.PromptTokens)
+	if usage.PromptTokensDetails.CachedTokens > 0 {
+		data, _ = sjson.Set(data, "message.usage.cache_read_input_tokens", usage.PromptTokensDetails.CachedTokens)
+	}
+	if usage.PromptTokensDetails.CachedCreationTokens > 0 {
+		data, _ = sjson.Set(data, "message.usage.cache_creation_input_tokens", usage.PromptTokensDetails.CachedCreationTokens)
+	}
+	if usage.ClaudeCacheCreation5mTokens > 0 {
+		data, _ = sjson.Set(data, "message.usage.cache_creation.ephemeral_5m_input_tokens", usage.ClaudeCacheCreation5mTokens)
+	}
+	if usage.ClaudeCacheCreation1hTokens > 0 {
+		data, _ = sjson.Set(data, "message.usage.cache_creation.ephemeral_1h_input_tokens", usage.ClaudeCacheCreation1hTokens)
+	}
+	return data
 }
 
 func FormatClaudeResponseInfo(claudeResponse *dto.ClaudeResponse, oaiResponse *dto.ChatCompletionsStreamResponse, claudeInfo *ClaudeResponseInfo) bool {
@@ -721,11 +781,24 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 			if claudeResponse.Message != nil {
 				info.UpstreamModelName = claudeResponse.Message.Model
 			}
+			// Apply hidden ratio to message_start input tokens
+			if claudeResponse.Message != nil && claudeResponse.Message.Usage != nil {
+				// Use a temp copy so claudeInfo.Usage keeps real values for message_delta
+				tempUsage := *claudeInfo.Usage
+				if helper.ApplyHiddenRatio(info, &tempUsage) {
+					data = rewriteClaudeMessageStartUsage(data, &tempUsage)
+				}
+			}
 		} else if claudeResponse.Type == "message_delta" {
 			// 确保 message_delta 的 usage 包含完整的 input_tokens 和 cache 相关字段
 			// 解决 AWS Bedrock 等上游返回的 message_delta 缺少这些字段的问题
 			if !shouldSkipClaudeMessageDeltaUsagePatch(info) {
 				data = patchClaudeMessageDeltaUsageData(data, buildMessageDeltaPatchUsage(&claudeResponse, claudeInfo))
+			}
+			// Apply hidden ratio to full usage at message_delta (final usage event)
+			if helper.ApplyHiddenRatio(info, claudeInfo.Usage) {
+				claudeInfo.HiddenRatioApplied = true
+				data = rewriteClaudeUsageInJSONStr(data, claudeInfo.Usage)
 			}
 		}
 		helper.ClaudeChunkData(c, claudeResponse, data)
@@ -753,6 +826,12 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 			common.SysLog("claude response usage is not complete, maybe upstream error")
 		}
 		claudeInfo.Usage = service.ResponseText2Usage(c, claudeInfo.ResponseText.String(), info.UpstreamModelName, claudeInfo.Usage.PromptTokens)
+		claudeInfo.HiddenRatioApplied = false // usage re-estimated, need to re-apply ratio
+	}
+
+	// Apply hidden ratio if not already applied during streaming
+	if !claudeInfo.HiddenRatioApplied {
+		helper.ApplyHiddenRatio(info, claudeInfo.Usage)
 	}
 
 	if info.RelayFormat == types.RelayFormatClaude {
@@ -815,6 +894,10 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		claudeInfo.Usage.ClaudeCacheCreation5mTokens = claudeResponse.Usage.GetCacheCreation5mTokens()
 		claudeInfo.Usage.ClaudeCacheCreation1hTokens = claudeResponse.Usage.GetCacheCreation1hTokens()
 	}
+
+	// Apply hidden ratio before sending response to client
+	hiddenRatioApplied := helper.ApplyHiddenRatio(info, claudeInfo.Usage)
+
 	var responseData []byte
 	switch info.RelayFormat {
 	case types.RelayFormatOpenAI:
@@ -825,7 +908,11 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 			return types.NewError(err, types.ErrorCodeBadResponseBody)
 		}
 	case types.RelayFormatClaude:
-		responseData = data
+		if hiddenRatioApplied && claudeResponse.Usage != nil {
+			responseData = rewriteClaudeUsageInJSON(data, claudeInfo.Usage)
+		} else {
+			responseData = data
+		}
 	}
 
 	if claudeResponse.Usage != nil && claudeResponse.Usage.ServerToolUse != nil && claudeResponse.Usage.ServerToolUse.WebSearchRequests > 0 {
