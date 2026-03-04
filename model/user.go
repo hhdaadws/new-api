@@ -50,7 +50,7 @@ type User struct {
 	Setting          string         `json:"setting" gorm:"type:text;column:setting"`
 	Remark           string         `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
 	StripeCustomer   string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
-	PersonalRatio    float64        `json:"personal_ratio" gorm:"type:double;default:1;column:personal_ratio"`
+	PersonalRatio    float64        `json:"personal_ratio" gorm:"type:double precision;default:1;column:personal_ratio"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
