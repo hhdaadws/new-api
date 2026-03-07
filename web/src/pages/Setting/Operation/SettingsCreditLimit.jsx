@@ -18,7 +18,17 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useEffect, useState, useRef } from 'react';
-import { Button, Col, Form, Row, Spin } from '@douyinfe/semi-ui';
+import {
+  Button,
+  Col,
+  Form,
+  Row,
+  Spin,
+  InputNumber,
+  Typography,
+  Space,
+} from '@douyinfe/semi-ui';
+import { IconPlus, IconDelete } from '@douyinfe/semi-icons';
 import { useTranslation } from 'react-i18next';
 import {
   compareObjects,
@@ -37,9 +47,62 @@ export default function SettingsCreditLimit(props) {
     QuotaForInviter: '',
     QuotaForInvitee: '',
     'quota_setting.enable_free_model_pre_consume': true,
+    InviterCommissionRates: '',
   });
   const refForm = useRef();
   const [inputsRow, setInputsRow] = useState(inputs);
+  const [commissionRules, setCommissionRules] = useState([]);
+
+  function parseCommissionRates(jsonStr) {
+    if (!jsonStr || jsonStr === '{}') return [];
+    try {
+      const obj = JSON.parse(jsonStr);
+      return Object.entries(obj)
+        .map(([k, v]) => ({ orderNumber: parseInt(k, 10), rate: v }))
+        .sort((a, b) => a.orderNumber - b.orderNumber);
+    } catch {
+      return [];
+    }
+  }
+
+  function serializeCommissionRules(rules) {
+    const obj = {};
+    rules.forEach((r) => {
+      if (r.orderNumber > 0 && r.rate >= 0) {
+        obj[r.orderNumber] = r.rate;
+      }
+    });
+    return JSON.stringify(obj);
+  }
+
+  function addCommissionRule() {
+    const maxOrder =
+      commissionRules.length > 0
+        ? Math.max(...commissionRules.map((r) => r.orderNumber))
+        : 0;
+    const newRules = [
+      ...commissionRules,
+      { orderNumber: maxOrder + 1, rate: 10 },
+    ];
+    setCommissionRules(newRules);
+    const serialized = serializeCommissionRules(newRules);
+    setInputs({ ...inputs, InviterCommissionRates: serialized });
+  }
+
+  function removeCommissionRule(index) {
+    const newRules = commissionRules.filter((_, i) => i !== index);
+    setCommissionRules(newRules);
+    const serialized = serializeCommissionRules(newRules);
+    setInputs({ ...inputs, InviterCommissionRates: serialized });
+  }
+
+  function updateCommissionRule(index, field, value) {
+    const newRules = [...commissionRules];
+    newRules[index] = { ...newRules[index], [field]: value };
+    setCommissionRules(newRules);
+    const serialized = serializeCommissionRules(newRules);
+    setInputs({ ...inputs, InviterCommissionRates: serialized });
+  }
 
   function onSubmit() {
     const updateArray = compareObjects(inputs, inputsRow);
@@ -86,6 +149,9 @@ export default function SettingsCreditLimit(props) {
     setInputs(currentInputs);
     setInputsRow(structuredClone(currentInputs));
     refForm.current.setValues(currentInputs);
+    setCommissionRules(
+      parseCommissionRates(currentInputs.InviterCommissionRates),
+    );
   }, [props.options]);
   return (
     <>
@@ -184,13 +250,71 @@ export default function SettingsCreditLimit(props) {
                 />
               </Col>
             </Row>
+          </Form.Section>
 
-            <Row>
-              <Button size='default' onClick={onSubmit}>
-                {t('保存额度设置')}
+          <Form.Section text={t('充值返佣设置')}>
+            <Typography.Text type='tertiary' style={{ marginBottom: 12, display: 'block' }}>
+              {t('为被邀请用户的每笔充值设置返佣比例，邀请人将按比例获得额度奖励')}
+            </Typography.Text>
+            {commissionRules.map((rule, index) => (
+              <Row
+                key={index}
+                gutter={16}
+                style={{ marginBottom: 8 }}
+                type='flex'
+                align='middle'
+              >
+                <Col>
+                  <Space>
+                    <Typography.Text>{t('第')}</Typography.Text>
+                    <InputNumber
+                      min={1}
+                      step={1}
+                      value={rule.orderNumber}
+                      style={{ width: 80 }}
+                      onChange={(value) =>
+                        updateCommissionRule(index, 'orderNumber', value)
+                      }
+                    />
+                    <Typography.Text>{t('笔订单')}</Typography.Text>
+                    <Typography.Text>{t('返佣比例')}</Typography.Text>
+                    <InputNumber
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={rule.rate}
+                      style={{ width: 100 }}
+                      suffix='%'
+                      onChange={(value) =>
+                        updateCommissionRule(index, 'rate', value)
+                      }
+                    />
+                    <Button
+                      type='danger'
+                      theme='borderless'
+                      icon={<IconDelete />}
+                      onClick={() => removeCommissionRule(index)}
+                    />
+                  </Space>
+                </Col>
+              </Row>
+            ))}
+            <Row style={{ marginTop: 8 }}>
+              <Button
+                icon={<IconPlus />}
+                theme='light'
+                onClick={addCommissionRule}
+              >
+                {t('添加返佣规则')}
               </Button>
             </Row>
           </Form.Section>
+
+          <Row style={{ marginTop: 16 }}>
+            <Button size='default' onClick={onSubmit}>
+              {t('保存额度设置')}
+            </Button>
+          </Row>
         </Form>
       </Spin>
     </>
