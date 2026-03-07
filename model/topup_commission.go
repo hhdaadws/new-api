@@ -11,17 +11,18 @@ import (
 
 // ProcessTopUpCommission processes inviter commission after a successful top-up.
 // It runs asynchronously to avoid blocking the payment callback.
-func ProcessTopUpCommission(userId int, quotaAdded int) {
+// discount is the order's discount factor (e.g. 0.95 for 95% price); commission is based on discounted amount.
+func ProcessTopUpCommission(userId int, quotaAdded int, discount float64) {
 	if !common.InviterCommissionEnabled || !common.HasInviterCommissionRates() {
 		return
 	}
 
 	gopool.Go(func() {
-		processCommission(userId, quotaAdded)
+		processCommission(userId, quotaAdded, discount)
 	})
 }
 
-func processCommission(userId int, quotaAdded int) {
+func processCommission(userId int, quotaAdded int, discount float64) {
 	// Get the user's inviter
 	user, err := GetUserById(userId, false)
 	if err != nil || user == nil || user.InviterId == 0 {
@@ -43,7 +44,12 @@ func processCommission(userId int, quotaAdded int) {
 		return
 	}
 
-	commission := int(float64(quotaAdded) * rate / 100)
+	// Apply discount: commission is based on actual payment, not original amount
+	if discount <= 0 {
+		discount = 1.0
+	}
+	commissionBasis := int(float64(quotaAdded) * discount)
+	commission := int(float64(commissionBasis) * rate / 100)
 	if commission <= 0 {
 		return
 	}
@@ -57,8 +63,8 @@ func processCommission(userId int, quotaAdded int) {
 	inviterUsername, _ := GetUsernameById(inviterId, false)
 	inviteeUsername, _ := GetUsernameById(userId, false)
 
-	RecordLog(inviterId, LogTypeTopup, fmt.Sprintf("邀请返佣：被邀请用户 %s（ID: %d）完成第 %d 笔充值，返佣比例 %.1f%%，获得返佣额度: %v",
-		inviteeUsername, userId, orderNumber, rate, logger.LogQuota(commission)))
-	RecordLog(userId, LogTypeTopup, fmt.Sprintf("充值返佣通知：您的第 %d 笔充值已为邀请人 %s（ID: %d）产生 %.1f%% 返佣，返佣额度: %v",
-		orderNumber, inviterUsername, inviterId, rate, logger.LogQuota(commission)))
+	RecordLog(inviterId, LogTypeTopup, fmt.Sprintf("邀请返佣：被邀请用户 %s（ID: %d）完成第 %d 笔充值，折扣 %.2f，返佣比例 %.1f%%，获得返佣额度: %v",
+		inviteeUsername, userId, orderNumber, discount, rate, logger.LogQuota(commission)))
+	RecordLog(userId, LogTypeTopup, fmt.Sprintf("充值返佣通知：您的第 %d 笔充值已为邀请人 %s（ID: %d）产生 %.1f%% 返佣（折扣 %.2f），返佣额度: %v",
+		orderNumber, inviterUsername, inviterId, rate, discount, logger.LogQuota(commission)))
 }

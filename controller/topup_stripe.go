@@ -103,12 +103,18 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		return
 	}
 
+	// Capture discount for commission calculation at callback time
+	orderDiscount := 1.0
+	if ds, ok := operation_setting.GetPaymentSetting().AmountDiscount[int(req.Amount)]; ok && ds > 0 {
+		orderDiscount = ds
+	}
 	topUp := &model.TopUp{
 		UserId:        id,
 		Amount:        req.Amount,
 		Money:         chargedMoney,
 		TradeNo:       referenceId,
 		PaymentMethod: PaymentMethodStripe,
+		Discount:      orderDiscount,
 		CreateTime:    time.Now().Unix(),
 		Status:        common.TopUpStatusPending,
 	}

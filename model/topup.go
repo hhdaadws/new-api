@@ -18,6 +18,7 @@ type TopUp struct {
 	Money         float64 `json:"money"`
 	TradeNo       string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
 	PaymentMethod string  `json:"payment_method" gorm:"type:varchar(50)"`
+	Discount      float64 `json:"discount" gorm:"type:double;default:1"`
 	CreateTime    int64   `json:"create_time"`
 	CompleteTime  int64   `json:"complete_time"`
 	Status        string  `json:"status"`
@@ -100,7 +101,7 @@ func Recharge(referenceId string, customerId string) (err error) {
 	}
 
 	RecordLog(topUp.UserId, LogTypeTopup, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%d", logger.FormatQuota(int(quota)), topUp.Amount))
-	ProcessTopUpCommission(topUp.UserId, int(quota))
+	ProcessTopUpCommission(topUp.UserId, int(quota), topUp.Discount)
 
 	return nil
 }
@@ -250,6 +251,7 @@ func ManualCompleteTopUp(tradeNo string) error {
 	var userId int
 	var quotaToAdd int
 	var payMoney float64
+	var discount float64
 
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		topUp := &TopUp{}
@@ -296,6 +298,7 @@ func ManualCompleteTopUp(tradeNo string) error {
 
 		userId = topUp.UserId
 		payMoney = topUp.Money
+		discount = topUp.Discount
 		return nil
 	})
 
@@ -305,7 +308,7 @@ func ManualCompleteTopUp(tradeNo string) error {
 
 	// 事务外记录日志，避免阻塞
 	RecordLog(userId, LogTypeTopup, fmt.Sprintf("管理员补单成功，充值金额: %v，支付金额：%f", logger.FormatQuota(quotaToAdd), payMoney))
-	ProcessTopUpCommission(userId, quotaToAdd)
+	ProcessTopUpCommission(userId, quotaToAdd, discount)
 	return nil
 }
 func RechargeCreem(referenceId string, customerEmail string, customerName string) (err error) {
@@ -375,7 +378,7 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 	}
 
 	RecordLog(topUp.UserId, LogTypeTopup, fmt.Sprintf("使用Creem充值成功，充值额度: %v，支付金额：%.2f", quota, topUp.Money))
-	ProcessTopUpCommission(topUp.UserId, int(quota))
+	ProcessTopUpCommission(topUp.UserId, int(quota), topUp.Discount)
 
 	return nil
 }

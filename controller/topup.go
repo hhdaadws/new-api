@@ -183,12 +183,18 @@ func RequestEpay(c *gin.Context) {
 		dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 		amount = dAmount.Div(dQuotaPerUnit).IntPart()
 	}
+	// Capture discount for commission calculation at callback time
+	orderDiscount := 1.0
+	if ds, ok := operation_setting.GetPaymentSetting().AmountDiscount[int(req.Amount)]; ok && ds > 0 {
+		orderDiscount = ds
+	}
 	topUp := &model.TopUp{
 		UserId:        id,
 		Amount:        amount,
 		Money:         payMoney,
 		TradeNo:       tradeNo,
 		PaymentMethod: req.PaymentMethod,
+		Discount:      orderDiscount,
 		CreateTime:    time.Now().Unix(),
 		Status:        "pending",
 	}
@@ -306,7 +312,7 @@ func EpayNotify(c *gin.Context) {
 			}
 			log.Printf("易支付回调更新用户成功 %v", topUp)
 			model.RecordLog(topUp.UserId, model.LogTypeTopup, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%f", logger.LogQuota(quotaToAdd), topUp.Money))
-			model.ProcessTopUpCommission(topUp.UserId, quotaToAdd)
+			model.ProcessTopUpCommission(topUp.UserId, quotaToAdd, topUp.Discount)
 		}
 	} else {
 		log.Printf("易支付异常回调: %v", verifyInfo)

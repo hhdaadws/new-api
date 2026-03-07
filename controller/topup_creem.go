@@ -112,6 +112,7 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 		Amount:     selectedProduct.Quota, // 充值额度
 		Money:      selectedProduct.Price, // 支付金额
 		TradeNo:    referenceId,
+		Discount:   1.0, // Creem uses fixed product prices, no discount
 		CreateTime: time.Now().Unix(),
 		Status:     common.TopUpStatusPending,
 	}
