@@ -503,6 +503,8 @@
     "保存邮箱域名白名单设置": "Save Email Domain Whitelist Settings",
     "保存额度设置": "Save Quota Settings",
     "充值返佣设置": "Top-up Commission Settings",
+    "启用充值返佣": "Enable Top-up Commission",
+    "开启后，被邀请用户充值时邀请人将按配置的比例获得额度返佣": "When enabled, the inviter will receive a quota commission based on the configured percentage when the invited user tops up",
     "为被邀请用户的每笔充值设置返佣比例，邀请人将按比例获得额度奖励": "Set commission rates for each top-up by invited users. The inviter will receive a quota bonus based on the configured percentage.",
     "第": "Order #",
     "笔订单": "",

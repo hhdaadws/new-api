@@ -90,6 +90,7 @@ func InitOptionMap() {
 	common.OptionMap["CreemTestMode"] = strconv.FormatBool(setting.CreemTestMode)
 	common.OptionMap["CreemWebhookSecret"] = setting.CreemWebhookSecret
 	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
+	common.OptionMap["InviterCommissionEnabled"] = strconv.FormatBool(common.InviterCommissionEnabled)
 	common.OptionMap["InviterCommissionRates"] = common.InviterCommissionRates2JSONString()
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
@@ -302,6 +303,8 @@ func updateOptionMap(key string, value string) (err error) {
 			setting.DefaultUseAutoGroup = boolValue
 		case "ExposeRatioEnabled":
 			ratio_setting.SetExposeRatioEnabled(boolValue)
+		case "InviterCommissionEnabled":
+			common.InviterCommissionEnabled = boolValue
 		}
 	}
 	switch key {

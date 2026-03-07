@@ -498,6 +498,8 @@
     "保存邮箱域名白名单设置": "Enregistrer les paramètres de liste blanche des domaines de messagerie",
     "保存额度设置": "Enregistrer les paramètres de quota",
     "充值返佣设置": "Paramètres de commission de recharge",
+    "启用充值返佣": "Activer la commission de recharge",
+    "开启后，被邀请用户充值时邀请人将按配置的比例获得额度返佣": "Lorsqu'activé, l'invitant recevra une commission de quota basée sur le pourcentage configuré lorsque l'utilisateur invité recharge",
     "为被邀请用户的每笔充值设置返佣比例，邀请人将按比例获得额度奖励": "Définir les taux de commission pour chaque recharge des utilisateurs invités. L'invitant recevra un bonus de quota basé sur le pourcentage configuré.",
     "第": "Commande n°",
     "笔订单": "",

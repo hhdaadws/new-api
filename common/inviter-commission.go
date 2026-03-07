@@ -4,6 +4,8 @@ import (
 	"sync"
 )
 
+var InviterCommissionEnabled = false
+
 var inviterCommissionRates = map[int]float64{}
 var inviterCommissionRatesMutex sync.RWMutex
 

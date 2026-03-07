@@ -47,6 +47,7 @@ export default function SettingsCreditLimit(props) {
     QuotaForInviter: '',
     QuotaForInvitee: '',
     'quota_setting.enable_free_model_pre_consume': true,
+    InviterCommissionEnabled: false,
     InviterCommissionRates: '',
   });
   const refForm = useRef();
@@ -253,6 +254,23 @@ export default function SettingsCreditLimit(props) {
           </Form.Section>
 
           <Form.Section text={t('充值返佣设置')}>
+            <Row>
+              <Col>
+                <Form.Switch
+                  label={t('启用充值返佣')}
+                  field={'InviterCommissionEnabled'}
+                  extraText={t(
+                    '开启后，被邀请用户充值时邀请人将按配置的比例获得额度返佣',
+                  )}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      InviterCommissionEnabled: value,
+                    })
+                  }
+                />
+              </Col>
+            </Row>
             <Typography.Text type='tertiary' style={{ marginBottom: 12, display: 'block' }}>
               {t('为被邀请用户的每笔充值设置返佣比例，邀请人将按比例获得额度奖励')}
             </Typography.Text>

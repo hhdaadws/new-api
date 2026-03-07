@@ -12,7 +12,7 @@ import (
 // ProcessTopUpCommission processes inviter commission after a successful top-up.
 // It runs asynchronously to avoid blocking the payment callback.
 func ProcessTopUpCommission(userId int, quotaAdded int) {
-	if !common.HasInviterCommissionRates() {
+	if !common.InviterCommissionEnabled || !common.HasInviterCommissionRates() {
 		return
 	}
 

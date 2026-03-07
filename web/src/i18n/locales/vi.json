@@ -495,6 +495,8 @@
     "保存邮箱域名白名单设置": "Lưu cài đặt danh sách trắng tên miền email",
     "保存额度设置": "Lưu cài đặt hạn ngạch",
     "充值返佣设置": "Cài đặt hoa hồng nạp tiền",
+    "启用充值返佣": "Bật hoa hồng nạp tiền",
+    "开启后，被邀请用户充值时邀请人将按配置的比例获得额度返佣": "Khi bật, người mời sẽ nhận hoa hồng hạn ngạch dựa trên tỷ lệ phần trăm đã cấu hình khi người dùng được mời nạp tiền",
     "为被邀请用户的每笔充值设置返佣比例，邀请人将按比例获得额度奖励": "Đặt tỷ lệ hoa hồng cho mỗi lần nạp tiền của người dùng được mời. Người mời sẽ nhận thưởng hạn ngạch dựa trên tỷ lệ phần trăm đã cấu hình.",
     "第": "Đơn hàng thứ",
     "笔订单": "",
