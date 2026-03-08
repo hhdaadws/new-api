@@ -13,11 +13,16 @@ import (
 var channelUserBindings map[int]map[int]int64
 
 func InitChannelUserBindingCache() {
+	// DB query outside lock to avoid holding lock during I/O
 	bindingsMap, err := GetAllBindingsMap()
 	if err != nil {
 		common.SysError("failed to load channel user bindings: " + err.Error())
 		bindingsMap = make(map[int]map[int]int64)
 	}
+
+	// Acquire lock before reading channelsIDM and writing channelUserBindings
+	channelSyncLock.Lock()
+	defer channelSyncLock.Unlock()
 
 	// Clean expired bindings during init
 	if channelsIDM != nil {

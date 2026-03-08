@@ -1980,7 +1980,18 @@ func GetChannelUserBindings(c *gin.Context) {
 		return
 	}
 	expireMinutes := channel.GetUserBindExpireMinutes()
-	activeCount := model.CacheGetSingleActiveBindingCount(id)
+	// Compute active count from DB-fetched bindings to stay consistent with the displayed list
+	activeCount := 0
+	if expireMinutes <= 0 {
+		activeCount = len(bindings)
+	} else {
+		cutoff := time.Now().Add(-time.Duration(expireMinutes) * time.Minute).Unix()
+		for _, b := range bindings {
+			if b.LastUsedTime >= cutoff {
+				activeCount++
+			}
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
