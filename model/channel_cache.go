@@ -127,6 +127,8 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 						CacheGetActiveBindingCount(channel.Id, expireMinutes) >= maxUsers {
 						return nil, nil
 					}
+					// Create binding if max_users is enabled
+					go CacheBindUser(channel.Id, userId)
 				}
 			}
 			return channel, nil
