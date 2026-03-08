@@ -59,17 +59,24 @@ func GetAllEnableAbilities() []Ability {
 	return abilities
 }
 
-func getPriority(group string, model string, retry int) (int, error) {
-
+// getAllPriorities returns all distinct priority levels for the given group/model,
+// sorted in descending order (highest priority first).
+func getAllPriorities(group string, model string) ([]int, error) {
 	var priorities []int
 	err := DB.Model(&Ability{}).
 		Select("DISTINCT(priority)").
 		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
-		Order("priority DESC").              // 按优先级降序排序
-		Pluck("priority", &priorities).Error // Pluck用于将查询的结果直接扫描到一个切片中
-
+		Order("priority DESC").
+		Pluck("priority", &priorities).Error
 	if err != nil {
-		// 处理错误
+		return nil, err
+	}
+	return priorities, nil
+}
+
+func getPriority(group string, model string, retry int) (int, error) {
+	priorities, err := getAllPriorities(group, model)
+	if err != nil {
 		return 0, err
 	}
 
@@ -107,30 +114,44 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 func GetChannel(group string, model string, retry int, userId int) (*Channel, error) {
 	var abilities []Ability
 
-	var err error = nil
-	channelQuery, err := getChannelQuery(group, model, retry)
-	if err != nil {
+	// Get all priority levels to support fallback when user binding limits filter out all channels
+	priorities, err := getAllPriorities(group, model)
+	if err != nil || len(priorities) == 0 {
 		return nil, err
 	}
-	if common.UsingSQLite || common.UsingPostgreSQL {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
-	} else {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
+
+	startPri := retry
+	if startPri >= len(priorities) {
+		startPri = len(priorities) - 1
 	}
-	if err != nil {
-		return nil, err
+
+	// Try each priority level starting from startPri.
+	// If all channels in a priority are filtered out by user binding limits,
+	// fall back to the next (lower) priority level.
+	for pri := startPri; pri < len(priorities); pri++ {
+		priorityToUse := priorities[pri]
+		channelQuery := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priorityToUse)
+		abilities = nil
+		err = channelQuery.Order("weight DESC").Find(&abilities).Error
+		if err != nil {
+			return nil, err
+		}
+		if len(abilities) == 0 {
+			continue
+		}
+
+		// Filter by user limit if userId is provided
+		if userId > 0 {
+			abilities = filterAbilitiesByUserLimit(abilities, userId)
+		}
+		if len(abilities) > 0 {
+			break
+		}
+		// All channels at this priority are full, try next priority level
 	}
 
 	if len(abilities) == 0 {
 		return nil, nil
-	}
-
-	// Filter by user limit if userId is provided
-	if userId > 0 {
-		abilities = filterAbilitiesByUserLimit(abilities, userId)
-		if len(abilities) == 0 {
-			return nil, nil
-		}
 	}
 
 	// Randomly choose one

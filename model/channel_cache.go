@@ -164,16 +164,21 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 	}
 	sort.Sort(sort.Reverse(sort.IntSlice(sortedUniquePriorities)))
 
-	if retry >= len(uniquePriorities) {
-		retry = len(uniquePriorities) - 1
+	startPri := retry
+	if startPri >= len(sortedUniquePriorities) {
+		startPri = len(sortedUniquePriorities) - 1
 	}
-	targetPriority := int64(sortedUniquePriorities[retry])
 
-	// get the channels for the target priority
+	// Collect all channels grouped by priority under the read lock,
+	// then release the lock before doing binding checks (Redis I/O).
+	allPriorityChannels := make([][]*Channel, len(sortedUniquePriorities))
 	for _, channelId := range channels {
 		if channel, ok := channelsIDM[channelId]; ok {
-			if channel.GetPriority() == targetPriority {
-				targetChannels = append(targetChannels, channel)
+			for idx, p := range sortedUniquePriorities {
+				if channel.GetPriority() == int64(p) {
+					allPriorityChannels[idx] = append(allPriorityChannels[idx], channel)
+					break
+				}
 			}
 		} else {
 			channelSyncLock.RUnlock()
@@ -185,31 +190,45 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 	// Channel pointers remain valid because channelsIDM sync creates new objects
 	channelSyncLock.RUnlock()
 
-	if len(targetChannels) == 0 {
-		return nil, errors.New(fmt.Sprintf("no channel found, group: %s, model: %s, priority: %d", group, model, targetPriority))
-	}
-
-	// Phase 2: Filter by user bindings (no channelSyncLock, safe for Redis I/O)
-	// Preload binding data for all candidate channels in one pipeline
+	// Try each priority level starting from startPri.
+	// If all channels in a priority are filtered out by user binding limits,
+	// fall back to the next (lower) priority level.
 	var bindingData map[int]map[int]int64
-	if userId > 0 {
-		channelIds := make([]int, 0, len(targetChannels))
-		for _, ch := range targetChannels {
-			if ch.GetMaxUsers() > 0 {
-				channelIds = append(channelIds, ch.Id)
+	for pri := startPri; pri < len(sortedUniquePriorities); pri++ {
+		targetChannels = allPriorityChannels[pri]
+
+		if len(targetChannels) == 0 {
+			continue
+		}
+
+		// Phase 2: Filter by user bindings (no channelSyncLock, safe for Redis I/O)
+		// Preload binding data for all candidate channels in one pipeline
+		bindingData = nil
+		if userId > 0 {
+			channelIds := make([]int, 0, len(targetChannels))
+			for _, ch := range targetChannels {
+				if ch.GetMaxUsers() > 0 {
+					channelIds = append(channelIds, ch.Id)
+				}
+			}
+			if len(channelIds) > 0 {
+				bindingData = PreloadBindingData(channelIds)
 			}
 		}
-		if len(channelIds) > 0 {
-			bindingData = PreloadBindingData(channelIds)
+
+		// Filter by user limit: remove channels that are full and user is not already bound
+		if userId > 0 {
+			targetChannels = filterChannelsByUserLimit(targetChannels, userId, bindingData)
 		}
+
+		if len(targetChannels) > 0 {
+			break
+		}
+		// All channels at this priority are full, try next priority level
 	}
 
-	// Filter by user limit: remove channels that are full and user is not already bound
-	if userId > 0 {
-		targetChannels = filterChannelsByUserLimit(targetChannels, userId, bindingData)
-		if len(targetChannels) == 0 {
-			return nil, nil
-		}
+	if len(targetChannels) == 0 {
+		return nil, nil
 	}
 
 	// Among channels with max_users > 0, apply least-bindings load balancing
