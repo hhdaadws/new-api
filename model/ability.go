@@ -183,39 +183,67 @@ func GetChannel(group string, model string, retry int, userId int) (*Channel, er
 }
 
 // filterAbilitiesByUserLimit filters abilities to exclude channels that have reached their user limit.
+// If the user is already bound to one of the candidate channels, only that channel
+// (among those with user limits) is kept, preventing a user from binding to multiple channels.
 func filterAbilitiesByUserLimit(abilities []Ability, userId int) []Ability {
-	// Load channels to check max_users
-	var filtered []Ability
+	// First pass: load channel configs and check if user is already bound to any candidate
+	type channelInfo struct {
+		maxUsers      int
+		expireMinutes int
+	}
+	channelConfigs := make(map[int]channelInfo)
+	boundChannelId := 0
+
 	for _, ability := range abilities {
 		var ch Channel
 		if err := DB.Select("id, max_users, user_bind_expire_minutes").First(&ch, "id = ?", ability.ChannelId).Error; err != nil {
 			continue
 		}
 		maxUsers := ch.GetMaxUsers()
-		if maxUsers <= 0 {
-			filtered = append(filtered, ability)
+		expireMinutes := ch.GetUserBindExpireMinutes()
+		channelConfigs[ability.ChannelId] = channelInfo{maxUsers: maxUsers, expireMinutes: expireMinutes}
+
+		if maxUsers <= 0 || boundChannelId > 0 {
 			continue
 		}
-		expireMinutes := ch.GetUserBindExpireMinutes()
-		// Check if user is already bound
+		// Check if user is already bound to this channel
 		var existingBinding ChannelUserBinding
 		err := DB.Where("channel_id = ? AND user_id = ?", ability.ChannelId, userId).First(&existingBinding).Error
 		if err == nil {
-			// User is bound, check expiration
 			if expireMinutes <= 0 || existingBinding.LastUsedTime >= time.Now().Add(-time.Duration(expireMinutes)*time.Minute).Unix() {
-				filtered = append(filtered, ability)
-				continue
+				boundChannelId = ability.ChannelId
 			}
 		}
-		// Count active bindings
+	}
+
+	// Second pass: filter
+	var filtered []Ability
+	for _, ability := range abilities {
+		cfg, ok := channelConfigs[ability.ChannelId]
+		if !ok {
+			continue
+		}
+		if cfg.maxUsers <= 0 {
+			// No user limit, always available
+			filtered = append(filtered, ability)
+			continue
+		}
+		if boundChannelId > 0 {
+			// User is already bound: only keep the bound channel
+			if ability.ChannelId == boundChannelId {
+				filtered = append(filtered, ability)
+			}
+			continue
+		}
+		// User has no existing binding: check capacity
 		var count int64
-		if expireMinutes <= 0 {
+		if cfg.expireMinutes <= 0 {
 			DB.Model(&ChannelUserBinding{}).Where("channel_id = ?", ability.ChannelId).Count(&count)
 		} else {
-			cutoff := time.Now().Add(-time.Duration(expireMinutes) * time.Minute).Unix()
+			cutoff := time.Now().Add(-time.Duration(cfg.expireMinutes) * time.Minute).Unix()
 			DB.Model(&ChannelUserBinding{}).Where("channel_id = ? AND last_used_time >= ?", ability.ChannelId, cutoff).Count(&count)
 		}
-		if int(count) < maxUsers {
+		if int(count) < cfg.maxUsers {
 			filtered = append(filtered, ability)
 		}
 	}

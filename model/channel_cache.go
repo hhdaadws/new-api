@@ -249,8 +249,24 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 
 // filterChannelsByUserLimit removes channels that have reached their user limit
 // for a user who is not already bound to them.
+// If the user is already bound to one of the candidate channels, only that channel
+// (among those with user limits) is kept, preventing a user from binding to multiple channels.
 // bindingData is preloaded binding data from PreloadBindingData (may be nil if no channels have user limits).
 func filterChannelsByUserLimit(channels []*Channel, userId int, bindingData map[int]map[int]int64) []*Channel {
+	// First pass: check if user is already bound to any candidate channel
+	var boundChannel *Channel
+	for _, ch := range channels {
+		if ch.GetMaxUsers() <= 0 {
+			continue
+		}
+		expireMinutes := ch.GetUserBindExpireMinutes()
+		if isUserBoundFromData(bindingData, ch.Id, userId, expireMinutes) {
+			boundChannel = ch
+			break
+		}
+	}
+
+	// Second pass: filter channels
 	var available []*Channel
 	for _, ch := range channels {
 		maxUsers := ch.GetMaxUsers()
@@ -259,17 +275,19 @@ func filterChannelsByUserLimit(channels []*Channel, userId int, bindingData map[
 			available = append(available, ch)
 			continue
 		}
-		expireMinutes := ch.GetUserBindExpireMinutes()
-		if isUserBoundFromData(bindingData, ch.Id, userId, expireMinutes) {
-			// User already bound, channel is available
-			available = append(available, ch)
+		if boundChannel != nil {
+			// User is already bound to a channel: only keep the bound one
+			if ch.Id == boundChannel.Id {
+				available = append(available, ch)
+			}
+			// Skip other channels with user limits
 			continue
 		}
+		// User has no existing binding: check capacity
+		expireMinutes := ch.GetUserBindExpireMinutes()
 		if getActiveCountFromData(bindingData, ch.Id, expireMinutes) < maxUsers {
-			// Channel has capacity
 			available = append(available, ch)
 		}
-		// else: channel is full, skip
 	}
 	return available
 }
