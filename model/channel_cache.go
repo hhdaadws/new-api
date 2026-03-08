@@ -83,6 +83,7 @@ func InitChannelCache() {
 	channelsIDM = newChannelId2channel
 	channelSyncLock.Unlock()
 	common.SysLog("channels synced from database")
+	InitChannelUserBindingCache()
 }
 
 func SyncChannelCache(frequency int) {
@@ -93,10 +94,10 @@ func SyncChannelCache(frequency int) {
 	}
 }
 
-func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel, error) {
+func GetRandomSatisfiedChannel(group string, model string, retry int, userId int) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry)
+		return GetChannel(group, model, retry, userId)
 	}
 
 	channelSyncLock.RLock()
@@ -117,6 +118,17 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 
 	if len(channels) == 1 {
 		if channel, ok := channelsIDM[channels[0]]; ok {
+			// Check user limit for single channel
+			if userId > 0 {
+				maxUsers := channel.GetMaxUsers()
+				if maxUsers > 0 {
+					expireMinutes := channel.GetUserBindExpireMinutes()
+					if !CacheIsUserBound(channel.Id, userId, expireMinutes) &&
+						CacheGetActiveBindingCount(channel.Id, expireMinutes) >= maxUsers {
+						return nil, nil
+					}
+				}
+			}
 			return channel, nil
 		}
 		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
@@ -142,12 +154,10 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 	targetPriority := int64(sortedUniquePriorities[retry])
 
 	// get the priority for the given retry number
-	var sumWeight = 0
 	var targetChannels []*Channel
 	for _, channelId := range channels {
 		if channel, ok := channelsIDM[channelId]; ok {
 			if channel.GetPriority() == targetPriority {
-				sumWeight += channel.GetWeight()
 				targetChannels = append(targetChannels, channel)
 			}
 		} else {
@@ -159,35 +169,147 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 		return nil, errors.New(fmt.Sprintf("no channel found, group: %s, model: %s, priority: %d", group, model, targetPriority))
 	}
 
-	// smoothing factor and adjustment
+	// Filter by user limit: remove channels that are full and user is not already bound
+	if userId > 0 {
+		targetChannels = filterChannelsByUserLimit(targetChannels, userId)
+		if len(targetChannels) == 0 {
+			return nil, nil
+		}
+	}
+
+	// Among channels with max_users > 0, apply least-bindings load balancing
+	targetChannels = applyLeastBindingsBalance(targetChannels)
+
+	selected := weightedRandomSelect(targetChannels)
+	if selected == nil {
+		return nil, errors.New("channel not found")
+	}
+
+	// Create binding if max_users is enabled
+	if userId > 0 && selected.GetMaxUsers() > 0 {
+		// Release RLock before acquiring write lock in CacheBindUser
+		// Since we're deferring RUnlock, we need to bind after function returns
+		// Instead, use a goroutine-safe approach: mark for binding
+		go CacheBindUser(selected.Id, userId)
+	}
+
+	return selected, nil
+}
+
+// filterChannelsByUserLimit removes channels that have reached their user limit
+// for a user who is not already bound to them.
+func filterChannelsByUserLimit(channels []*Channel, userId int) []*Channel {
+	var available []*Channel
+	for _, ch := range channels {
+		maxUsers := ch.GetMaxUsers()
+		if maxUsers <= 0 {
+			// No user limit, always available
+			available = append(available, ch)
+			continue
+		}
+		expireMinutes := ch.GetUserBindExpireMinutes()
+		if CacheIsUserBound(ch.Id, userId, expireMinutes) {
+			// User already bound, channel is available
+			available = append(available, ch)
+			continue
+		}
+		if CacheGetActiveBindingCount(ch.Id, expireMinutes) < maxUsers {
+			// Channel has capacity
+			available = append(available, ch)
+		}
+		// else: channel is full, skip
+	}
+	return available
+}
+
+// applyLeastBindingsBalance filters channels to prefer those with the fewest active bindings.
+// Among channels that have max_users > 0, keeps only those with the minimum binding count.
+// Channels without user limits (max_users == 0) are always included.
+func applyLeastBindingsBalance(channels []*Channel) []*Channel {
+	if len(channels) <= 1 {
+		return channels
+	}
+
+	// Separate channels with and without user limits
+	var withLimit []*Channel
+	var withoutLimit []*Channel
+	for _, ch := range channels {
+		if ch.GetMaxUsers() > 0 {
+			withLimit = append(withLimit, ch)
+		} else {
+			withoutLimit = append(withoutLimit, ch)
+		}
+	}
+
+	// If no channels have user limits, return all
+	if len(withLimit) == 0 {
+		return channels
+	}
+
+	// If there are channels without limits, include them all + all with limits
+	// (no need to load balance, unlimited channels handle overflow)
+	if len(withoutLimit) > 0 {
+		return channels
+	}
+
+	// All channels have user limits: find minimum binding count, keep only those
+	minCount := -1
+	type channelWithCount struct {
+		ch    *Channel
+		count int
+	}
+	var withCounts []channelWithCount
+	for _, ch := range withLimit {
+		count := CacheGetActiveBindingCount(ch.Id, ch.GetUserBindExpireMinutes())
+		withCounts = append(withCounts, channelWithCount{ch, count})
+		if minCount < 0 || count < minCount {
+			minCount = count
+		}
+	}
+
+	var result []*Channel
+	for _, wc := range withCounts {
+		if wc.count == minCount {
+			result = append(result, wc.ch)
+		}
+	}
+	return result
+}
+
+// weightedRandomSelect selects a channel using weight-based random selection.
+func weightedRandomSelect(targetChannels []*Channel) *Channel {
+	if len(targetChannels) == 0 {
+		return nil
+	}
+	if len(targetChannels) == 1 {
+		return targetChannels[0]
+	}
+
+	sumWeight := 0
+	for _, ch := range targetChannels {
+		sumWeight += ch.GetWeight()
+	}
+
 	smoothingFactor := 1
 	smoothingAdjustment := 0
 
 	if sumWeight == 0 {
-		// when all channels have weight 0, set sumWeight to the number of channels and set smoothing adjustment to 100
-		// each channel's effective weight = 100
 		sumWeight = len(targetChannels) * 100
 		smoothingAdjustment = 100
 	} else if sumWeight/len(targetChannels) < 10 {
-		// when the average weight is less than 10, set smoothing factor to 100
 		smoothingFactor = 100
 	}
 
-	// Calculate the total weight of all channels up to endIdx
 	totalWeight := sumWeight * smoothingFactor
-
-	// Generate a random value in the range [0, totalWeight)
 	randomWeight := rand.Intn(totalWeight)
 
-	// Find a channel based on its weight
 	for _, channel := range targetChannels {
 		randomWeight -= channel.GetWeight()*smoothingFactor + smoothingAdjustment
 		if randomWeight < 0 {
-			return channel, nil
+			return channel
 		}
 	}
-	// return null if no channel is not found
-	return nil, errors.New("channel not found")
+	return nil
 }
 
 func CacheGetChannel(id int) (*Channel, error) {

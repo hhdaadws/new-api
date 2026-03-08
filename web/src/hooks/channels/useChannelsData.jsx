@@ -66,6 +66,12 @@ export const useChannelsData = () => {
   const [batchSetTagValue, setBatchSetTagValue] = useState('');
   const [compactMode, setCompactMode] = useTableCompactMode('channels');
 
+  // User bindings states
+  const [bindingCounts, setBindingCounts] = useState({});
+  const [showUserBindingsModal, setShowUserBindingsModal] = useState(false);
+  const [userBindingsChannelId, setUserBindingsChannelId] = useState(null);
+  const [userBindingsChannelName, setUserBindingsChannelName] = useState('');
+
   // Column visibility states
   const [visibleColumns, setVisibleColumns] = useState({});
   const [showColumnSelector, setShowColumnSelector] = useState(false);
@@ -140,6 +146,7 @@ export const useChannelsData = () => {
     BALANCE: 'balance',
     PRIORITY: 'priority',
     WEIGHT: 'weight',
+    USER_BINDINGS: 'user_bindings',
     OPERATE: 'operate',
   };
 
@@ -180,6 +187,7 @@ export const useChannelsData = () => {
       [COLUMN_KEYS.BALANCE]: true,
       [COLUMN_KEYS.PRIORITY]: true,
       [COLUMN_KEYS.WEIGHT]: true,
+      [COLUMN_KEYS.USER_BINDINGS]: false,
       [COLUMN_KEYS.OPERATE]: true,
     };
   };
@@ -356,13 +364,16 @@ export const useChannelsData = () => {
 
     const { success, message, data } = res.data;
     if (success) {
-      const { items, total, type_counts } = data;
+      const { items, total, type_counts, binding_counts } = data;
       if (type_counts) {
         const sumAll = Object.values(type_counts).reduce(
           (acc, v) => acc + v,
           0,
         );
         setTypeCounts({ ...type_counts, all: sumAll });
+      }
+      if (binding_counts) {
+        setBindingCounts(binding_counts);
       }
       setChannelFormat(items, enableTagMode);
       setChannelCount(total);
@@ -403,12 +414,15 @@ export const useChannelsData = () => {
       );
       const { success, message, data } = res.data;
       if (success) {
-        const { items = [], total = 0, type_counts = {} } = data;
+        const { items = [], total = 0, type_counts = {}, binding_counts } = data;
         const sumAll = Object.values(type_counts).reduce(
           (acc, v) => acc + v,
           0,
         );
         setTypeCounts({ ...type_counts, all: sumAll });
+        if (binding_counts) {
+          setBindingCounts(binding_counts);
+        }
         setChannelFormat(items, enableTagMode);
         setChannelCount(total);
         setActivePage(page);
@@ -1195,6 +1209,15 @@ export const useChannelsData = () => {
     isStreamTest,
     setIsStreamTest,
     allSelectingRef,
+
+    // User bindings states
+    bindingCounts,
+    showUserBindingsModal,
+    setShowUserBindingsModal,
+    userBindingsChannelId,
+    setUserBindingsChannelId,
+    userBindingsChannelName,
+    setUserBindingsChannelName,
 
     // Multi-key management states
     showMultiKeyManageModal,

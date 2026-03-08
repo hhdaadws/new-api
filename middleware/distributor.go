@@ -165,6 +165,13 @@ func Distribute() func(c *gin.Context) {
 		c.Next()
 		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
 			service.RecordChannelAffinity(c, channel.Id)
+			// Update last_used_time for user-channel binding
+			if channel.GetMaxUsers() > 0 {
+				userId := c.GetInt(string(constant.ContextKeyUserId))
+				if userId > 0 {
+					model.CacheUpdateBindingLastUsed(channel.Id, userId)
+				}
+			}
 		}
 	}
 }

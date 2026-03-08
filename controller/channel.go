@@ -163,12 +163,16 @@ func GetAllChannels(c *gin.Context) {
 	for _, r := range results {
 		typeCounts[r.Type] = r.Count
 	}
+	// Get active user binding counts for channels with max_users > 0
+	bindingCounts := model.CacheGetAllActiveBindingCounts()
+
 	common.ApiSuccess(c, gin.H{
-		"items":       channelData,
-		"total":       total,
-		"page":        pageInfo.GetPage(),
-		"page_size":   pageInfo.GetPageSize(),
-		"type_counts": typeCounts,
+		"items":          channelData,
+		"total":          total,
+		"page":           pageInfo.GetPage(),
+		"page_size":      pageInfo.GetPageSize(),
+		"type_counts":    typeCounts,
+		"binding_counts": bindingCounts,
 	})
 	return
 }
@@ -346,13 +350,16 @@ func SearchChannels(c *gin.Context) {
 		clearChannelInfo(datum)
 	}
 
+	bindingCounts := model.CacheGetAllActiveBindingCounts()
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
 		"data": gin.H{
-			"items":       pagedData,
-			"total":       total,
-			"type_counts": typeCounts,
+			"items":          pagedData,
+			"total":          total,
+			"type_counts":    typeCounts,
+			"binding_counts": bindingCounts,
 		},
 	})
 	return
@@ -1953,5 +1960,65 @@ func OllamaVersion(c *gin.Context) {
 		"data": gin.H{
 			"version": version,
 		},
+	})
+}
+
+func GetChannelUserBindings(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	channel, err := model.GetChannelById(id, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	bindings, err := model.GetChannelUserBindingsWithUsername(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	expireMinutes := channel.GetUserBindExpireMinutes()
+	activeCount := model.CacheGetSingleActiveBindingCount(id)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"bindings":       bindings,
+			"max_users":      channel.GetMaxUsers(),
+			"active_count":   activeCount,
+			"expire_minutes": expireMinutes,
+		},
+	})
+}
+
+func ReleaseChannelUserBinding(c *gin.Context) {
+	channelId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	userId, err := strconv.Atoi(c.Param("user_id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.CacheUnbindUser(channelId, userId)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+	})
+}
+
+func ReleaseAllChannelUserBindings(c *gin.Context) {
+	channelId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.CacheUnbindAllUsers(channelId)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
 	})
 }

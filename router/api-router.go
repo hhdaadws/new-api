@@ -241,6 +241,9 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.POST("/upstream_updates/apply_all", controller.ApplyAllChannelUpstreamModelUpdates)
 			channelRoute.POST("/upstream_updates/detect", controller.DetectChannelUpstreamModelUpdates)
 			channelRoute.POST("/upstream_updates/detect_all", controller.DetectAllChannelUpstreamModelUpdates)
+			channelRoute.GET("/:id/user_bindings", controller.GetChannelUserBindings)
+			channelRoute.DELETE("/:id/user_bindings/:user_id", controller.ReleaseChannelUserBinding)
+			channelRoute.DELETE("/:id/user_bindings", controller.ReleaseAllChannelUserBindings)
 		}
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())

@@ -327,6 +327,8 @@ export const getChannelsColumns = ({
   setCurrentMultiKeyChannel,
   openUpstreamUpdateModal,
   detectChannelUpstreamUpdates,
+  bindingCounts,
+  openUserBindingsModal,
 }) => {
   return [
     {
@@ -675,6 +677,28 @@ export const getChannelsColumns = ({
             />
           );
         }
+      },
+    },
+    {
+      key: COLUMN_KEYS.USER_BINDINGS,
+      title: t('用户绑定'),
+      dataIndex: 'max_users',
+      width: 100,
+      render: (text, record) => {
+        if (record.children !== undefined) return null;
+        const maxUsers = record.max_users || 0;
+        if (maxUsers <= 0) return '-';
+        const bindCount = (bindingCounts || {})[record.id] || 0;
+        const isFull = bindCount >= maxUsers;
+        return (
+          <Tag
+            color={isFull ? 'red' : 'green'}
+            style={{ cursor: 'pointer' }}
+            onClick={() => openUserBindingsModal && openUserBindingsModal(record.id, record.name)}
+          >
+            {bindCount}/{maxUsers}
+          </Tag>
+        );
       },
     },
     {

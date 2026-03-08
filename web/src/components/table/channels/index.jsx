@@ -34,6 +34,7 @@ import EditChannelModal from './modals/EditChannelModal';
 import EditTagModal from './modals/EditTagModal';
 import MultiKeyManageModal from './modals/MultiKeyManageModal';
 import ChannelUpstreamUpdateModal from './modals/ChannelUpstreamUpdateModal';
+import ChannelUserBindingsModal from './modals/ChannelUserBindingsModal';
 import { createCardProPagination } from '../../../helpers/utils';
 
 const ChannelsPage = () => {
@@ -72,6 +73,13 @@ const ChannelsPage = () => {
         confirmLoading={channelsData.upstreamApplyLoading}
         onConfirm={channelsData.applyUpstreamUpdates}
         onCancel={channelsData.closeUpstreamUpdateModal}
+      />
+
+      <ChannelUserBindingsModal
+        visible={channelsData.showUserBindingsModal}
+        channelId={channelsData.userBindingsChannelId}
+        channelName={channelsData.userBindingsChannelName}
+        onClose={() => channelsData.setShowUserBindingsModal(false)}
       />
 
       {/* Main Content */}

@@ -3290,6 +3290,10 @@
     "输入价格：{{symbol}}{{price}} / 1M tokens": "Prix d'entrée : {{symbol}}{{price}} / 1M tokens",
     "输出价格 {{symbol}}{{price}} / 1M tokens": "Prix de sortie {{symbol}}{{price}} / 1M tokens",
     "输出价格：{{symbol}}{{price}} / 1M tokens": "Prix de sortie : {{symbol}}{{price}} / 1M tokens",
-    "输出价格：{{symbol}}{{total}} / 1M tokens": "Prix de sortie : {{symbol}}{{total}} / 1M tokens"
+    "输出价格：{{symbol}}{{total}} / 1M tokens": "Prix de sortie : {{symbol}}{{total}} / 1M tokens",
+    "自动禁用错误代码": "Codes d'erreur de désactivation automatique",
+    "当上游通道返回的错误代码匹配这些值时（不区分大小写），自动禁用通道": "Lorsque le canal en amont renvoie un code d'erreur correspondant à ces valeurs (insensible à la casse), désactiver automatiquement le canal",
+    "自动禁用错误类型": "Types d'erreur de désactivation automatique",
+    "当上游通道返回的错误类型匹配这些值时（不区分大小写），自动禁用通道": "Lorsque le canal en amont renvoie un type d'erreur correspondant à ces valeurs (insensible à la casse), désactiver automatiquement le canal"
   }
 }

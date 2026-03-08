@@ -150,6 +150,8 @@ func InitOptionMap() {
 	common.OptionMap["SensitiveWords"] = setting.SensitiveWordsToString()
 	common.OptionMap["StreamCacheQueueLength"] = strconv.Itoa(setting.StreamCacheQueueLength)
 	common.OptionMap["AutomaticDisableKeywords"] = operation_setting.AutomaticDisableKeywordsToString()
+	common.OptionMap["AutomaticDisableErrorCodes"] = operation_setting.AutomaticDisableErrorCodesToString()
+	common.OptionMap["AutomaticDisableErrorTypes"] = operation_setting.AutomaticDisableErrorTypesToString()
 	common.OptionMap["AutomaticDisableStatusCodes"] = operation_setting.AutomaticDisableStatusCodesToString()
 	common.OptionMap["AutomaticRetryStatusCodes"] = operation_setting.AutomaticRetryStatusCodesToString()
 	common.OptionMap["ExposeRatioEnabled"] = strconv.FormatBool(ratio_setting.IsExposeRatioEnabled())
@@ -465,6 +467,10 @@ func updateOptionMap(key string, value string) (err error) {
 		setting.SensitiveWordsFromString(value)
 	case "AutomaticDisableKeywords":
 		operation_setting.AutomaticDisableKeywordsFromString(value)
+	case "AutomaticDisableErrorCodes":
+		operation_setting.AutomaticDisableErrorCodesFromString(value)
+	case "AutomaticDisableErrorTypes":
+		operation_setting.AutomaticDisableErrorTypesFromString(value)
 	case "AutomaticDisableStatusCodes":
 		err = operation_setting.AutomaticDisableStatusCodesFromString(value)
 	case "AutomaticRetryStatusCodes":

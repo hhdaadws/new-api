@@ -70,29 +70,10 @@ func ShouldDisableChannel(channelType int, err *types.NewAPIError) bool {
 		}
 	}
 	oaiErr := err.ToOpenAIError()
-	switch oaiErr.Code {
-	case "invalid_api_key":
-		return true
-	case "account_deactivated":
-		return true
-	case "billing_not_active":
-		return true
-	case "pre_consume_token_quota_failed":
-		return true
-	case "Arrearage":
+	if operation_setting.ShouldDisableByErrorCode(fmt.Sprintf("%v", oaiErr.Code)) {
 		return true
 	}
-	switch oaiErr.Type {
-	case "insufficient_quota":
-		return true
-	case "insufficient_user_quota":
-		return true
-	// https://docs.anthropic.com/claude/reference/errors
-	case "authentication_error":
-		return true
-	case "permission_error":
-		return true
-	case "forbidden":
+	if operation_setting.ShouldDisableByErrorType(oaiErr.Type) {
 		return true
 	}
 

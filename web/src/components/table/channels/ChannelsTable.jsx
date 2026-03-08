@@ -63,7 +63,18 @@ const ChannelsTable = (channelsData) => {
     setCurrentMultiKeyChannel,
     openUpstreamUpdateModal,
     detectChannelUpstreamUpdates,
+    // User bindings
+    bindingCounts,
+    setShowUserBindingsModal,
+    setUserBindingsChannelId,
+    setUserBindingsChannelName,
   } = channelsData;
+
+  const openUserBindingsModal = (channelId, channelName) => {
+    setUserBindingsChannelId(channelId);
+    setUserBindingsChannelName(channelName);
+    setShowUserBindingsModal(true);
+  };
 
   // Get all columns
   const allColumns = useMemo(() => {
@@ -90,6 +101,8 @@ const ChannelsTable = (channelsData) => {
       setCurrentMultiKeyChannel,
       openUpstreamUpdateModal,
       detectChannelUpstreamUpdates,
+      bindingCounts,
+      openUserBindingsModal,
     });
   }, [
     t,
@@ -114,6 +127,8 @@ const ChannelsTable = (channelsData) => {
     setCurrentMultiKeyChannel,
     openUpstreamUpdateModal,
     detectChannelUpstreamUpdates,
+    bindingCounts,
+    openUserBindingsModal,
   ]);
 
   // Filter columns based on visibility settings

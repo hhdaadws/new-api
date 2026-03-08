@@ -2956,6 +2956,10 @@
     "输入价格：{{symbol}}{{price}} / 1M tokens": "输入价格：{{symbol}}{{price}} / 1M tokens",
     "输出价格 {{symbol}}{{price}} / 1M tokens": "输出价格 {{symbol}}{{price}} / 1M tokens",
     "输出价格：{{symbol}}{{price}} / 1M tokens": "输出价格：{{symbol}}{{price}} / 1M tokens",
-    "输出价格：{{symbol}}{{total}} / 1M tokens": "输出价格：{{symbol}}{{total}} / 1M tokens"
+    "输出价格：{{symbol}}{{total}} / 1M tokens": "输出价格：{{symbol}}{{total}} / 1M tokens",
+    "自动禁用错误代码": "自动禁用错误代码",
+    "当上游通道返回的错误代码匹配这些值时（不区分大小写），自动禁用通道": "当上游通道返回的错误代码匹配这些值时（不区分大小写），自动禁用通道",
+    "自动禁用错误类型": "自动禁用错误类型",
+    "当上游通道返回的错误类型匹配这些值时（不区分大小写），自动禁用通道": "当上游通道返回的错误类型匹配这些值时（不区分大小写），自动禁用通道"
   }
 }

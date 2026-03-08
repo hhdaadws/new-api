@@ -180,6 +180,8 @@ const EditChannelModal = (props) => {
     test_model: '',
     groups: ['default'],
     priority: 0,
+    max_users: 0,
+    user_bind_expire_minutes: 0,
     weight: 0,
     tag: '',
     multi_key_mode: 'random',
@@ -3460,6 +3462,35 @@ const EditChannelModal = (props) => {
                             handleInputChange('weight', value)
                           }
                           style={{ width: '100%' }}
+                        />
+                      </Col>
+                    </Row>
+
+                    <Row gutter={12}>
+                      <Col span={12}>
+                        <Form.InputNumber
+                          field='max_users'
+                          label={t('最大用户数')}
+                          placeholder={t('0 表示不限制')}
+                          min={0}
+                          onNumberChange={(value) =>
+                            handleInputChange('max_users', value)
+                          }
+                          style={{ width: '100%' }}
+                          extraText={t('限制可使用该渠道的最大用户数，0 表示不限制')}
+                        />
+                      </Col>
+                      <Col span={12}>
+                        <Form.InputNumber
+                          field='user_bind_expire_minutes'
+                          label={t('用户绑定过期时间(分钟)')}
+                          placeholder={t('0 表示不过期')}
+                          min={0}
+                          onNumberChange={(value) =>
+                            handleInputChange('user_bind_expire_minutes', value)
+                          }
+                          style={{ width: '100%' }}
+                          extraText={t('用户绑定自动过期时间，0 表示不过期仅手动释放')}
                         />
                       </Col>
                     </Row>

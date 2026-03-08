@@ -48,7 +48,9 @@ type Channel struct {
 	Setting           *string `json:"setting" gorm:"type:text"` // 渠道额外设置
 	ParamOverride     *string `json:"param_override" gorm:"type:text"`
 	HeaderOverride    *string `json:"header_override" gorm:"type:text"`
-	Remark            *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	Remark                *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	MaxUsers              *int    `json:"max_users" gorm:"default:0"`
+	UserBindExpireMinutes *int    `json:"user_bind_expire_minutes" gorm:"default:0"`
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
@@ -403,8 +405,21 @@ func BatchDeleteChannels(ids []int) error {
 			tx.Rollback()
 			return err
 		}
+		if err := tx.Where("channel_id in (?)", chunk).Delete(&ChannelUserBinding{}).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
 	}
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
+	// Clean up in-memory binding cache
+	channelSyncLock.Lock()
+	for _, id := range ids {
+		delete(channelUserBindings, id)
+	}
+	channelSyncLock.Unlock()
+	return nil
 }
 
 func (channel *Channel) GetPriority() int64 {
@@ -419,6 +434,20 @@ func (channel *Channel) GetWeight() int {
 		return 0
 	}
 	return int(*channel.Weight)
+}
+
+func (channel *Channel) GetMaxUsers() int {
+	if channel.MaxUsers == nil {
+		return 0
+	}
+	return *channel.MaxUsers
+}
+
+func (channel *Channel) GetUserBindExpireMinutes() int {
+	if channel.UserBindExpireMinutes == nil {
+		return 0
+	}
+	return *channel.UserBindExpireMinutes
 }
 
 func (channel *Channel) GetBaseURL() string {
@@ -532,7 +561,12 @@ func (channel *Channel) Delete() error {
 		return err
 	}
 	err = channel.DeleteAbilities()
-	return err
+	if err != nil {
+		return err
+	}
+	// Clean up user bindings
+	CacheUnbindAllUsers(channel.Id)
+	return nil
 }
 
 var channelStatusLock sync.Mutex

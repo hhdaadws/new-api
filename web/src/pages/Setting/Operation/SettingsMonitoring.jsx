@@ -39,6 +39,8 @@ export default function SettingsMonitoring(props) {
     AutomaticDisableChannelEnabled: false,
     AutomaticEnableChannelEnabled: false,
     AutomaticDisableKeywords: '',
+    AutomaticDisableErrorCodes: '',
+    AutomaticDisableErrorTypes: '',
     AutomaticDisableStatusCodes: '401',
     AutomaticRetryStatusCodes:
       '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
@@ -273,6 +275,30 @@ export default function SettingsMonitoring(props) {
                   autosize={{ minRows: 6, maxRows: 12 }}
                   onChange={(value) =>
                     setInputs({ ...inputs, AutomaticDisableKeywords: value })
+                  }
+                />
+                <Form.TextArea
+                  label={t('自动禁用错误代码')}
+                  placeholder={t('一行一个，不区分大小写')}
+                  extraText={t(
+                    '当上游通道返回的错误代码匹配这些值时（不区分大小写），自动禁用通道',
+                  )}
+                  field={'AutomaticDisableErrorCodes'}
+                  autosize={{ minRows: 4, maxRows: 8 }}
+                  onChange={(value) =>
+                    setInputs({ ...inputs, AutomaticDisableErrorCodes: value })
+                  }
+                />
+                <Form.TextArea
+                  label={t('自动禁用错误类型')}
+                  placeholder={t('一行一个，不区分大小写')}
+                  extraText={t(
+                    '当上游通道返回的错误类型匹配这些值时（不区分大小写），自动禁用通道',
+                  )}
+                  field={'AutomaticDisableErrorTypes'}
+                  autosize={{ minRows: 4, maxRows: 8 }}
+                  onChange={(value) =>
+                    setInputs({ ...inputs, AutomaticDisableErrorTypes: value })
                   }
                 />
               </Col>

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 
@@ -103,7 +104,7 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 	return channelQuery, nil
 }
 
-func GetChannel(group string, model string, retry int) (*Channel, error) {
+func GetChannel(group string, model string, retry int, userId int) (*Channel, error) {
 	var abilities []Ability
 
 	var err error = nil
@@ -119,28 +120,85 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 	if err != nil {
 		return nil, err
 	}
-	channel := Channel{}
-	if len(abilities) > 0 {
-		// Randomly choose one
-		weightSum := uint(0)
-		for _, ability_ := range abilities {
-			weightSum += ability_.Weight + 10
-		}
-		// Randomly choose one
-		weight := common.GetRandomInt(int(weightSum))
-		for _, ability_ := range abilities {
-			weight -= int(ability_.Weight) + 10
-			//log.Printf("weight: %d, ability weight: %d", weight, *ability_.Weight)
-			if weight <= 0 {
-				channel.Id = ability_.ChannelId
-				break
-			}
-		}
-	} else {
+
+	if len(abilities) == 0 {
 		return nil, nil
 	}
+
+	// Filter by user limit if userId is provided
+	if userId > 0 {
+		abilities = filterAbilitiesByUserLimit(abilities, userId)
+		if len(abilities) == 0 {
+			return nil, nil
+		}
+	}
+
+	// Randomly choose one
+	channel := Channel{}
+	weightSum := uint(0)
+	for _, ability_ := range abilities {
+		weightSum += ability_.Weight + 10
+	}
+	weight := common.GetRandomInt(int(weightSum))
+	for _, ability_ := range abilities {
+		weight -= int(ability_.Weight) + 10
+		if weight <= 0 {
+			channel.Id = ability_.ChannelId
+			break
+		}
+	}
+
 	err = DB.First(&channel, "id = ?", channel.Id).Error
-	return &channel, err
+	if err != nil {
+		return nil, err
+	}
+
+	// Create binding if max_users is enabled
+	if userId > 0 && channel.GetMaxUsers() > 0 {
+		go CacheBindUser(channel.Id, userId)
+	}
+
+	return &channel, nil
+}
+
+// filterAbilitiesByUserLimit filters abilities to exclude channels that have reached their user limit.
+func filterAbilitiesByUserLimit(abilities []Ability, userId int) []Ability {
+	// Load channels to check max_users
+	var filtered []Ability
+	for _, ability := range abilities {
+		var ch Channel
+		if err := DB.Select("id, max_users, user_bind_expire_minutes").First(&ch, "id = ?", ability.ChannelId).Error; err != nil {
+			continue
+		}
+		maxUsers := ch.GetMaxUsers()
+		if maxUsers <= 0 {
+			filtered = append(filtered, ability)
+			continue
+		}
+		expireMinutes := ch.GetUserBindExpireMinutes()
+		// Check if user is already bound
+		var existingBinding ChannelUserBinding
+		err := DB.Where("channel_id = ? AND user_id = ?", ability.ChannelId, userId).First(&existingBinding).Error
+		if err == nil {
+			// User is bound, check expiration
+			if expireMinutes <= 0 || existingBinding.LastUsedTime >= time.Now().Add(-time.Duration(expireMinutes)*time.Minute).Unix() {
+				filtered = append(filtered, ability)
+				continue
+			}
+		}
+		// Count active bindings
+		var count int64
+		if expireMinutes <= 0 {
+			DB.Model(&ChannelUserBinding{}).Where("channel_id = ?", ability.ChannelId).Count(&count)
+		} else {
+			cutoff := time.Now().Add(-time.Duration(expireMinutes) * time.Minute).Unix()
+			DB.Model(&ChannelUserBinding{}).Where("channel_id = ? AND last_used_time >= ?", ability.ChannelId, cutoff).Count(&count)
+		}
+		if int(count) < maxUsers {
+			filtered = append(filtered, ability)
+		}
+	}
+	return filtered
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
