@@ -325,13 +325,10 @@ func CacheUnbindAllUsers(channelId int) {
 func CacheGetAllActiveBindingCounts() map[int]int {
 	// Get channel configs for expiration
 	channelSyncLock.RLock()
-	type chConfig struct {
-		expireMinutes int
-	}
-	configs := make(map[int]chConfig)
+	configs := make(map[int]int) // channelId → expireMinutes
 	if channelsIDM != nil {
 		for channelId, ch := range channelsIDM {
-			configs[channelId] = chConfig{expireMinutes: ch.GetUserBindExpireMinutes()}
+			configs[channelId] = ch.GetUserBindExpireMinutes()
 		}
 	}
 	channelSyncLock.RUnlock()
@@ -342,7 +339,7 @@ func CacheGetAllActiveBindingCounts() map[int]int {
 	return memGetAllActiveBindingCounts(configs)
 }
 
-func redisGetAllActiveBindingCounts(configs map[int]struct{ expireMinutes int }) map[int]int {
+func redisGetAllActiveBindingCounts(configs map[int]int) map[int]int {
 	result := make(map[int]int)
 	channelIds := make([]int, 0, len(configs))
 	for channelId := range configs {
@@ -369,12 +366,12 @@ func redisGetAllActiveBindingCounts(configs map[int]struct{ expireMinutes int })
 		if err != nil || len(data) == 0 {
 			continue
 		}
-		cfg := configs[channelId]
+		expireMinutes := configs[channelId]
 		count := 0
-		if cfg.expireMinutes <= 0 {
+		if expireMinutes <= 0 {
 			count = len(data)
 		} else {
-			cutoff := time.Now().Add(-time.Duration(cfg.expireMinutes) * time.Minute).Unix()
+			cutoff := time.Now().Add(-time.Duration(expireMinutes) * time.Minute).Unix()
 			for _, val := range data {
 				lastUsed, err := strconv.ParseInt(val, 10, 64)
 				if err != nil {
@@ -392,16 +389,13 @@ func redisGetAllActiveBindingCounts(configs map[int]struct{ expireMinutes int })
 	return result
 }
 
-func memGetAllActiveBindingCounts(configs map[int]struct{ expireMinutes int }) map[int]int {
+func memGetAllActiveBindingCounts(configs map[int]int) map[int]int {
 	bindingCacheLock.RLock()
 	defer bindingCacheLock.RUnlock()
 
 	result := make(map[int]int)
 	for channelId, users := range channelUserBindings {
-		expireMinutes := 0
-		if cfg, ok := configs[channelId]; ok {
-			expireMinutes = cfg.expireMinutes
-		}
+		expireMinutes := configs[channelId]
 		count := 0
 		if expireMinutes <= 0 {
 			count = len(users)
