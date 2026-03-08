@@ -100,8 +100,12 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 		return GetChannel(group, model, retry, userId)
 	}
 
+	// Phase 1: Read channel data under channelSyncLock
+	var targetChannels []*Channel
+	var singleChannel *Channel
+	var channelErr error
+
 	channelSyncLock.RLock()
-	defer channelSyncLock.RUnlock()
 
 	// First, try to find channels with the exact model name.
 	channels := group2model2channels[group][model]
@@ -113,34 +117,44 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 	}
 
 	if len(channels) == 0 {
+		channelSyncLock.RUnlock()
 		return nil, nil
 	}
 
 	if len(channels) == 1 {
 		if channel, ok := channelsIDM[channels[0]]; ok {
-			// Check user limit for single channel
-			if userId > 0 {
-				maxUsers := channel.GetMaxUsers()
-				if maxUsers > 0 {
-					expireMinutes := channel.GetUserBindExpireMinutes()
-					if !CacheIsUserBound(channel.Id, userId, expireMinutes) &&
-						CacheGetActiveBindingCount(channel.Id, expireMinutes) >= maxUsers {
-						return nil, nil
-					}
-					// Create binding if max_users is enabled
-					go CacheBindUser(channel.Id, userId)
-				}
-			}
-			return channel, nil
+			singleChannel = channel
+		} else {
+			channelErr = fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
 		}
-		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
+		channelSyncLock.RUnlock()
+
+		if channelErr != nil {
+			return nil, channelErr
+		}
+
+		// Check user limit for single channel (outside lock, safe for Redis I/O)
+		if userId > 0 {
+			maxUsers := singleChannel.GetMaxUsers()
+			if maxUsers > 0 {
+				expireMinutes := singleChannel.GetUserBindExpireMinutes()
+				if !CacheIsUserBound(singleChannel.Id, userId, expireMinutes) &&
+					CacheGetActiveBindingCount(singleChannel.Id, expireMinutes) >= maxUsers {
+					return nil, nil
+				}
+				go CacheBindUser(singleChannel.Id, userId)
+			}
+		}
+		return singleChannel, nil
 	}
 
+	// Multiple channels: filter by priority
 	uniquePriorities := make(map[int]bool)
 	for _, channelId := range channels {
 		if channel, ok := channelsIDM[channelId]; ok {
 			uniquePriorities[int(channel.GetPriority())] = true
 		} else {
+			channelSyncLock.RUnlock()
 			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
 		}
 	}
@@ -155,32 +169,51 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 	}
 	targetPriority := int64(sortedUniquePriorities[retry])
 
-	// get the priority for the given retry number
-	var targetChannels []*Channel
+	// get the channels for the target priority
 	for _, channelId := range channels {
 		if channel, ok := channelsIDM[channelId]; ok {
 			if channel.GetPriority() == targetPriority {
 				targetChannels = append(targetChannels, channel)
 			}
 		} else {
+			channelSyncLock.RUnlock()
 			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
 		}
 	}
+
+	// Release channelSyncLock before doing binding checks (Redis I/O)
+	// Channel pointers remain valid because channelsIDM sync creates new objects
+	channelSyncLock.RUnlock()
 
 	if len(targetChannels) == 0 {
 		return nil, errors.New(fmt.Sprintf("no channel found, group: %s, model: %s, priority: %d", group, model, targetPriority))
 	}
 
+	// Phase 2: Filter by user bindings (no channelSyncLock, safe for Redis I/O)
+	// Preload binding data for all candidate channels in one pipeline
+	var bindingData map[int]map[int]int64
+	if userId > 0 {
+		channelIds := make([]int, 0, len(targetChannels))
+		for _, ch := range targetChannels {
+			if ch.GetMaxUsers() > 0 {
+				channelIds = append(channelIds, ch.Id)
+			}
+		}
+		if len(channelIds) > 0 {
+			bindingData = PreloadBindingData(channelIds)
+		}
+	}
+
 	// Filter by user limit: remove channels that are full and user is not already bound
 	if userId > 0 {
-		targetChannels = filterChannelsByUserLimit(targetChannels, userId)
+		targetChannels = filterChannelsByUserLimit(targetChannels, userId, bindingData)
 		if len(targetChannels) == 0 {
 			return nil, nil
 		}
 	}
 
 	// Among channels with max_users > 0, apply least-bindings load balancing
-	targetChannels = applyLeastBindingsBalance(targetChannels)
+	targetChannels = applyLeastBindingsBalance(targetChannels, bindingData)
 
 	selected := weightedRandomSelect(targetChannels)
 	if selected == nil {
@@ -189,9 +222,6 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 
 	// Create binding if max_users is enabled
 	if userId > 0 && selected.GetMaxUsers() > 0 {
-		// Release RLock before acquiring write lock in CacheBindUser
-		// Since we're deferring RUnlock, we need to bind after function returns
-		// Instead, use a goroutine-safe approach: mark for binding
 		go CacheBindUser(selected.Id, userId)
 	}
 
@@ -200,7 +230,8 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 
 // filterChannelsByUserLimit removes channels that have reached their user limit
 // for a user who is not already bound to them.
-func filterChannelsByUserLimit(channels []*Channel, userId int) []*Channel {
+// bindingData is preloaded binding data from PreloadBindingData (may be nil if no channels have user limits).
+func filterChannelsByUserLimit(channels []*Channel, userId int, bindingData map[int]map[int]int64) []*Channel {
 	var available []*Channel
 	for _, ch := range channels {
 		maxUsers := ch.GetMaxUsers()
@@ -210,12 +241,12 @@ func filterChannelsByUserLimit(channels []*Channel, userId int) []*Channel {
 			continue
 		}
 		expireMinutes := ch.GetUserBindExpireMinutes()
-		if CacheIsUserBound(ch.Id, userId, expireMinutes) {
+		if isUserBoundFromData(bindingData, ch.Id, userId, expireMinutes) {
 			// User already bound, channel is available
 			available = append(available, ch)
 			continue
 		}
-		if CacheGetActiveBindingCount(ch.Id, expireMinutes) < maxUsers {
+		if getActiveCountFromData(bindingData, ch.Id, expireMinutes) < maxUsers {
 			// Channel has capacity
 			available = append(available, ch)
 		}
@@ -227,7 +258,8 @@ func filterChannelsByUserLimit(channels []*Channel, userId int) []*Channel {
 // applyLeastBindingsBalance filters channels to prefer those with the fewest active bindings.
 // Among channels that have max_users > 0, keeps only those with the minimum binding count.
 // Channels without user limits (max_users == 0) are always included.
-func applyLeastBindingsBalance(channels []*Channel) []*Channel {
+// bindingData is preloaded binding data from PreloadBindingData (may be nil if no channels have user limits).
+func applyLeastBindingsBalance(channels []*Channel, bindingData map[int]map[int]int64) []*Channel {
 	if len(channels) <= 1 {
 		return channels
 	}
@@ -262,7 +294,7 @@ func applyLeastBindingsBalance(channels []*Channel) []*Channel {
 	}
 	var withCounts []channelWithCount
 	for _, ch := range withLimit {
-		count := CacheGetActiveBindingCount(ch.Id, ch.GetUserBindExpireMinutes())
+		count := getActiveCountFromData(bindingData, ch.Id, ch.GetUserBindExpireMinutes())
 		withCounts = append(withCounts, channelWithCount{ch, count})
 		if minCount < 0 || count < minCount {
 			minCount = count
