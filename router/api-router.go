@@ -199,6 +199,15 @@ func SetApiRouter(router *gin.Engine) {
 			ratioSyncRoute.GET("/channels", controller.GetSyncableChannels)
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
 		}
+		commissionRoute := apiRouter.Group("/commission")
+		commissionRoute.Use(middleware.AdminAuth())
+		{
+			commissionRoute.GET("/", controller.GetAllCommissions)
+			commissionRoute.POST("/approve", controller.ApproveCommission)
+			commissionRoute.POST("/reject", controller.RejectCommission)
+			commissionRoute.POST("/batch/approve", controller.BatchApproveCommissions)
+			commissionRoute.POST("/batch/reject", controller.BatchRejectCommissions)
+		}
 		channelRoute := apiRouter.Group("/channel")
 		channelRoute.Use(middleware.AdminAuth())
 		{

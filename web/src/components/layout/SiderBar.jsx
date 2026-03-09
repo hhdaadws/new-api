@@ -35,6 +35,7 @@ const routerMap = {
   channel: '/console/channel',
   token: '/console/token',
   redemption: '/console/redemption',
+  commission: '/console/commission',
   topup: '/console/topup',
   user: '/console/user',
   subscription: '/console/subscription',
@@ -175,6 +176,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('兑换码管理'),
         itemKey: 'redemption',
         to: '/redemption',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('返佣审核'),
+        itemKey: 'commission',
+        to: '/commission',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {
