@@ -171,6 +171,11 @@ type SubscriptionPlan struct {
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
 
+	// 5-hour rolling window quota (0 = no 5h limit)
+	FiveHourAmount int64 `json:"five_hour_amount" gorm:"type:bigint;not null;default:0"`
+	// Weekly rolling window quota — resets every 7 days from subscription start (0 = no weekly limit)
+	WeeklyAmount int64 `json:"weekly_amount" gorm:"type:bigint;not null;default:0"`
+
 	// Quota reset period for plan
 	QuotaResetPeriod        string `json:"quota_reset_period" gorm:"type:varchar(16);default:'never'"`
 	QuotaResetCustomSeconds int64  `json:"quota_reset_custom_seconds" gorm:"type:bigint;default:0"`
@@ -246,6 +251,13 @@ type UserSubscription struct {
 
 	LastResetTime int64 `json:"last_reset_time" gorm:"type:bigint;default:0"`
 	NextResetTime int64 `json:"next_reset_time" gorm:"type:bigint;default:0;index"`
+
+	// 5-hour rolling window usage tracking
+	FiveHourUsed      int64 `json:"five_hour_used" gorm:"type:bigint;not null;default:0"`
+	FiveHourResetTime int64 `json:"five_hour_reset_time" gorm:"type:bigint;default:0;index"`
+	// Weekly rolling window usage tracking (resets every 7 days from subscription start)
+	WeeklyUsed      int64 `json:"weekly_used" gorm:"type:bigint;not null;default:0"`
+	WeeklyResetTime int64 `json:"weekly_reset_time" gorm:"type:bigint;default:0;index"`
 
 	UpgradeGroup  string `json:"upgrade_group" gorm:"type:varchar(64);default:''"`
 	PrevUserGroup string `json:"prev_user_group" gorm:"type:varchar(64);default:''"`
@@ -344,6 +356,25 @@ func calcNextResetTime(base time.Time, plan *SubscriptionPlan, endUnix int64) in
 		return 0
 	}
 	return next.Unix()
+}
+
+// calcFiveHourResetTime returns the next 5-hour rolling window reset time.
+func calcFiveHourResetTime(baseUnix int64, endUnix int64) int64 {
+	next := baseUnix + 5*3600
+	if endUnix > 0 && next > endUnix {
+		return 0
+	}
+	return next
+}
+
+// calcWeeklyWindowResetTime returns the next 7-day rolling window reset time.
+// This is NOT calendar-aligned; it simply adds 7*24h from the base timestamp.
+func calcWeeklyWindowResetTime(baseUnix int64, endUnix int64) int64 {
+	next := baseUnix + 7*24*3600
+	if endUnix > 0 && next > endUnix {
+		return 0
+	}
+	return next
 }
 
 func GetSubscriptionPlanById(id int) (*SubscriptionPlan, error) {
@@ -467,6 +498,17 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 	if nextReset > 0 {
 		lastReset = now.Unix()
 	}
+
+	// Initialize 5-hour and weekly rolling window reset times
+	fiveHourReset := int64(0)
+	if plan.FiveHourAmount > 0 {
+		fiveHourReset = calcFiveHourResetTime(now.Unix(), endUnix)
+	}
+	weeklyReset := int64(0)
+	if plan.WeeklyAmount > 0 {
+		weeklyReset = calcWeeklyWindowResetTime(now.Unix(), endUnix)
+	}
+
 	upgradeGroup := strings.TrimSpace(plan.UpgradeGroup)
 	prevGroup := ""
 	if upgradeGroup != "" {
@@ -483,20 +525,24 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		}
 	}
 	sub := &UserSubscription{
-		UserId:        userId,
-		PlanId:        plan.Id,
-		AmountTotal:   plan.TotalAmount,
-		AmountUsed:    0,
-		StartTime:     now.Unix(),
-		EndTime:       endUnix,
-		Status:        "active",
-		Source:        source,
-		LastResetTime: lastReset,
-		NextResetTime: nextReset,
-		UpgradeGroup:  upgradeGroup,
-		PrevUserGroup: prevGroup,
-		CreatedAt:     common.GetTimestamp(),
-		UpdatedAt:     common.GetTimestamp(),
+		UserId:            userId,
+		PlanId:            plan.Id,
+		AmountTotal:       plan.TotalAmount,
+		AmountUsed:        0,
+		StartTime:         now.Unix(),
+		EndTime:           endUnix,
+		Status:            "active",
+		Source:            source,
+		LastResetTime:     lastReset,
+		NextResetTime:     nextReset,
+		FiveHourUsed:      0,
+		FiveHourResetTime: fiveHourReset,
+		WeeklyUsed:        0,
+		WeeklyResetTime:   weeklyReset,
+		UpgradeGroup:      upgradeGroup,
+		PrevUserGroup:     prevGroup,
+		CreatedAt:         common.GetTimestamp(),
+		UpdatedAt:         common.GetTimestamp(),
 	}
 	if err := tx.Create(sub).Error; err != nil {
 		return nil, err
@@ -803,6 +849,10 @@ type SubscriptionPreConsumeResult struct {
 	AmountTotal        int64
 	AmountUsedBefore   int64
 	AmountUsedAfter    int64
+	FiveHourUsedAfter  int64
+	FiveHourTotal      int64
+	WeeklyUsedAfter    int64
+	WeeklyTotal        int64
 }
 
 // ExpireDueSubscriptions marks expired subscriptions and handles group downgrade.
@@ -899,6 +949,8 @@ type SubscriptionPreConsumeRecord struct {
 	UserId             int    `json:"user_id" gorm:"index"`
 	UserSubscriptionId int    `json:"user_subscription_id" gorm:"index"`
 	PreConsumed        int64  `json:"pre_consumed" gorm:"type:bigint;not null;default:0"`
+	FiveHourPreConsumed int64 `json:"five_hour_pre_consumed" gorm:"type:bigint;not null;default:0"`
+	WeeklyPreConsumed   int64 `json:"weekly_pre_consumed" gorm:"type:bigint;not null;default:0"`
 	Status             string `json:"status" gorm:"type:varchar(32);index"` // consumed/refunded
 	CreatedAt          int64  `json:"created_at" gorm:"bigint"`
 	UpdatedAt          int64  `json:"updated_at" gorm:"bigint;index"`
@@ -920,36 +972,74 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 	if tx == nil || sub == nil || plan == nil {
 		return errors.New("invalid reset args")
 	}
-	if sub.NextResetTime > 0 && sub.NextResetTime > now {
-		return nil
-	}
-	if NormalizeResetPeriod(plan.QuotaResetPeriod) == SubscriptionResetNever {
-		return nil
-	}
-	baseUnix := sub.LastResetTime
-	if baseUnix <= 0 {
-		baseUnix = sub.StartTime
-	}
-	base := time.Unix(baseUnix, 0)
-	next := calcNextResetTime(base, plan, sub.EndTime)
-	advanced := false
-	for next > 0 && next <= now {
-		advanced = true
-		base = time.Unix(next, 0)
-		next = calcNextResetTime(base, plan, sub.EndTime)
-	}
-	if !advanced {
-		if sub.NextResetTime == 0 && next > 0 {
-			sub.NextResetTime = next
-			sub.LastResetTime = base.Unix()
-			return tx.Save(sub).Error
+	needsSave := false
+
+	// --- Main quota reset (AmountUsed / QuotaResetPeriod) ---
+	if NormalizeResetPeriod(plan.QuotaResetPeriod) != SubscriptionResetNever {
+		if !(sub.NextResetTime > 0 && sub.NextResetTime > now) {
+			baseUnix := sub.LastResetTime
+			if baseUnix <= 0 {
+				baseUnix = sub.StartTime
+			}
+			base := time.Unix(baseUnix, 0)
+			next := calcNextResetTime(base, plan, sub.EndTime)
+			advanced := false
+			for next > 0 && next <= now {
+				advanced = true
+				base = time.Unix(next, 0)
+				next = calcNextResetTime(base, plan, sub.EndTime)
+			}
+			if advanced {
+				sub.AmountUsed = 0
+				sub.LastResetTime = base.Unix()
+				sub.NextResetTime = next
+				needsSave = true
+			} else if sub.NextResetTime == 0 && next > 0 {
+				sub.NextResetTime = next
+				sub.LastResetTime = base.Unix()
+				needsSave = true
+			}
 		}
-		return nil
 	}
-	sub.AmountUsed = 0
-	sub.LastResetTime = base.Unix()
-	sub.NextResetTime = next
-	return tx.Save(sub).Error
+
+	// --- 5-hour rolling window reset ---
+	if plan.FiveHourAmount > 0 {
+		if sub.FiveHourResetTime == 0 {
+			// First-time initialization (e.g., plan updated after subscription created)
+			sub.FiveHourResetTime = calcFiveHourResetTime(now, sub.EndTime)
+			needsSave = true
+		} else if sub.FiveHourResetTime <= now {
+			// Advance through elapsed windows
+			resetTime := sub.FiveHourResetTime
+			for resetTime > 0 && resetTime <= now {
+				resetTime = calcFiveHourResetTime(resetTime, sub.EndTime)
+			}
+			sub.FiveHourUsed = 0
+			sub.FiveHourResetTime = resetTime
+			needsSave = true
+		}
+	}
+
+	// --- Weekly (7-day) rolling window reset ---
+	if plan.WeeklyAmount > 0 {
+		if sub.WeeklyResetTime == 0 {
+			sub.WeeklyResetTime = calcWeeklyWindowResetTime(now, sub.EndTime)
+			needsSave = true
+		} else if sub.WeeklyResetTime <= now {
+			resetTime := sub.WeeklyResetTime
+			for resetTime > 0 && resetTime <= now {
+				resetTime = calcWeeklyWindowResetTime(resetTime, sub.EndTime)
+			}
+			sub.WeeklyUsed = 0
+			sub.WeeklyResetTime = resetTime
+			needsSave = true
+		}
+	}
+
+	if needsSave {
+		return tx.Save(sub).Error
+	}
+	return nil
 }
 
 // PreConsumeUserSubscription pre-consumes from any active subscription total quota.
@@ -981,11 +1071,18 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			if err := tx.Where("id = ?", existing.UserSubscriptionId).First(&sub).Error; err != nil {
 				return err
 			}
+			plan, _ := getSubscriptionPlanByIdTx(tx, sub.PlanId)
 			returnValue.UserSubscriptionId = sub.Id
 			returnValue.PreConsumed = existing.PreConsumed
 			returnValue.AmountTotal = sub.AmountTotal
 			returnValue.AmountUsedBefore = sub.AmountUsed
 			returnValue.AmountUsedAfter = sub.AmountUsed
+			if plan != nil {
+				returnValue.FiveHourTotal = plan.FiveHourAmount
+				returnValue.FiveHourUsedAfter = sub.FiveHourUsed
+				returnValue.WeeklyTotal = plan.WeeklyAmount
+				returnValue.WeeklyUsedAfter = sub.WeeklyUsed
+			}
 			return nil
 		}
 
@@ -1009,18 +1106,40 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 				return err
 			}
 			usedBefore := sub.AmountUsed
+			// Check total quota
 			if sub.AmountTotal > 0 {
 				remain := sub.AmountTotal - usedBefore
 				if remain < amount {
 					continue
 				}
 			}
+			// Check 5-hour window quota
+			if plan.FiveHourAmount > 0 && plan.FiveHourAmount-sub.FiveHourUsed < amount {
+				continue
+			}
+			// Check weekly window quota
+			if plan.WeeklyAmount > 0 && plan.WeeklyAmount-sub.WeeklyUsed < amount {
+				continue
+			}
+
+			// Determine per-tier pre-consume amounts
+			fiveHourDelta := int64(0)
+			if plan.FiveHourAmount > 0 {
+				fiveHourDelta = amount
+			}
+			weeklyDelta := int64(0)
+			if plan.WeeklyAmount > 0 {
+				weeklyDelta = amount
+			}
+
 			record := &SubscriptionPreConsumeRecord{
-				RequestId:          requestId,
-				UserId:             userId,
-				UserSubscriptionId: sub.Id,
-				PreConsumed:        amount,
-				Status:             "consumed",
+				RequestId:           requestId,
+				UserId:              userId,
+				UserSubscriptionId:  sub.Id,
+				PreConsumed:         amount,
+				FiveHourPreConsumed: fiveHourDelta,
+				WeeklyPreConsumed:   weeklyDelta,
+				Status:              "consumed",
 			}
 			if err := tx.Create(record).Error; err != nil {
 				var dup SubscriptionPreConsumeRecord
@@ -1033,11 +1152,21 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 					returnValue.AmountTotal = sub.AmountTotal
 					returnValue.AmountUsedBefore = sub.AmountUsed
 					returnValue.AmountUsedAfter = sub.AmountUsed
+					returnValue.FiveHourTotal = plan.FiveHourAmount
+					returnValue.FiveHourUsedAfter = sub.FiveHourUsed
+					returnValue.WeeklyTotal = plan.WeeklyAmount
+					returnValue.WeeklyUsedAfter = sub.WeeklyUsed
 					return nil
 				}
 				return err
 			}
 			sub.AmountUsed += amount
+			if plan.FiveHourAmount > 0 {
+				sub.FiveHourUsed += amount
+			}
+			if plan.WeeklyAmount > 0 {
+				sub.WeeklyUsed += amount
+			}
 			if err := tx.Save(&sub).Error; err != nil {
 				return err
 			}
@@ -1046,6 +1175,10 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			returnValue.AmountTotal = sub.AmountTotal
 			returnValue.AmountUsedBefore = usedBefore
 			returnValue.AmountUsedAfter = sub.AmountUsed
+			returnValue.FiveHourTotal = plan.FiveHourAmount
+			returnValue.FiveHourUsedAfter = sub.FiveHourUsed
+			returnValue.WeeklyTotal = plan.WeeklyAmount
+			returnValue.WeeklyUsedAfter = sub.WeeklyUsed
 			return nil
 		}
 		return fmt.Errorf("subscription quota insufficient, need=%d", amount)
@@ -1070,11 +1203,35 @@ func RefundSubscriptionPreConsume(requestId string) error {
 		if record.Status == "refunded" {
 			return nil
 		}
-		if record.PreConsumed <= 0 {
+		if record.PreConsumed <= 0 && record.FiveHourPreConsumed <= 0 && record.WeeklyPreConsumed <= 0 {
 			record.Status = "refunded"
 			return tx.Save(&record).Error
 		}
-		if err := PostConsumeUserSubscriptionDelta(record.UserSubscriptionId, -record.PreConsumed); err != nil {
+		// Refund per-tier amounts directly within this transaction
+		var sub UserSubscription
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("id = ?", record.UserSubscriptionId).First(&sub).Error; err != nil {
+			return err
+		}
+		if record.PreConsumed > 0 {
+			sub.AmountUsed -= record.PreConsumed
+			if sub.AmountUsed < 0 {
+				sub.AmountUsed = 0
+			}
+		}
+		if record.FiveHourPreConsumed > 0 {
+			sub.FiveHourUsed -= record.FiveHourPreConsumed
+			if sub.FiveHourUsed < 0 {
+				sub.FiveHourUsed = 0
+			}
+		}
+		if record.WeeklyPreConsumed > 0 {
+			sub.WeeklyUsed -= record.WeeklyPreConsumed
+			if sub.WeeklyUsed < 0 {
+				sub.WeeklyUsed = 0
+			}
+		}
+		if err := tx.Save(&sub).Error; err != nil {
 			return err
 		}
 		record.Status = "refunded"
@@ -1089,8 +1246,12 @@ func ResetDueSubscriptions(limit int) (int, error) {
 	}
 	now := GetDBTimestamp()
 	var subs []UserSubscription
-	if err := DB.Where("next_reset_time > 0 AND next_reset_time <= ? AND status = ?", now, "active").
-		Order("next_reset_time asc").
+	// Pick up subscriptions due for any kind of reset: main quota, 5-hour window, or weekly window
+	if err := DB.Where(
+		"status = ? AND ((next_reset_time > 0 AND next_reset_time <= ?) OR (five_hour_reset_time > 0 AND five_hour_reset_time <= ?) OR (weekly_reset_time > 0 AND weekly_reset_time <= ?))",
+		"active", now, now, now,
+	).
+		Order("id asc").
 		Limit(limit).
 		Find(&subs).Error; err != nil {
 		return 0, err
@@ -1108,7 +1269,7 @@ func ResetDueSubscriptions(limit int) (int, error) {
 		err = DB.Transaction(func(tx *gorm.DB) error {
 			var locked UserSubscription
 			if err := tx.Set("gorm:query_option", "FOR UPDATE").
-				Where("id = ? AND next_reset_time > 0 AND next_reset_time <= ?", subCopy.Id, now).
+				Where("id = ? AND status = ?", subCopy.Id, "active").
 				First(&locked).Error; err != nil {
 				return nil
 			}
@@ -1187,6 +1348,24 @@ func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error
 			return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
 		}
 		sub.AmountUsed = newUsed
+
+		// Adjust 5-hour and weekly tier counters by the same delta
+		plan, _ := getSubscriptionPlanByIdTx(tx, sub.PlanId)
+		if plan != nil && plan.FiveHourAmount > 0 {
+			newFiveHour := sub.FiveHourUsed + delta
+			if newFiveHour < 0 {
+				newFiveHour = 0
+			}
+			sub.FiveHourUsed = newFiveHour
+		}
+		if plan != nil && plan.WeeklyAmount > 0 {
+			newWeekly := sub.WeeklyUsed + delta
+			if newWeekly < 0 {
+				newWeekly = 0
+			}
+			sub.WeeklyUsed = newWeekly
+		}
+
 		return tx.Save(&sub).Error
 	})
 }

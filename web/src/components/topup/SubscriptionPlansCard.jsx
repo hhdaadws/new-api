@@ -227,7 +227,7 @@ const SubscriptionPlansCard = ({
     (plans || []).forEach((p) => {
       const plan = p?.plan;
       if (!plan?.id) return;
-      map.set(plan.id, plan.title || '');
+      map.set(plan.id, plan);
     });
     return map;
   }, [plans]);
@@ -388,7 +388,7 @@ const SubscriptionPlansCard = ({
                         ? Math.max(0, totalAmount - usedAmount)
                         : 0;
                     const planTitle =
-                      planTitleMap.get(subscription?.plan_id) || '';
+                      planTitleMap.get(subscription?.plan_id)?.title || '';
                     const remainDays = getRemainingDays(sub);
                     const usagePercent = getUsagePercent(sub);
                     const now = Date.now() / 1000;
@@ -463,6 +463,50 @@ const SubscriptionPlansCard = ({
                             </span>
                           )}
                         </div>
+                        {(() => {
+                          const fiveHourUsed = Number(subscription?.five_hour_used || 0);
+                          const matchedPlan = planTitleMap.get(subscription?.plan_id);
+                          const fiveHourTotal = Number(matchedPlan?.five_hour_amount || 0);
+                          if (fiveHourTotal > 0) {
+                            const fiveHourRemain = Math.max(0, fiveHourTotal - fiveHourUsed);
+                            return (
+                              <div className='text-xs text-gray-500 mb-2'>
+                                {t('5小时额度')}:{' '}
+                                <Tooltip
+                                  content={`${t('原生额度')}：${fiveHourUsed}/${fiveHourTotal} · ${t('剩余')} ${fiveHourRemain}`}
+                                >
+                                  <span>
+                                    {renderQuota(fiveHourUsed)}/{renderQuota(fiveHourTotal)} · {t('剩余')}{' '}
+                                    {renderQuota(fiveHourRemain)}
+                                  </span>
+                                </Tooltip>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+                        {(() => {
+                          const weeklyUsed = Number(subscription?.weekly_used || 0);
+                          const matchedPlan = planTitleMap.get(subscription?.plan_id);
+                          const weeklyTotal = Number(matchedPlan?.weekly_amount || 0);
+                          if (weeklyTotal > 0) {
+                            const weeklyRemain = Math.max(0, weeklyTotal - weeklyUsed);
+                            return (
+                              <div className='text-xs text-gray-500 mb-2'>
+                                {t('每周额度')}:{' '}
+                                <Tooltip
+                                  content={`${t('原生额度')}：${weeklyUsed}/${weeklyTotal} · ${t('剩余')} ${weeklyRemain}`}
+                                >
+                                  <span>
+                                    {renderQuota(weeklyUsed)}/{renderQuota(weeklyTotal)} · {t('剩余')}{' '}
+                                    {renderQuota(weeklyRemain)}
+                                  </span>
+                                </Tooltip>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                         {!isLast && <Divider margin={12} />}
                       </div>
                     );
@@ -513,6 +557,18 @@ const SubscriptionPlansCard = ({
                         tooltip: `${t('原生额度')}：${totalAmount}`,
                       }
                     : { label: totalLabel },
+                  plan?.five_hour_amount > 0
+                    ? {
+                        label: `${t('5小时额度')}: ${renderQuota(plan.five_hour_amount)}`,
+                        tooltip: `${t('原生额度')}：${plan.five_hour_amount}`,
+                      }
+                    : null,
+                  plan?.weekly_amount > 0
+                    ? {
+                        label: `${t('每周额度')}: ${renderQuota(plan.weekly_amount)}`,
+                        tooltip: `${t('原生额度')}：${plan.weekly_amount}`,
+                      }
+                    : null,
                   limitLabel ? { label: limitLabel } : null,
                   upgradeLabel ? { label: upgradeLabel } : null,
                 ].filter(Boolean);

@@ -89,6 +89,22 @@ const renderPlanTitle = (text, record, t) => {
         ) : (
           <Text>{t('不限')}</Text>
         )}
+        <Text type='tertiary'>{t('5小时额度')}</Text>
+        {plan?.five_hour_amount > 0 ? (
+          <Tooltip content={`${t('原生额度')}：${plan.five_hour_amount}`}>
+            <Text>{renderQuota(plan.five_hour_amount)}</Text>
+          </Tooltip>
+        ) : (
+          <Text>{t('不限')}</Text>
+        )}
+        <Text type='tertiary'>{t('每周额度')}</Text>
+        {plan?.weekly_amount > 0 ? (
+          <Tooltip content={`${t('原生额度')}：${plan.weekly_amount}`}>
+            <Text>{renderQuota(plan.weekly_amount)}</Text>
+          </Tooltip>
+        ) : (
+          <Text>{t('不限')}</Text>
+        )}
         <Text type='tertiary'>{t('升级分组')}</Text>
         <Text>{plan?.upgrade_group ? plan.upgrade_group : t('不升级')}</Text>
         <Text type='tertiary'>{t('购买上限')}</Text>
@@ -170,6 +186,36 @@ const renderEnabled = (text, record, t) => {
 
 const renderTotalAmount = (text, record, t) => {
   const total = Number(record?.plan?.total_amount || 0);
+  return (
+    <Text type={total > 0 ? 'secondary' : 'tertiary'}>
+      {total > 0 ? (
+        <Tooltip content={`${t('原生额度')}：${total}`}>
+          <span>{renderQuota(total)}</span>
+        </Tooltip>
+      ) : (
+        t('不限')
+      )}
+    </Text>
+  );
+};
+
+const renderFiveHourAmount = (text, record, t) => {
+  const total = Number(record?.plan?.five_hour_amount || 0);
+  return (
+    <Text type={total > 0 ? 'secondary' : 'tertiary'}>
+      {total > 0 ? (
+        <Tooltip content={`${t('原生额度')}：${total}`}>
+          <span>{renderQuota(total)}</span>
+        </Tooltip>
+      ) : (
+        t('不限')
+      )}
+    </Text>
+  );
+};
+
+const renderWeeklyAmount = (text, record, t) => {
+  const total = Number(record?.plan?.weekly_amount || 0);
   return (
     <Text type={total > 0 ? 'secondary' : 'tertiary'}>
       {total > 0 ? (
@@ -339,6 +385,16 @@ export const getSubscriptionsColumns = ({
       title: t('总额度'),
       width: 100,
       render: (text, record) => renderTotalAmount(text, record, t),
+    },
+    {
+      title: t('5小时额度'),
+      width: 100,
+      render: (text, record) => renderFiveHourAmount(text, record, t),
+    },
+    {
+      title: t('每周额度'),
+      width: 100,
+      render: (text, record) => renderWeeklyAmount(text, record, t),
     },
     {
       title: t('升级分组'),

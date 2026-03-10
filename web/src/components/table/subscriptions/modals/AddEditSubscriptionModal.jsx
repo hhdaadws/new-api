@@ -94,6 +94,8 @@ const AddEditSubscriptionModal = ({
     sort_order: 0,
     max_purchase_per_user: 0,
     total_amount: 0,
+    five_hour_amount: 0,
+    weekly_amount: 0,
     upgrade_group: '',
     stripe_price_id: '',
     creem_product_id: '',
@@ -119,6 +121,12 @@ const AddEditSubscriptionModal = ({
       max_purchase_per_user: Number(p.max_purchase_per_user || 0),
       total_amount: Number(
         quotaToDisplayAmount(p.total_amount || 0).toFixed(2),
+      ),
+      five_hour_amount: Number(
+        quotaToDisplayAmount(p.five_hour_amount || 0).toFixed(2),
+      ),
+      weekly_amount: Number(
+        quotaToDisplayAmount(p.weekly_amount || 0).toFixed(2),
       ),
       upgrade_group: p.upgrade_group || '',
       stripe_price_id: p.stripe_price_id || '',
@@ -163,6 +171,8 @@ const AddEditSubscriptionModal = ({
           sort_order: Number(values.sort_order || 0),
           max_purchase_per_user: Number(values.max_purchase_per_user || 0),
           total_amount: displayAmountToQuota(values.total_amount),
+          five_hour_amount: displayAmountToQuota(values.five_hour_amount),
+          weekly_amount: displayAmountToQuota(values.weekly_amount),
           upgrade_group: values.upgrade_group || '',
         },
       };
@@ -317,6 +327,32 @@ const AddEditSubscriptionModal = ({
                         rules={[{ required: true, message: t('请输入总额度') }]}
                         extraText={`${t('0 表示不限')} · ${t('原生额度')}：${displayAmountToQuota(
                           values.total_amount,
+                        )}`}
+                        style={{ width: '100%' }}
+                      />
+                    </Col>
+
+                    <Col span={12}>
+                      <Form.InputNumber
+                        field='five_hour_amount'
+                        label={t('5小时额度')}
+                        min={0}
+                        precision={2}
+                        extraText={`${t('0 表示不限')} · ${t('原生额度')}：${displayAmountToQuota(
+                          values.five_hour_amount,
+                        )}`}
+                        style={{ width: '100%' }}
+                      />
+                    </Col>
+
+                    <Col span={12}>
+                      <Form.InputNumber
+                        field='weekly_amount'
+                        label={t('每周额度')}
+                        min={0}
+                        precision={2}
+                        extraText={`${t('0 表示不限')} · ${t('原生额度')}：${displayAmountToQuota(
+                          values.weekly_amount,
                         )}`}
                         style={{ width: '100%' }}
                       />
