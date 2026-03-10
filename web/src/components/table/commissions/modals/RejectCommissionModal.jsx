@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, Input } from '@douyinfe/semi-ui';
-
-const { TextArea } = Input;
+import { Modal, TextArea } from '@douyinfe/semi-ui';
 
 const RejectCommissionModal = ({
   visible,

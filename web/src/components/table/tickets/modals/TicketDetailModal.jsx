@@ -3,7 +3,7 @@ import {
   SideSheet,
   Tag,
   Button,
-  Input,
+  TextArea,
   Typography,
   Spin,
   Rating,
@@ -23,7 +23,6 @@ import {
 import ErrorBoundary from '../../../common/ErrorBoundary';
 
 const { Text, Title } = Typography;
-const { TextArea } = Input;
 
 const TicketDetailModal = ({
   visible,
