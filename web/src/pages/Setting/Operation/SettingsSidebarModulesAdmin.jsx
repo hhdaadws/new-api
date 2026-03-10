@@ -52,6 +52,7 @@ export default function SettingsSidebarModulesAdmin(props) {
       log: true,
       midjourney: true,
       task: true,
+      ticket: true,
     },
     personal: {
       enabled: true,
@@ -233,6 +234,7 @@ export default function SettingsSidebarModulesAdmin(props) {
           description: t('绘图任务记录'),
         },
         { key: 'task', title: t('任务日志'), description: t('系统任务记录') },
+        { key: 'ticket', title: t('工单系统'), description: t('用户工单管理') },
       ],
     },
     {

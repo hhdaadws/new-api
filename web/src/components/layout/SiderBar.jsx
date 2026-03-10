@@ -50,6 +50,7 @@ const routerMap = {
   deployment: '/console/deployment',
   playground: '/console/playground',
   personal: '/console/personal',
+  ticket: '/console/ticket',
 };
 
 const SiderBar = ({ onNavigate = () => {} }) => {
@@ -105,6 +106,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         to: '/task',
         className:
           localStorage.getItem('enable_task') === 'true' ? '' : 'tableHiddle',
+      },
+      {
+        text: t('工单'),
+        itemKey: 'ticket',
+        to: '/ticket',
       },
     ];
 

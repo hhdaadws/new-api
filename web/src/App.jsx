@@ -46,6 +46,7 @@ import ModelDeploymentPage from './pages/ModelDeployment';
 import Playground from './pages/Playground';
 import Subscription from './pages/Subscription';
 import Commission from './pages/Commission';
+import Ticket from './pages/Ticket';
 import OAuth2Callback from './components/auth/OAuth2Callback';
 import PersonalSetting from './components/settings/PersonalSetting';
 import Setup from './pages/Setup';
@@ -170,6 +171,14 @@ function App() {
             <AdminRoute>
               <Commission />
             </AdminRoute>
+          }
+        />
+        <Route
+          path='/console/ticket'
+          element={
+            <PrivateRoute>
+              <Ticket />
+            </PrivateRoute>
           }
         />
         <Route

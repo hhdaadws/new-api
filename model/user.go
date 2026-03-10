@@ -117,6 +117,7 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 		"log":        true,
 		"midjourney": true,
 		"task":       true,
+		"ticket":     true,
 	}
 
 	// 个人中心区域 - 所有用户都可以访问

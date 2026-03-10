@@ -208,6 +208,31 @@ func SetApiRouter(router *gin.Engine) {
 			commissionRoute.POST("/batch/approve", controller.BatchApproveCommissions)
 			commissionRoute.POST("/batch/reject", controller.BatchRejectCommissions)
 		}
+
+		// Ticket / Work Order system
+		ticketUserRoute := apiRouter.Group("/ticket")
+		ticketUserRoute.Use(middleware.UserAuth())
+		{
+			ticketUserRoute.POST("/", controller.CreateTicket)
+			ticketUserRoute.GET("/self", controller.GetUserTickets)
+			ticketUserRoute.GET("/self/search", middleware.SearchRateLimit(), controller.SearchUserTickets)
+			ticketUserRoute.GET("/self/:id", controller.GetUserTicket)
+			ticketUserRoute.POST("/self/:id/message", controller.AddTicketMessage)
+			ticketUserRoute.POST("/self/:id/close", controller.CloseTicket)
+			ticketUserRoute.POST("/self/:id/rate", controller.RateTicket)
+		}
+		ticketAdminRoute := apiRouter.Group("/ticket")
+		ticketAdminRoute.Use(middleware.AdminAuth())
+		{
+			ticketAdminRoute.GET("/", controller.GetAllTickets)
+			ticketAdminRoute.GET("/search", controller.SearchTickets)
+			ticketAdminRoute.GET("/stats", controller.GetTicketStats)
+			ticketAdminRoute.GET("/admins", controller.GetAdminUsers)
+			ticketAdminRoute.GET("/:id", controller.GetTicketDetail)
+			ticketAdminRoute.PUT("/:id/status", controller.UpdateTicketStatus)
+			ticketAdminRoute.PUT("/:id/assign", controller.AssignTicket)
+			ticketAdminRoute.POST("/:id/message", controller.AdminAddTicketMessage)
+		}
 		channelRoute := apiRouter.Group("/channel")
 		channelRoute.Use(middleware.AdminAuth())
 		{

@@ -76,6 +76,7 @@ import {
   Server,
   CalendarClock,
   HandCoins,
+  TicketCheck,
 } from 'lucide-react';
 import {
   SiAtlassian,
@@ -148,6 +149,8 @@ export function getLucideIcon(key, selected = false) {
       return <CalendarClock {...commonProps} color={iconColor} />;
     case 'commission':
       return <HandCoins {...commonProps} color={iconColor} />;
+    case 'ticket':
+      return <TicketCheck {...commonProps} color={iconColor} />;
     case 'setting':
       return <Settings {...commonProps} color={iconColor} />;
     default:
