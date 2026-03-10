@@ -21,6 +21,7 @@ import HeaderBar from './headerbar';
 import { Layout } from '@douyinfe/semi-ui';
 import SiderBar from './SiderBar';
 import App from '../../App';
+import ErrorBoundary from '../common/ErrorBoundary';
 import FooterBar from './Footer';
 import { ToastContainer } from 'react-toastify';
 import React, { useContext, useEffect, useState } from 'react';
@@ -216,7 +217,9 @@ const PageLayout = () => {
               position: 'relative',
             }}
           >
-            <App />
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>
           </Content>
           {!shouldHideFooter && (
             <Layout.Footer

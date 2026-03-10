@@ -85,18 +85,20 @@ const CreateTicketModal = ({ visible, onClose, onSubmit, t }) => {
         />
 
         <div className='flex gap-4'>
-          <Form.Select
-            field='category'
-            label={t('分类')}
-            optionList={categoryOptions}
-            style={{ width: '50%' }}
-          />
-          <Form.Select
-            field='priority'
-            label={t('优先级')}
-            optionList={priorityOptions}
-            style={{ width: '50%' }}
-          />
+          <div className='flex-1 min-w-0'>
+            <Form.Select
+              field='category'
+              label={t('分类')}
+              optionList={categoryOptions}
+            />
+          </div>
+          <div className='flex-1 min-w-0'>
+            <Form.Select
+              field='priority'
+              label={t('优先级')}
+              optionList={priorityOptions}
+            />
+          </div>
         </div>
 
         <Form.TextArea
