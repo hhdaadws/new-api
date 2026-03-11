@@ -469,6 +469,7 @@ const SubscriptionPlansCard = ({
                           const fiveHourTotal = Number(matchedPlan?.five_hour_amount || 0);
                           if (fiveHourTotal > 0) {
                             const fiveHourRemain = Math.max(0, fiveHourTotal - fiveHourUsed);
+                            const fiveHourResetTime = Number(subscription?.five_hour_reset_time || 0);
                             return (
                               <div className='text-xs text-gray-500 mb-2'>
                                 {t('5小时额度')}:{' '}
@@ -480,6 +481,11 @@ const SubscriptionPlansCard = ({
                                     {renderQuota(fiveHourRemain)}
                                   </span>
                                 </Tooltip>
+                                {fiveHourResetTime > 0 && (
+                                  <span className='ml-1'>
+                                    · {t('重置于')} {new Date(fiveHourResetTime * 1000).toLocaleString()}
+                                  </span>
+                                )}
                               </div>
                             );
                           }
@@ -491,6 +497,7 @@ const SubscriptionPlansCard = ({
                           const weeklyTotal = Number(matchedPlan?.weekly_amount || 0);
                           if (weeklyTotal > 0) {
                             const weeklyRemain = Math.max(0, weeklyTotal - weeklyUsed);
+                            const weeklyResetTime = Number(subscription?.weekly_reset_time || 0);
                             return (
                               <div className='text-xs text-gray-500 mb-2'>
                                 {t('每周额度')}:{' '}
@@ -502,6 +509,11 @@ const SubscriptionPlansCard = ({
                                     {renderQuota(weeklyRemain)}
                                   </span>
                                 </Tooltip>
+                                {weeklyResetTime > 0 && (
+                                  <span className='ml-1'>
+                                    · {t('重置于')} {new Date(weeklyResetTime * 1000).toLocaleString()}
+                                  </span>
+                                )}
                               </div>
                             );
                           }
