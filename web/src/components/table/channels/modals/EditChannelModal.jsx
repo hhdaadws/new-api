@@ -251,6 +251,7 @@ const EditChannelModal = (props) => {
   const [keyMode, setKeyMode] = useState('append'); // 密钥模式：replace（覆盖）或 append（追加）
   const [isEnterpriseAccount, setIsEnterpriseAccount] = useState(false); // 是否为企业账户
   const [doubaoApiEditUnlocked, setDoubaoApiEditUnlocked] = useState(false); // 豆包渠道自定义 API 地址隐藏入口
+  const [spoofSessionInfo, setSpoofSessionInfo] = useState({ session_id: '', ttl_seconds: 0 });
   const redirectModelList = useMemo(() => {
     const mapping = inputs.model_mapping;
     if (typeof mapping !== 'string') return [];
@@ -800,6 +801,18 @@ const EditChannelModal = (props) => {
     handleInputChange('param_override', '');
   };
 
+  const fetchSpoofSessionInfo = async (id) => {
+    if (!id) return;
+    try {
+      const res = await API.get(`/api/channel/${id}/session_spoof`);
+      if (res?.data?.success) {
+        setSpoofSessionInfo(res.data.data);
+      }
+    } catch (e) {
+      // ignore
+    }
+  };
+
   const loadChannel = async () => {
     setLoading(true);
     let res = await API.get(`/api/channel/${channelId}`);
@@ -963,6 +976,9 @@ const EditChannelModal = (props) => {
       }
 
       setInputs(data);
+      if (data.session_id_spoof_enabled && data.id) {
+        fetchSpoofSessionInfo(data.id);
+      }
       if (formApiRef.current) {
         formApiRef.current.setValues(data);
       }
@@ -3507,14 +3523,28 @@ const EditChannelModal = (props) => {
                         label={t('Session ID 伪装')}
                         checkedText={t('开')}
                         uncheckedText={t('关')}
-                        onChange={(value) =>
+                        onChange={(value) => {
                           handleChannelSettingsChange(
                             'session_id_spoof_enabled',
                             value,
-                          )
-                        }
+                          );
+                          if (value && channelId) {
+                            fetchSpoofSessionInfo(channelId);
+                          }
+                        }}
                         extraText={t('启用后，发往上游的请求将使用统一的伪装 Session ID（每1~2小时自动轮换），避免上游通过 Session ID 区分用户')}
                       />
+                      {inputs.session_id_spoof_enabled && spoofSessionInfo.session_id && (
+                        <div className='text-xs text-gray-500 mb-2'>
+                          {t('当前伪装 Session ID')}:&nbsp;
+                          <code>{spoofSessionInfo.session_id}</code>
+                          {spoofSessionInfo.ttl_seconds > 0 && (
+                            <span>
+                              &nbsp;|&nbsp;{t('剩余')} {Math.ceil(spoofSessionInfo.ttl_seconds / 60)} {t('分钟后轮换')}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     )}
 
                     <Form.Switch

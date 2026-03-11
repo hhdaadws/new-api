@@ -2033,3 +2033,19 @@ func ReleaseAllChannelUserBindings(c *gin.Context) {
 		"message": "",
 	})
 }
+
+func GetChannelSpoofSessionId(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	sessionId, ttlSeconds := service.GetSpoofSessionInfo(id)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"session_id":  sessionId,
+			"ttl_seconds": ttlSeconds,
+		},
+	})
+}
