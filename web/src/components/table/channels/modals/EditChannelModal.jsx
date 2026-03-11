@@ -194,6 +194,7 @@ const EditChannelModal = (props) => {
     system_prompt_override: false,
     header_audit_enabled: false,
     header_audit_rules: '',
+    session_id_spoof_enabled: false,
     settings: '',
     // 仅 Vertex: 密钥格式（存入 settings.vertex_key_type）
     vertex_key_type: 'json',
@@ -855,6 +856,8 @@ const EditChannelModal = (props) => {
           data.header_audit_rules = parsedSettings.header_audit_rules
             ? JSON.stringify(parsedSettings.header_audit_rules, null, 2)
             : '';
+          data.session_id_spoof_enabled =
+            parsedSettings.session_id_spoof_enabled || false;
         } catch (error) {
           console.error('解析渠道设置失败:', error);
           data.force_format = false;
@@ -865,6 +868,7 @@ const EditChannelModal = (props) => {
           data.system_prompt_override = false;
           data.header_audit_enabled = false;
           data.header_audit_rules = '';
+          data.session_id_spoof_enabled = false;
         }
       } else {
         data.force_format = false;
@@ -1703,6 +1707,7 @@ const EditChannelModal = (props) => {
       system_prompt: localInputs.system_prompt || '',
       system_prompt_override: localInputs.system_prompt_override || false,
       header_audit_enabled: localInputs.header_audit_enabled || false,
+      session_id_spoof_enabled: localInputs.session_id_spoof_enabled || false,
     };
     if (localInputs.header_audit_enabled && localInputs.header_audit_rules) {
       try {
@@ -1793,6 +1798,7 @@ const EditChannelModal = (props) => {
     delete localInputs.system_prompt_override;
     delete localInputs.header_audit_enabled;
     delete localInputs.header_audit_rules;
+    delete localInputs.session_id_spoof_enabled;
     delete localInputs.is_enterprise_account;
     // 顶层的 vertex_key_type 不应发送给后端
     delete localInputs.vertex_key_type;
@@ -3494,6 +3500,22 @@ const EditChannelModal = (props) => {
                         />
                       </Col>
                     </Row>
+
+                    {inputs.max_users > 0 && (
+                      <Form.Switch
+                        field='session_id_spoof_enabled'
+                        label={t('Session ID 伪装')}
+                        checkedText={t('开')}
+                        uncheckedText={t('关')}
+                        onChange={(value) =>
+                          handleChannelSettingsChange(
+                            'session_id_spoof_enabled',
+                            value,
+                          )
+                        }
+                        extraText={t('启用后，发往上游的请求将使用统一的伪装 Session ID（每1~2小时自动轮换），避免上游通过 Session ID 区分用户')}
+                      />
+                    )}
 
                     <Form.Switch
                       field='auto_ban'

@@ -9,6 +9,7 @@ type ChannelSettings struct {
 	SystemPromptOverride   bool              `json:"system_prompt_override,omitempty"`
 	HeaderAuditEnabled     bool              `json:"header_audit_enabled,omitempty"`
 	HeaderAuditRules       map[string]string `json:"header_audit_rules,omitempty"`
+	SessionIdSpoofEnabled  bool              `json:"session_id_spoof_enabled,omitempty"`
 }
 
 type VertexKeyType string

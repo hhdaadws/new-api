@@ -267,6 +267,14 @@ func processHeaderOverride(info *common.RelayInfo, c *gin.Context) (map[string]s
 
 		headerOverride[key] = value
 	}
+
+	// Session ID spoofing: replace session-related headers with a shared fake ID
+	if info.ChannelSetting.SessionIdSpoofEnabled && info.ChannelId > 0 {
+		spoofId := service.GetSpoofSessionId(info.ChannelId)
+		headerOverride["session_id"] = spoofId
+		headerOverride["x-session-id"] = spoofId
+	}
+
 	return headerOverride, nil
 }
 
