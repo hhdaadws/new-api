@@ -3517,7 +3517,7 @@ const EditChannelModal = (props) => {
                       </Col>
                     </Row>
 
-                    {inputs.max_users > 0 && (
+                    {inputs.max_users > 0 && (<>
                       <Form.Switch
                         field='session_id_spoof_enabled'
                         label={t('Session ID 伪装')}
@@ -3545,7 +3545,7 @@ const EditChannelModal = (props) => {
                           )}
                         </div>
                       )}
-                    )}
+                    </>)}
 
                     <Form.Switch
                       field='auto_ban'
