@@ -15,6 +15,7 @@ type AnalyzeUsersRequest struct {
 	Group             string `json:"group"`
 	MaxCount          int    `json:"max_count"`
 	WeeklyBudgetQuota int64  `json:"weekly_budget_quota"`
+	ExcludeUserIds    []int  `json:"exclude_user_ids"`
 }
 
 func AnalyzeChannelUsers(c *gin.Context) {
@@ -37,6 +38,21 @@ func AnalyzeChannelUsers(c *gin.Context) {
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+
+	// Filter out excluded users
+	if len(req.ExcludeUserIds) > 0 {
+		excludeSet := make(map[int]bool, len(req.ExcludeUserIds))
+		for _, id := range req.ExcludeUserIds {
+			excludeSet[id] = true
+		}
+		filtered := make([]model.UserWeeklyUsage, 0, len(users))
+		for _, u := range users {
+			if !excludeSet[u.UserId] {
+				filtered = append(filtered, u)
+			}
+		}
+		users = filtered
 	}
 
 	selected := model.SelectOptimalUsers(users, req.MaxCount, req.WeeklyBudgetQuota)

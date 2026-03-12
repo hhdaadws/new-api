@@ -12,7 +12,7 @@ import {
   Checkbox,
   Typography,
 } from '@douyinfe/semi-ui';
-import { IconSearch, IconLink } from '@douyinfe/semi-icons';
+import { IconSearch, IconLink, IconRefresh } from '@douyinfe/semi-icons';
 import {
   API,
   showError,
@@ -37,8 +37,9 @@ const UserProfileAnalysis = ({ groups, maxUsers, channelId }) => {
   const [expireMinutes, setExpireMinutes] = useState(0);
   const [binding, setBinding] = useState(false);
   const [hasAnalyzed, setHasAnalyzed] = useState(false);
+  const [excludedUserIds, setExcludedUserIds] = useState([]);
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = async (overrideExcluded) => {
     if (!budgetAmount || budgetAmount <= 0) {
       showError(t('请输入每周预算'));
       return;
@@ -54,6 +55,8 @@ const UserProfileAnalysis = ({ groups, maxUsers, channelId }) => {
       return;
     }
 
+    const excludeIds = overrideExcluded ?? excludedUserIds;
+
     setAnalyzing(true);
     setResults([]);
     setSelectedUserIds([]);
@@ -63,6 +66,7 @@ const UserProfileAnalysis = ({ groups, maxUsers, channelId }) => {
         group: selectedGroup,
         max_count: maxUsers,
         weekly_budget_quota: weeklyBudgetQuota,
+        exclude_user_ids: excludeIds.length > 0 ? excludeIds : undefined,
       });
       const { success, data, message } = res.data;
       if (success) {
@@ -102,6 +106,23 @@ const UserProfileAnalysis = ({ groups, maxUsers, channelId }) => {
       showError(err.message);
     }
     setBinding(false);
+  };
+
+  const handleNextBatch = () => {
+    const currentIds = results.map((u) => u.user_id);
+    const newExcluded = [...new Set([...excludedUserIds, ...currentIds])];
+    setExcludedUserIds(newExcluded);
+    handleAnalyze(newExcluded);
+  };
+
+  const handleExcludeUser = (userId) => {
+    setExcludedUserIds((prev) => [...new Set([...prev, userId])]);
+    setResults((prev) => prev.filter((u) => u.user_id !== userId));
+    setSelectedUserIds((prev) => prev.filter((id) => id !== userId));
+  };
+
+  const handleResetExcluded = () => {
+    setExcludedUserIds([]);
   };
 
   const toggleUser = (userId, checked) => {
@@ -186,6 +207,20 @@ const UserProfileAnalysis = ({ groups, maxUsers, channelId }) => {
         </Space>
       ),
     },
+    {
+      title: t('操作'),
+      width: 60,
+      render: (text, record) => (
+        <Button
+          size='small'
+          type='danger'
+          theme='light'
+          onClick={() => handleExcludeUser(record.user_id)}
+        >
+          {t('排除')}
+        </Button>
+      ),
+    },
   ];
 
   const totalSelectedQuota = results
@@ -239,12 +274,23 @@ const UserProfileAnalysis = ({ groups, maxUsers, channelId }) => {
             icon={<IconSearch />}
             size='small'
             theme='solid'
-            onClick={handleAnalyze}
+            onClick={() => handleAnalyze()}
             loading={analyzing}
             disabled={!maxUsers || maxUsers <= 0 || !budgetAmount}
           >
             {analyzing ? t('分析中...') : t('开始分析')}
           </Button>
+          {excludedUserIds.length > 0 && (
+            <Tag
+              color='red'
+              size='small'
+              closable
+              onClose={handleResetExcluded}
+              style={{ cursor: 'pointer' }}
+            >
+              {t('已排除')} {excludedUserIds.length} {t('人')}
+            </Tag>
+          )}
         </Space>
 
         <Spin spinning={analyzing}>
@@ -273,6 +319,15 @@ const UserProfileAnalysis = ({ groups, maxUsers, channelId }) => {
                   </Text>
                 </Space>
                 <Space align='end'>
+                  <Button
+                    icon={<IconRefresh />}
+                    size='small'
+                    theme='light'
+                    onClick={handleNextBatch}
+                    disabled={analyzing || results.length === 0}
+                  >
+                    {t('换一批')}
+                  </Button>
                   <div>
                     <Text
                       size='small'
