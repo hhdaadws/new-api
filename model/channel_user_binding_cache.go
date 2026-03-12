@@ -89,8 +89,13 @@ func InitChannelUserBindingCache() {
 	}
 
 	if common.RedisEnabled {
-		// Write all bindings to Redis via pipeline
 		ctx := context.Background()
+
+		// Phase 1: Merge DB data into Redis without deleting existing entries.
+		// This preserves recent bindings created via CacheBindUserIfRoom whose
+		// async DB writes (CreateOrUpdateChannelUserBindingAsync) may not have
+		// completed yet. Using Del+HSet would wipe those bindings, causing the
+		// Lua script to see a lower activeCount and allow over-limit bindings.
 		pipe := common.RDB.TxPipeline()
 		for channelId, users := range bindingsMap {
 			key := channelBindingRedisKey(channelId)
@@ -98,7 +103,6 @@ func InitChannelUserBindingCache() {
 			for userId, lastUsed := range users {
 				fields[strconv.Itoa(userId)] = strconv.FormatInt(lastUsed, 10)
 			}
-			pipe.Del(ctx, key) // clear old data first
 			if len(fields) > 0 {
 				pipe.HSet(ctx, key, fields)
 				pipe.Expire(ctx, key, channelBindingHashTTL)
@@ -107,6 +111,43 @@ func InitChannelUserBindingCache() {
 		if _, err := pipe.Exec(ctx); err != nil {
 			common.SysError("failed to sync channel user bindings to Redis: " + err.Error())
 		}
+
+		// Phase 2: Clean up stale Redis entries that no longer exist in DB.
+		// Entries in Redis but not in DB that are older than the safety window
+		// are removed. Recent entries (within the window) are preserved to
+		// account for async DB write lag from CreateOrUpdateChannelUserBindingAsync.
+		safetyWindow := time.Now().Add(-2 * time.Minute).Unix()
+		cleanPipe := common.RDB.TxPipeline()
+		needClean := false
+		for channelId, dbUsers := range bindingsMap {
+			key := channelBindingRedisKey(channelId)
+			redisData, err := common.RDB.HGetAll(ctx, key).Result()
+			if err != nil {
+				continue
+			}
+			for userIdStr, tsStr := range redisData {
+				userId, err := strconv.Atoi(userIdStr)
+				if err != nil {
+					// Invalid field, remove it
+					cleanPipe.HDel(ctx, key, userIdStr)
+					needClean = true
+					continue
+				}
+				if _, inDB := dbUsers[userId]; !inDB {
+					ts, _ := strconv.ParseInt(tsStr, 10, 64)
+					if ts < safetyWindow {
+						cleanPipe.HDel(ctx, key, userIdStr)
+						needClean = true
+					}
+				}
+			}
+		}
+		if needClean {
+			if _, err := cleanPipe.Exec(ctx); err != nil {
+				common.SysError("failed to clean stale bindings from Redis: " + err.Error())
+			}
+		}
+
 		common.SysLog("channel user bindings cache synced to Redis from database")
 	} else {
 		bindingCacheLock.Lock()
