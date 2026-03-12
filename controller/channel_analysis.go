@@ -1,0 +1,114 @@
+package controller
+
+import (
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/gin-gonic/gin"
+)
+
+type AnalyzeUsersRequest struct {
+	Group             string `json:"group"`
+	MaxCount          int    `json:"max_count"`
+	WeeklyBudgetQuota int64  `json:"weekly_budget_quota"`
+}
+
+func AnalyzeChannelUsers(c *gin.Context) {
+	var req AnalyzeUsersRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "invalid request body")
+		return
+	}
+
+	if req.MaxCount <= 0 || req.MaxCount > 1000 {
+		common.ApiErrorMsg(c, "max_count must be between 1 and 1000")
+		return
+	}
+	if req.WeeklyBudgetQuota <= 0 {
+		common.ApiErrorMsg(c, "weekly_budget_quota must be greater than 0")
+		return
+	}
+
+	users, err := model.GetUserWeeklyUsage(req.Group)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	selected := model.SelectOptimalUsers(users, req.MaxCount, req.WeeklyBudgetQuota)
+
+	common.ApiSuccess(c, selected)
+}
+
+type BatchBindUsersRequest struct {
+	UserIds       []int `json:"user_ids"`
+	ExpireMinutes int   `json:"expire_minutes"`
+}
+
+func BatchBindChannelUsers(c *gin.Context) {
+	channelId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	var req BatchBindUsersRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "invalid request body")
+		return
+	}
+
+	if len(req.UserIds) == 0 {
+		common.ApiErrorMsg(c, "user_ids must not be empty")
+		return
+	}
+	if len(req.UserIds) > 100 {
+		common.ApiErrorMsg(c, "cannot bind more than 100 users at once")
+		return
+	}
+
+	channel, err := model.GetChannelById(channelId, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	maxUsers := channel.GetMaxUsers()
+	if maxUsers > 0 {
+		existing, _ := model.GetChannelUserBindings(channelId)
+		if len(existing)+len(req.UserIds) > maxUsers {
+			common.ApiErrorMsg(c, fmt.Sprintf("binding would exceed max_users limit (%d)", maxUsers))
+			return
+		}
+	}
+
+	var errs []string
+	for _, userId := range req.UserIds {
+		if err := model.CreateOrUpdateChannelUserBinding(channelId, userId); err != nil {
+			errs = append(errs, fmt.Sprintf("user %d: %s", userId, err.Error()))
+		}
+	}
+
+	if len(errs) > 0 {
+		common.ApiErrorMsg(c, "partial bind failure: "+strings.Join(errs, "; "))
+		return
+	}
+
+	// Update expire_minutes on channel if specified and different
+	if req.ExpireMinutes > 0 && channel.GetUserBindExpireMinutes() != req.ExpireMinutes {
+		model.DB.Model(&model.Channel{}).Where("id = ?", channelId).
+			Update("user_bind_expire_minutes", req.ExpireMinutes)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data": gin.H{
+			"bound_count": len(req.UserIds),
+		},
+	})
+}

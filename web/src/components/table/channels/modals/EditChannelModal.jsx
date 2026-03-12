@@ -63,6 +63,7 @@ import ParamOverrideEditorModal from './ParamOverrideEditorModal';
 import JSONEditor from '../../../common/ui/JSONEditor';
 import SecureVerificationModal from '../../../common/modals/SecureVerificationModal';
 import StatusCodeRiskGuardModal from './StatusCodeRiskGuardModal';
+import UserProfileAnalysis from './UserProfileAnalysis';
 import ChannelKeyDisplay from '../../../common/ui/ChannelKeyDisplay';
 import { useSecureVerification } from '../../../../hooks/common/useSecureVerification';
 import { createApiCalls } from '../../../../services/secureVerification';
@@ -3546,6 +3547,14 @@ const EditChannelModal = (props) => {
                         </div>
                       )}
                     </>)}
+
+                    {channelId && inputs.max_users > 0 && (
+                      <UserProfileAnalysis
+                        groups={inputs.groups}
+                        maxUsers={inputs.max_users}
+                        channelId={channelId}
+                      />
+                    )}
 
                     <Form.Switch
                       field='auto_ban'

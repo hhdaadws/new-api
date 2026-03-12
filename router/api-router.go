@@ -279,6 +279,8 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.DELETE("/:id/user_bindings/:user_id", controller.ReleaseChannelUserBinding)
 			channelRoute.DELETE("/:id/user_bindings", controller.ReleaseAllChannelUserBindings)
 			channelRoute.GET("/:id/session_spoof", controller.GetChannelSpoofSessionId)
+			channelRoute.POST("/analyze_users", controller.AnalyzeChannelUsers)
+			channelRoute.POST("/:id/user_bindings/batch", controller.BatchBindChannelUsers)
 		}
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())
