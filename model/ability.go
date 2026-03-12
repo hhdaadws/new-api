@@ -210,9 +210,9 @@ func GetChannel(group string, model string, retry int, userId int) (*Channel, er
 		return nil, err
 	}
 
-	// Create binding if max_users is enabled
+	// Create binding if max_users is enabled (atomic check-and-bind)
 	if userId > 0 && channel.GetMaxUsers() > 0 {
-		go CacheBindUser(channel.Id, userId)
+		CacheBindUserIfRoom(channel.Id, userId, channel.GetMaxUsers(), channel.GetUserBindExpireMinutes())
 	}
 
 	return &channel, nil

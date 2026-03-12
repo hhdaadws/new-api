@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -93,16 +92,16 @@ func BatchBindChannelUsers(c *gin.Context) {
 	}
 
 	maxUsers := channel.GetMaxUsers()
-	if maxUsers > 0 {
-		activeCount := model.CacheGetSingleActiveBindingCount(channelId)
-		if activeCount+len(req.UserIds) > maxUsers {
-			common.ApiErrorMsg(c, fmt.Sprintf("binding would exceed max_users limit (%d)", maxUsers))
-			return
-		}
-	}
+	expireMinutes := channel.GetUserBindExpireMinutes()
 
+	boundCount := 0
 	for _, userId := range req.UserIds {
-		model.CacheBindUser(channelId, userId)
+		if maxUsers <= 0 {
+			model.CacheBindUser(channelId, userId)
+			boundCount++
+		} else if model.CacheBindUserIfRoom(channelId, userId, maxUsers, expireMinutes) {
+			boundCount++
+		}
 	}
 
 	// Update expire_minutes on channel if specified and different
@@ -115,7 +114,8 @@ func BatchBindChannelUsers(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data": gin.H{
-			"bound_count": len(req.UserIds),
+			"bound_count":   boundCount,
+			"skipped_count": len(req.UserIds) - boundCount,
 		},
 	})
 }

@@ -138,11 +138,9 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 			maxUsers := singleChannel.GetMaxUsers()
 			if maxUsers > 0 {
 				expireMinutes := singleChannel.GetUserBindExpireMinutes()
-				if !CacheIsUserBound(singleChannel.Id, userId, expireMinutes) &&
-					CacheGetActiveBindingCount(singleChannel.Id, expireMinutes) >= maxUsers {
+				if !CacheBindUserIfRoom(singleChannel.Id, userId, maxUsers, expireMinutes) {
 					return nil, nil
 				}
-				go CacheBindUser(singleChannel.Id, userId)
 			}
 		}
 		return singleChannel, nil
@@ -269,9 +267,9 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 		return nil, errors.New("channel not found")
 	}
 
-	// Create binding if max_users is enabled
+	// Create binding if max_users is enabled (atomic check-and-bind)
 	if userId > 0 && selected.GetMaxUsers() > 0 {
-		go CacheBindUser(selected.Id, userId)
+		CacheBindUserIfRoom(selected.Id, userId, selected.GetMaxUsers(), selected.GetUserBindExpireMinutes())
 	}
 
 	return selected, nil

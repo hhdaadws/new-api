@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"strconv"
 	"sync"
@@ -12,6 +13,11 @@ import (
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/go-redis/redis/v8"
 )
+
+//go:embed lua/bind_user_if_room.lua
+var bindUserIfRoomScript string
+
+var bindUserIfRoomSHA string
 
 const channelBindingHashTTL = 24 * time.Hour
 
@@ -26,7 +32,18 @@ func channelBindingRedisKey(channelId int) string {
 	return fmt.Sprintf("channel_binding:%d", channelId)
 }
 
+func InitBindUserScript() {
+	if common.RedisEnabled {
+		sha, err := common.RDB.ScriptLoad(context.Background(), bindUserIfRoomScript).Result()
+		if err != nil {
+			common.SysError("failed to load bind_user_if_room script: " + err.Error())
+		}
+		bindUserIfRoomSHA = sha
+	}
+}
+
 func InitChannelUserBindingCache() {
+	InitBindUserScript()
 	// DB query outside any lock to avoid holding lock during I/O
 	bindingsMap, err := GetAllBindingsMap()
 	if err != nil {
@@ -239,6 +256,104 @@ func CacheBindUser(channelId, userId int) {
 	}
 
 	CreateOrUpdateChannelUserBindingAsync(channelId, userId)
+}
+
+// CacheBindUserIfRoom atomically checks capacity and creates a binding.
+// Returns true if the user was bound (or was already actively bound), false if channel is full.
+// This eliminates the race condition between checking count and creating binding.
+func CacheBindUserIfRoom(channelId, userId, maxUsers, expireMinutes int) bool {
+	var bound bool
+	if common.RedisEnabled {
+		bound = redisBindUserIfRoom(channelId, userId, maxUsers, expireMinutes)
+	} else {
+		bound = memBindUserIfRoom(channelId, userId, maxUsers, expireMinutes)
+	}
+	if bound {
+		CreateOrUpdateChannelUserBindingAsync(channelId, userId)
+	}
+	return bound
+}
+
+func redisBindUserIfRoom(channelId, userId, maxUsers, expireMinutes int) bool {
+	ctx := context.Background()
+	key := channelBindingRedisKey(channelId)
+	now := time.Now().Unix()
+	var cutoff int64
+	if expireMinutes > 0 {
+		cutoff = time.Now().Add(-time.Duration(expireMinutes) * time.Minute).Unix()
+	}
+
+	keys := []string{key}
+	args := []interface{}{
+		strconv.Itoa(userId),
+		strconv.FormatInt(now, 10),
+		strconv.Itoa(maxUsers),
+		strconv.FormatInt(cutoff, 10),
+	}
+
+	var result int64
+	var err error
+
+	// Try EvalSha first, fall back to Eval on NOSCRIPT
+	if bindUserIfRoomSHA != "" {
+		result, err = common.RDB.EvalSha(ctx, bindUserIfRoomSHA, keys, args...).Int64()
+		if err != nil && err.Error() == "NOSCRIPT No matching script. Please use EVAL." {
+			result, err = common.RDB.Eval(ctx, bindUserIfRoomScript, keys, args...).Int64()
+		}
+	} else {
+		result, err = common.RDB.Eval(ctx, bindUserIfRoomScript, keys, args...).Int64()
+	}
+
+	if err != nil {
+		common.SysError("failed to run bind_user_if_room script: " + err.Error())
+		return false
+	}
+	return result == 1
+}
+
+func memBindUserIfRoom(channelId, userId, maxUsers, expireMinutes int) bool {
+	now := time.Now().Unix()
+
+	bindingCacheLock.Lock()
+	defer bindingCacheLock.Unlock()
+
+	if channelUserBindings == nil {
+		channelUserBindings = make(map[int]map[int]int64)
+	}
+	users, ok := channelUserBindings[channelId]
+	if !ok {
+		users = make(map[int]int64)
+		channelUserBindings[channelId] = users
+	}
+
+	// Check if user is already actively bound
+	if lastUsed, bound := users[userId]; bound {
+		if expireMinutes <= 0 || lastUsed >= time.Now().Add(-time.Duration(expireMinutes)*time.Minute).Unix() {
+			users[userId] = now
+			return true
+		}
+	}
+
+	// Count active bindings
+	activeCount := 0
+	if expireMinutes <= 0 {
+		activeCount = len(users)
+	} else {
+		cutoff := time.Now().Add(-time.Duration(expireMinutes) * time.Minute).Unix()
+		for _, lastUsed := range users {
+			if lastUsed >= cutoff {
+				activeCount++
+			}
+		}
+	}
+
+	if activeCount >= maxUsers {
+		return false
+	}
+
+	// Bind
+	users[userId] = now
+	return true
 }
 
 // CacheUpdateBindingLastUsed updates only the last_used_time for an existing binding.
