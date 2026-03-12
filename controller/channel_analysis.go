@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -95,23 +94,15 @@ func BatchBindChannelUsers(c *gin.Context) {
 
 	maxUsers := channel.GetMaxUsers()
 	if maxUsers > 0 {
-		existing, _ := model.GetChannelUserBindings(channelId)
-		if len(existing)+len(req.UserIds) > maxUsers {
+		activeCount := model.CacheGetSingleActiveBindingCount(channelId)
+		if activeCount+len(req.UserIds) > maxUsers {
 			common.ApiErrorMsg(c, fmt.Sprintf("binding would exceed max_users limit (%d)", maxUsers))
 			return
 		}
 	}
 
-	var errs []string
 	for _, userId := range req.UserIds {
-		if err := model.CreateOrUpdateChannelUserBinding(channelId, userId); err != nil {
-			errs = append(errs, fmt.Sprintf("user %d: %s", userId, err.Error()))
-		}
-	}
-
-	if len(errs) > 0 {
-		common.ApiErrorMsg(c, "partial bind failure: "+strings.Join(errs, "; "))
-		return
+		model.CacheBindUser(channelId, userId)
 	}
 
 	// Update expire_minutes on channel if specified and different

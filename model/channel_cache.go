@@ -190,10 +190,41 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 	// Channel pointers remain valid because channelsIDM sync creates new objects
 	channelSyncLock.RUnlock()
 
+	// Before priority-based selection: if user is already bound to any candidate channel,
+	// route directly to that channel (ignoring priority), unless it's disabled.
+	// Disabled channels are excluded from group2model2channels, so being in the candidate
+	// list already implies the channel is enabled.
+	var bindingData map[int]map[int]int64
+	if userId > 0 {
+		// Collect all channels with maxUsers > 0 across ALL priorities
+		allBindingChannelIds := make([]int, 0)
+		allChannelsFlat := make(map[int]*Channel)
+		for _, priorityChannels := range allPriorityChannels {
+			for _, ch := range priorityChannels {
+				allChannelsFlat[ch.Id] = ch
+				if ch.GetMaxUsers() > 0 {
+					allBindingChannelIds = append(allBindingChannelIds, ch.Id)
+				}
+			}
+		}
+		if len(allBindingChannelIds) > 0 {
+			bindingData = PreloadBindingData(allBindingChannelIds)
+			// Check if user is bound to any candidate channel
+			for _, chId := range allBindingChannelIds {
+				ch := allChannelsFlat[chId]
+				expireMinutes := ch.GetUserBindExpireMinutes()
+				if isUserBoundFromData(bindingData, chId, userId, expireMinutes) {
+					// User is bound to this channel — route directly, skip priority
+					go CacheBindUser(chId, userId)
+					return ch, nil
+				}
+			}
+		}
+	}
 	// Try each priority level starting from startPri.
 	// If all channels in a priority are filtered out by user binding limits,
 	// fall back to the next (lower) priority level.
-	var bindingData map[int]map[int]int64
+	// Note: bindingData may already be preloaded from the binding override check above.
 	for pri := startPri; pri < len(sortedUniquePriorities); pri++ {
 		targetChannels = allPriorityChannels[pri]
 
@@ -202,9 +233,8 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 		}
 
 		// Phase 2: Filter by user bindings (no channelSyncLock, safe for Redis I/O)
-		// Preload binding data for all candidate channels in one pipeline
-		bindingData = nil
-		if userId > 0 {
+		// Preload binding data if not already loaded from binding override check
+		if bindingData == nil && userId > 0 {
 			channelIds := make([]int, 0, len(targetChannels))
 			for _, ch := range targetChannels {
 				if ch.GetMaxUsers() > 0 {

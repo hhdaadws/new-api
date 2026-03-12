@@ -125,6 +125,42 @@ func GetChannel(group string, model string, retry int, userId int) (*Channel, er
 		startPri = len(priorities) - 1
 	}
 
+	// Before priority-based selection: if user is already bound to any candidate channel,
+	// route directly to that channel (ignoring priority), unless it's disabled.
+	// Only enabled channels appear in abilities, so being found implies enabled.
+	if userId > 0 {
+		// Query all enabled abilities for this group+model (all priorities)
+		var allAbilities []Ability
+		if err := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).Find(&allAbilities).Error; err == nil {
+			for _, ab := range allAbilities {
+				var ch Channel
+				if err := DB.Select("id, max_users, user_bind_expire_minutes").First(&ch, "id = ?", ab.ChannelId).Error; err != nil {
+					continue
+				}
+				maxUsers := ch.GetMaxUsers()
+				if maxUsers <= 0 {
+					continue
+				}
+				expireMinutes := ch.GetUserBindExpireMinutes()
+				var binding ChannelUserBinding
+				if err := DB.Where("channel_id = ? AND user_id = ?", ab.ChannelId, userId).First(&binding).Error; err != nil {
+					continue
+				}
+				// Check if binding is still active
+				if expireMinutes > 0 && binding.LastUsedTime < time.Now().Add(-time.Duration(expireMinutes)*time.Minute).Unix() {
+					continue
+				}
+				// User is bound to this channel — load full channel and return
+				var fullChannel Channel
+				if err := DB.First(&fullChannel, "id = ?", ab.ChannelId).Error; err != nil {
+					continue
+				}
+				go CacheBindUser(fullChannel.Id, userId)
+				return &fullChannel, nil
+			}
+		}
+	}
+
 	// Try each priority level starting from startPri.
 	// If all channels in a priority are filtered out by user binding limits,
 	// fall back to the next (lower) priority level.
