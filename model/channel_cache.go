@@ -1,7 +1,6 @@
 package model
 
 import (
-	"errors"
 	"fmt"
 	"math/rand"
 	"sort"
@@ -212,9 +211,13 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 				ch := allChannelsFlat[chId]
 				expireMinutes := ch.GetUserBindExpireMinutes()
 				if isUserBoundFromData(bindingData, chId, userId, expireMinutes) {
-					// User is bound to this channel — route directly, skip priority
-					go CacheBindUser(chId, userId)
-					return ch, nil
+					// User appears bound — atomically verify and refresh binding
+					if CacheBindUserIfRoom(chId, userId, ch.GetMaxUsers(), expireMinutes) {
+						return ch, nil
+					}
+					// Binding expired between preload and atomic check, or channel is full.
+					// Fall through to normal priority-based selection.
+					break
 				}
 			}
 		}
@@ -249,30 +252,36 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 			targetChannels = filterChannelsByUserLimit(targetChannels, userId, bindingData)
 		}
 
-		if len(targetChannels) > 0 {
-			break
+		if len(targetChannels) == 0 {
+			continue
 		}
-		// All channels at this priority are full, try next priority level
+
+		// Among channels with max_users > 0, apply least-bindings load balancing
+		targetChannels = applyLeastBindingsBalance(targetChannels, bindingData)
+
+		// Atomic bind retry loop: select a channel and try to bind.
+		// If bind fails (channel became full due to concurrent bind), remove and retry.
+		for len(targetChannels) > 0 {
+			selected := weightedRandomSelect(targetChannels)
+			if selected == nil {
+				break
+			}
+
+			// Create binding if max_users is enabled (atomic check-and-bind)
+			if userId > 0 && selected.GetMaxUsers() > 0 {
+				if !CacheBindUserIfRoom(selected.Id, userId, selected.GetMaxUsers(), selected.GetUserBindExpireMinutes()) {
+					// Bind failed: channel is full. Remove from candidates and retry.
+					targetChannels = removeChannel(targetChannels, selected.Id)
+					continue
+				}
+			}
+
+			return selected, nil
+		}
+		// All candidates at this priority exhausted, try next priority level
 	}
 
-	if len(targetChannels) == 0 {
-		return nil, nil
-	}
-
-	// Among channels with max_users > 0, apply least-bindings load balancing
-	targetChannels = applyLeastBindingsBalance(targetChannels, bindingData)
-
-	selected := weightedRandomSelect(targetChannels)
-	if selected == nil {
-		return nil, errors.New("channel not found")
-	}
-
-	// Create binding if max_users is enabled (atomic check-and-bind)
-	if userId > 0 && selected.GetMaxUsers() > 0 {
-		CacheBindUserIfRoom(selected.Id, userId, selected.GetMaxUsers(), selected.GetUserBindExpireMinutes())
-	}
-
-	return selected, nil
+	return nil, nil
 }
 
 // filterChannelsByUserLimit removes channels that have reached their user limit
@@ -370,6 +379,17 @@ func applyLeastBindingsBalance(channels []*Channel, bindingData map[int]map[int]
 	for _, wc := range withCounts {
 		if wc.count == minCount {
 			result = append(result, wc.ch)
+		}
+	}
+	return result
+}
+
+// removeChannel returns a new slice with the channel of the given ID removed.
+func removeChannel(channels []*Channel, id int) []*Channel {
+	result := make([]*Channel, 0, len(channels)-1)
+	for _, ch := range channels {
+		if ch.Id != id {
+			result = append(result, ch)
 		}
 	}
 	return result

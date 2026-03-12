@@ -357,8 +357,10 @@ func memBindUserIfRoom(channelId, userId, maxUsers, expireMinutes int) bool {
 }
 
 // CacheUpdateBindingLastUsed updates only the last_used_time for an existing binding.
+// Only writes to DB if the binding actually exists in cache, preventing phantom DB records.
 func CacheUpdateBindingLastUsed(channelId, userId int) {
 	now := time.Now().Unix()
+	bindingExists := false
 
 	if common.RedisEnabled {
 		ctx := context.Background()
@@ -375,19 +377,23 @@ func CacheUpdateBindingLastUsed(channelId, userId int) {
 			if _, err := pipe.Exec(ctx); err != nil {
 				common.SysError("failed to update binding last used in Redis: " + err.Error())
 			}
+			bindingExists = true
 		}
 	} else {
 		bindingCacheLock.Lock()
 		if users, ok := channelUserBindings[channelId]; ok {
 			if _, bound := users[userId]; bound {
 				users[userId] = now
+				bindingExists = true
 			}
 		}
 		bindingCacheLock.Unlock()
 	}
 
-	// Async DB update
-	CreateOrUpdateChannelUserBindingAsync(channelId, userId)
+	// Only write to DB if binding actually exists in cache
+	if bindingExists {
+		CreateOrUpdateChannelUserBindingAsync(channelId, userId)
+	}
 }
 
 // CacheUnbindUser removes a user-channel binding from cache and DB.

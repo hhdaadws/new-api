@@ -155,8 +155,13 @@ func GetChannel(group string, model string, retry int, userId int) (*Channel, er
 				if err := DB.First(&fullChannel, "id = ?", ab.ChannelId).Error; err != nil {
 					continue
 				}
-				go CacheBindUser(fullChannel.Id, userId)
-				return &fullChannel, nil
+				// User appears bound — atomically verify and refresh binding
+				if CacheBindUserIfRoom(fullChannel.Id, userId, maxUsers, expireMinutes) {
+					return &fullChannel, nil
+				}
+				// Binding expired between DB check and atomic check, or channel is full.
+				// Fall through to normal priority-based selection.
+				break
 			}
 		}
 	}
@@ -180,42 +185,51 @@ func GetChannel(group string, model string, retry int, userId int) (*Channel, er
 		if userId > 0 {
 			abilities = filterAbilitiesByUserLimit(abilities, userId)
 		}
-		if len(abilities) > 0 {
-			break
+		if len(abilities) == 0 {
+			continue
 		}
-		// All channels at this priority are full, try next priority level
-	}
 
-	if len(abilities) == 0 {
-		return nil, nil
-	}
+		// Atomic bind retry loop: select a channel and try to bind.
+		// If bind fails (channel became full due to concurrent bind), remove and retry.
+		for len(abilities) > 0 {
+			channel := Channel{}
+			weightSum := uint(0)
+			for _, ability_ := range abilities {
+				weightSum += ability_.Weight + 10
+			}
+			weight := common.GetRandomInt(int(weightSum))
+			selectedIdx := -1
+			for i, ability_ := range abilities {
+				weight -= int(ability_.Weight) + 10
+				if weight <= 0 {
+					channel.Id = ability_.ChannelId
+					selectedIdx = i
+					break
+				}
+			}
 
-	// Randomly choose one
-	channel := Channel{}
-	weightSum := uint(0)
-	for _, ability_ := range abilities {
-		weightSum += ability_.Weight + 10
-	}
-	weight := common.GetRandomInt(int(weightSum))
-	for _, ability_ := range abilities {
-		weight -= int(ability_.Weight) + 10
-		if weight <= 0 {
-			channel.Id = ability_.ChannelId
-			break
+			err = DB.First(&channel, "id = ?", channel.Id).Error
+			if err != nil {
+				return nil, err
+			}
+
+			// Create binding if max_users is enabled (atomic check-and-bind)
+			if userId > 0 && channel.GetMaxUsers() > 0 {
+				if !CacheBindUserIfRoom(channel.Id, userId, channel.GetMaxUsers(), channel.GetUserBindExpireMinutes()) {
+					// Bind failed: channel is full. Remove from candidates and retry.
+					if selectedIdx >= 0 {
+						abilities = append(abilities[:selectedIdx], abilities[selectedIdx+1:]...)
+					}
+					continue
+				}
+			}
+
+			return &channel, nil
 		}
+		// All candidates at this priority exhausted, try next priority level
 	}
 
-	err = DB.First(&channel, "id = ?", channel.Id).Error
-	if err != nil {
-		return nil, err
-	}
-
-	// Create binding if max_users is enabled (atomic check-and-bind)
-	if userId > 0 && channel.GetMaxUsers() > 0 {
-		CacheBindUserIfRoom(channel.Id, userId, channel.GetMaxUsers(), channel.GetUserBindExpireMinutes())
-	}
-
-	return &channel, nil
+	return nil, nil
 }
 
 // filterAbilitiesByUserLimit filters abilities to exclude channels that have reached their user limit.
