@@ -175,6 +175,10 @@ func AddToken(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgTokenNameTooLong)
 		return
 	}
+	if token.ClaudeCacheTTL != "" && token.ClaudeCacheTTL != "1h" {
+		common.ApiErrorMsg(c, "invalid claude_cache_ttl value, must be empty or \"1h\"")
+		return
+	}
 	// 非无限额度时，检查额度值是否超出有效范围
 	if !token.UnlimitedQuota {
 		if token.RemainQuota < 0 {
@@ -221,6 +225,7 @@ func AddToken(c *gin.Context) {
 		AllowIps:           token.AllowIps,
 		Group:              token.Group,
 		CrossGroupRetry:    token.CrossGroupRetry,
+		ClaudeCacheTTL:     token.ClaudeCacheTTL,
 	}
 	err = cleanToken.Insert()
 	if err != nil {
@@ -258,6 +263,10 @@ func UpdateToken(c *gin.Context) {
 	}
 	if len(token.Name) > 50 {
 		common.ApiErrorI18n(c, i18n.MsgTokenNameTooLong)
+		return
+	}
+	if token.ClaudeCacheTTL != "" && token.ClaudeCacheTTL != "1h" {
+		common.ApiErrorMsg(c, "invalid claude_cache_ttl value, must be empty or \"1h\"")
 		return
 	}
 	if !token.UnlimitedQuota {
@@ -299,6 +308,7 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.AllowIps = token.AllowIps
 		cleanToken.Group = token.Group
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
+		cleanToken.ClaudeCacheTTL = token.ClaudeCacheTTL
 	}
 	err = cleanToken.Update()
 	if err != nil {

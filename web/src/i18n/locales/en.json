@@ -3474,6 +3474,10 @@
     "分配工单": "Assign Ticket",
     "选择管理员": "Select Admin",
     "请选择管理员": "Please select an admin",
-    "确认分配": "Confirm Assignment"
+    "确认分配": "Confirm Assignment",
+    "Claude缓存TTL": "Claude Cache TTL",
+    "默认（5分钟）": "Default (5 minutes)",
+    "1小时": "1 Hour",
+    "仅对Claude渠道生效，覆盖请求中的缓存创建TTL": "Only effective for Claude channels, overrides cache creation TTL in requests"
   }
 }

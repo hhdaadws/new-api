@@ -134,6 +134,13 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 		requestBody = common.ReaderOnly(storage)
 	} else {
+		// Override cache TTL for direct Claude API channels only
+		if info.ApiType == constant.APITypeAnthropic {
+			if cacheTTL := common.GetContextKeyString(c, constant.ContextKeyTokenClaudeCacheTTL); cacheTTL != "" {
+				dto.OverrideClaudeCacheTTL(request, cacheTTL)
+			}
+		}
+
 		convertedRequest, err := adaptor.ConvertClaudeRequest(c, info, request)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())

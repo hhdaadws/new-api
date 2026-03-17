@@ -118,6 +118,15 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		}
 		relaycommon.AppendRequestConversionFromRequest(info, convertedRequest)
 
+		// Override cache TTL for direct Claude API channels only
+		if info.ApiType == constant.APITypeAnthropic {
+			if cacheTTL := common.GetContextKeyString(c, constant.ContextKeyTokenClaudeCacheTTL); cacheTTL != "" {
+				if claudeReq, ok := convertedRequest.(*dto.ClaudeRequest); ok {
+					dto.OverrideClaudeCacheTTL(claudeReq, cacheTTL)
+				}
+			}
+		}
+
 		if info.ChannelSetting.SystemPrompt != "" {
 			// 如果有系统提示，则将其添加到请求中
 			request, ok := convertedRequest.(*dto.GeneralOpenAIRequest)
