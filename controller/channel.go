@@ -496,6 +496,11 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 		}
 	}
 
+	// Mutual exclusion: max_users and max_sessions cannot both be > 0
+	if channel.GetMaxUsers() > 0 && channel.GetMaxSessions() > 0 {
+		return fmt.Errorf("max_users and max_sessions cannot both be > 0 on the same channel")
+	}
+
 	return nil
 }
 
@@ -2028,6 +2033,76 @@ func ReleaseAllChannelUserBindings(c *gin.Context) {
 		return
 	}
 	model.CacheUnbindAllUsers(channelId)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+	})
+}
+
+func GetChannelSessionBindings(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	channel, err := model.GetChannelById(id, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	bindings, err := model.GetChannelSessionBindings(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	expireMinutes := channel.GetSessionBindExpireMinutes()
+	activeCount := 0
+	if expireMinutes <= 0 {
+		activeCount = len(bindings)
+	} else {
+		cutoff := time.Now().Add(-time.Duration(expireMinutes) * time.Minute).Unix()
+		for _, b := range bindings {
+			if b.LastUsedTime >= cutoff {
+				activeCount++
+			}
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"bindings":       bindings,
+			"max_sessions":   channel.GetMaxSessions(),
+			"active_count":   activeCount,
+			"expire_minutes": expireMinutes,
+		},
+	})
+}
+
+func ReleaseChannelSessionBinding(c *gin.Context) {
+	channelId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	sessionId := c.Param("session_id")
+	if sessionId == "" {
+		common.ApiError(c, fmt.Errorf("session_id is required"))
+		return
+	}
+	model.CacheUnbindSession(channelId, sessionId)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+	})
+}
+
+func ReleaseAllChannelSessionBindings(c *gin.Context) {
+	channelId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.CacheUnbindAllSessions(channelId)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

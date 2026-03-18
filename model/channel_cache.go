@@ -83,6 +83,7 @@ func InitChannelCache() {
 	channelSyncLock.Unlock()
 	common.SysLog("channels synced from database")
 	InitChannelUserBindingCache()
+	InitSessionBindingCache()
 }
 
 func SyncChannelCache(frequency int) {
@@ -93,7 +94,7 @@ func SyncChannelCache(frequency int) {
 	}
 }
 
-func GetRandomSatisfiedChannel(group string, model string, retry int, userId int) (*Channel, error) {
+func GetRandomSatisfiedChannel(group string, model string, retry int, userId int, sessionId string) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
 		return GetChannel(group, model, retry, userId)
@@ -138,6 +139,15 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 			if maxUsers > 0 {
 				expireMinutes := singleChannel.GetUserBindExpireMinutes()
 				if !CacheBindUserIfRoom(singleChannel.Id, userId, maxUsers, expireMinutes) {
+					return nil, nil
+				}
+			}
+		}
+		// Check session limit for single channel
+		if sessionId != "" {
+			maxSessions := singleChannel.GetMaxSessions()
+			if maxSessions > 0 {
+				if !CacheBindSessionIfRoom(singleChannel.Id, sessionId, userId, maxSessions, singleChannel.GetSessionBindExpireMinutes()) {
 					return nil, nil
 				}
 			}
@@ -187,6 +197,28 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 	// Channel pointers remain valid because channelsIDM sync creates new objects
 	channelSyncLock.RUnlock()
 
+	// Build flat channel map for override lookups
+	allChannelsFlat := make(map[int]*Channel)
+	for _, priorityChannels := range allPriorityChannels {
+		for _, ch := range priorityChannels {
+			allChannelsFlat[ch.Id] = ch
+		}
+	}
+
+	// Before priority-based selection: if session is already bound to any candidate channel,
+	// route directly to that channel (ignoring priority).
+	if sessionId != "" {
+		if boundChannelId, found := CacheGetSessionChannel(sessionId); found {
+			if ch, ok := allChannelsFlat[boundChannelId]; ok {
+				// Session appears bound to a candidate — atomically verify and refresh
+				if CacheBindSessionIfRoom(ch.Id, sessionId, userId, ch.GetMaxSessions(), ch.GetSessionBindExpireMinutes()) {
+					return ch, nil
+				}
+				// Binding expired or channel full, fall through
+			}
+		}
+	}
+
 	// Before priority-based selection: if user is already bound to any candidate channel,
 	// route directly to that channel (ignoring priority), unless it's disabled.
 	// Disabled channels are excluded from group2model2channels, so being in the candidate
@@ -195,10 +227,8 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 	if userId > 0 {
 		// Collect all channels with maxUsers > 0 across ALL priorities
 		allBindingChannelIds := make([]int, 0)
-		allChannelsFlat := make(map[int]*Channel)
 		for _, priorityChannels := range allPriorityChannels {
 			for _, ch := range priorityChannels {
-				allChannelsFlat[ch.Id] = ch
 				if ch.GetMaxUsers() > 0 {
 					allBindingChannelIds = append(allBindingChannelIds, ch.Id)
 				}
@@ -223,9 +253,10 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 		}
 	}
 	// Try each priority level starting from startPri.
-	// If all channels in a priority are filtered out by user binding limits,
+	// If all channels in a priority are filtered out by user/session binding limits,
 	// fall back to the next (lower) priority level.
 	// Note: bindingData may already be preloaded from the binding override check above.
+	var sessionBindingData map[int]map[string]sessionBindingEntry
 	for pri := startPri; pri < len(sortedUniquePriorities); pri++ {
 		targetChannels = allPriorityChannels[pri]
 
@@ -256,8 +287,33 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 			continue
 		}
 
+		// Preload session binding data for channels with max_sessions > 0
+		if sessionBindingData == nil && sessionId != "" {
+			sessionChannelIds := make([]int, 0, len(targetChannels))
+			for _, ch := range targetChannels {
+				if ch.GetMaxSessions() > 0 {
+					sessionChannelIds = append(sessionChannelIds, ch.Id)
+				}
+			}
+			if len(sessionChannelIds) > 0 {
+				sessionBindingData = PreloadSessionBindingData(sessionChannelIds)
+			}
+		}
+
+		// Filter by session limit: remove channels that are full and session is not already bound
+		if sessionId != "" {
+			targetChannels = filterChannelsBySessionLimit(targetChannels, sessionId, sessionBindingData)
+		}
+
+		if len(targetChannels) == 0 {
+			continue
+		}
+
 		// Among channels with max_users > 0, apply least-bindings load balancing
 		targetChannels = applyLeastBindingsBalance(targetChannels, bindingData)
+
+		// Among channels with max_sessions > 0, apply least-session-bindings load balancing
+		targetChannels = applyLeastSessionBindingsBalance(targetChannels, sessionBindingData)
 
 		// Atomic bind retry loop: select a channel and try to bind.
 		// If bind fails (channel became full due to concurrent bind), remove and retry.
@@ -267,9 +323,18 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, userId int
 				break
 			}
 
-			// Create binding if max_users is enabled (atomic check-and-bind)
+			// Create user binding if max_users is enabled (atomic check-and-bind)
 			if userId > 0 && selected.GetMaxUsers() > 0 {
 				if !CacheBindUserIfRoom(selected.Id, userId, selected.GetMaxUsers(), selected.GetUserBindExpireMinutes()) {
+					// Bind failed: channel is full. Remove from candidates and retry.
+					targetChannels = removeChannel(targetChannels, selected.Id)
+					continue
+				}
+			}
+
+			// Create session binding if max_sessions is enabled (atomic check-and-bind)
+			if sessionId != "" && selected.GetMaxSessions() > 0 {
+				if !CacheBindSessionIfRoom(selected.Id, sessionId, userId, selected.GetMaxSessions(), selected.GetSessionBindExpireMinutes()) {
 					// Bind failed: channel is full. Remove from candidates and retry.
 					targetChannels = removeChannel(targetChannels, selected.Id)
 					continue
@@ -369,6 +434,98 @@ func applyLeastBindingsBalance(channels []*Channel, bindingData map[int]map[int]
 	var withCounts []channelWithCount
 	for _, ch := range withLimit {
 		count := getActiveCountFromData(bindingData, ch.Id, ch.GetUserBindExpireMinutes())
+		withCounts = append(withCounts, channelWithCount{ch, count})
+		if minCount < 0 || count < minCount {
+			minCount = count
+		}
+	}
+
+	var result []*Channel
+	for _, wc := range withCounts {
+		if wc.count == minCount {
+			result = append(result, wc.ch)
+		}
+	}
+	return result
+}
+
+// filterChannelsBySessionLimit removes channels that have reached their session limit
+// for a session that is not already bound to them.
+// If the session is already bound to one of the candidate channels, only that channel
+// (among those with session limits) is kept.
+func filterChannelsBySessionLimit(channels []*Channel, sessionId string, sessionBindingData map[int]map[string]sessionBindingEntry) []*Channel {
+	// First pass: check if session is already bound to any candidate channel
+	var boundChannel *Channel
+	for _, ch := range channels {
+		if ch.GetMaxSessions() <= 0 {
+			continue
+		}
+		expireMinutes := ch.GetSessionBindExpireMinutes()
+		if isSessionBoundFromData(sessionBindingData, ch.Id, sessionId, expireMinutes) {
+			boundChannel = ch
+			break
+		}
+	}
+
+	// Second pass: filter channels
+	var available []*Channel
+	for _, ch := range channels {
+		maxSessions := ch.GetMaxSessions()
+		if maxSessions <= 0 {
+			// No session limit, always available
+			available = append(available, ch)
+			continue
+		}
+		if boundChannel != nil {
+			// Session is already bound to a channel: only keep the bound one
+			if ch.Id == boundChannel.Id {
+				available = append(available, ch)
+			}
+			continue
+		}
+		// Session has no existing binding: check capacity
+		expireMinutes := ch.GetSessionBindExpireMinutes()
+		if getActiveSessionCountFromData(sessionBindingData, ch.Id, expireMinutes) < maxSessions {
+			available = append(available, ch)
+		}
+	}
+	return available
+}
+
+// applyLeastSessionBindingsBalance filters channels to prefer those with the fewest active session bindings.
+// Among channels that have max_sessions > 0, keeps only those with the minimum session binding count.
+// Channels without session limits (max_sessions == 0) are always included.
+func applyLeastSessionBindingsBalance(channels []*Channel, sessionBindingData map[int]map[string]sessionBindingEntry) []*Channel {
+	if len(channels) <= 1 {
+		return channels
+	}
+
+	var withLimit []*Channel
+	var withoutLimit []*Channel
+	for _, ch := range channels {
+		if ch.GetMaxSessions() > 0 {
+			withLimit = append(withLimit, ch)
+		} else {
+			withoutLimit = append(withoutLimit, ch)
+		}
+	}
+
+	if len(withLimit) == 0 {
+		return channels
+	}
+	if len(withoutLimit) > 0 {
+		return channels
+	}
+
+	// All channels have session limits: find minimum binding count, keep only those
+	minCount := -1
+	type channelWithCount struct {
+		ch    *Channel
+		count int
+	}
+	var withCounts []channelWithCount
+	for _, ch := range withLimit {
+		count := getActiveSessionCountFromData(sessionBindingData, ch.Id, ch.GetSessionBindExpireMinutes())
 		withCounts = append(withCounts, channelWithCount{ch, count})
 		if minCount < 0 || count < minCount {
 			minCount = count

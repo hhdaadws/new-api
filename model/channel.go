@@ -51,6 +51,8 @@ type Channel struct {
 	Remark                *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
 	MaxUsers              *int    `json:"max_users" gorm:"default:0"`
 	UserBindExpireMinutes *int    `json:"user_bind_expire_minutes" gorm:"default:0"`
+	MaxSessions              *int `json:"max_sessions" gorm:"default:0"`
+	SessionBindExpireMinutes *int `json:"session_bind_expire_minutes" gorm:"default:0"`
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
@@ -409,6 +411,10 @@ func BatchDeleteChannels(ids []int) error {
 			tx.Rollback()
 			return err
 		}
+		if err := tx.Where("channel_id in (?)", chunk).Delete(&ChannelSessionBinding{}).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
 	}
 	if err := tx.Commit().Error; err != nil {
 		return err
@@ -419,6 +425,17 @@ func BatchDeleteChannels(ids []int) error {
 		delete(channelUserBindings, id)
 	}
 	channelSyncLock.Unlock()
+	// Clean up in-memory session binding cache
+	sessionBindingCacheLock.Lock()
+	for _, id := range ids {
+		if sessions, ok := channelSessionBindings[id]; ok {
+			for sid := range sessions {
+				delete(sessionToChannel, sid)
+			}
+			delete(channelSessionBindings, id)
+		}
+	}
+	sessionBindingCacheLock.Unlock()
 	return nil
 }
 
@@ -448,6 +465,20 @@ func (channel *Channel) GetUserBindExpireMinutes() int {
 		return 0
 	}
 	return *channel.UserBindExpireMinutes
+}
+
+func (channel *Channel) GetMaxSessions() int {
+	if channel.MaxSessions == nil {
+		return 0
+	}
+	return *channel.MaxSessions
+}
+
+func (channel *Channel) GetSessionBindExpireMinutes() int {
+	if channel.SessionBindExpireMinutes == nil {
+		return 0
+	}
+	return *channel.SessionBindExpireMinutes
 }
 
 func (channel *Channel) GetBaseURL() string {
@@ -566,6 +597,8 @@ func (channel *Channel) Delete() error {
 	}
 	// Clean up user bindings
 	CacheUnbindAllUsers(channel.Id)
+	// Clean up session bindings
+	CacheUnbindAllSessions(channel.Id)
 	return nil
 }
 

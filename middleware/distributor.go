@@ -81,6 +81,18 @@ func Distribute() func(c *gin.Context) {
 				}
 				var selectGroup string
 				usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+
+				// Extract session_id from request headers for sticky session binding
+				sessionId := ""
+				if h := c.Request.Header.Get("session_id"); h != "" {
+					sessionId = h
+				} else if h := c.Request.Header.Get("x-session-id"); h != "" {
+					sessionId = h
+				}
+				if sessionId != "" {
+					common.SetContextKey(c, constant.ContextKeySessionId, sessionId)
+				}
+
 				// check path is /pg/chat/completions
 				if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
 					playgroundRequest := &dto.PlayGroundRequest{}
@@ -99,25 +111,61 @@ func Distribute() func(c *gin.Context) {
 					}
 				}
 
-				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
-					preferred, err := model.CacheGetChannel(preferredChannelID)
-					if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled {
-						if usingGroup == "auto" {
-							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
-							autoGroups := service.GetUserAutoGroup(userGroup)
-							for _, g := range autoGroups {
-								if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) {
-									selectGroup = g
-									common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
-									channel = preferred
-									service.MarkChannelAffinityUsed(c, g, preferred.Id)
-									break
+				// Sticky session binding lookup: check if session is already bound to a channel
+				if sessionId != "" {
+					if boundChannelId, found := model.CacheGetSessionChannel(sessionId); found {
+						boundChannel, chErr := model.CacheGetChannel(boundChannelId)
+						if chErr == nil && boundChannel != nil && boundChannel.Status == common.ChannelStatusEnabled {
+							if usingGroup == "auto" {
+								userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+								autoGroups := service.GetUserAutoGroup(userGroup)
+								for _, g := range autoGroups {
+									if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, boundChannel.Id) {
+										selectGroup = g
+										common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
+										channel = boundChannel
+										break
+									}
 								}
+							} else if model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, boundChannel.Id) {
+								channel = boundChannel
+								selectGroup = usingGroup
 							}
-						} else if model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) {
-							channel = preferred
-							selectGroup = usingGroup
-							service.MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
+						}
+					}
+				}
+
+				// Channel affinity lookup (also handles sub-agent routing via metadata.user_id)
+				if channel == nil {
+					if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
+						preferred, err := model.CacheGetChannel(preferredChannelID)
+						if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled {
+							if usingGroup == "auto" {
+								userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+								autoGroups := service.GetUserAutoGroup(userGroup)
+								for _, g := range autoGroups {
+									if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) {
+										selectGroup = g
+										common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
+										channel = preferred
+										service.MarkChannelAffinityUsed(c, g, preferred.Id)
+										break
+									}
+								}
+							} else if model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) {
+								channel = preferred
+								selectGroup = usingGroup
+								service.MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
+							}
+						}
+					}
+
+					// If affinity routed to a sticky-session channel, ensure session gets bound
+					if channel != nil && channel.GetMaxSessions() > 0 && sessionId != "" {
+						userId := c.GetInt(string(constant.ContextKeyUserId))
+						if !model.CacheBindSessionIfRoom(channel.Id, sessionId, userId, channel.GetMaxSessions(), channel.GetSessionBindExpireMinutes()) {
+							channel = nil // Full, fall through to normal selection
+							selectGroup = ""
 						}
 					}
 				}
@@ -170,6 +218,14 @@ func Distribute() func(c *gin.Context) {
 				userId := c.GetInt(string(constant.ContextKeyUserId))
 				if userId > 0 {
 					model.CacheUpdateBindingLastUsed(channel.Id, userId)
+				}
+			}
+			// Update last_used_time for session-channel binding
+			if channel.GetMaxSessions() > 0 {
+				sid := common.GetContextKeyString(c, constant.ContextKeySessionId)
+				if sid != "" {
+					userId := c.GetInt(string(constant.ContextKeyUserId))
+					model.CacheUpdateSessionBindingLastUsed(channel.Id, sid, userId)
 				}
 			}
 		}

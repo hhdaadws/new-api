@@ -183,6 +183,8 @@ const EditChannelModal = (props) => {
     priority: 0,
     max_users: 0,
     user_bind_expire_minutes: 0,
+    max_sessions: 0,
+    session_bind_expire_minutes: 0,
     weight: 0,
     tag: '',
     multi_key_mode: 'random',
@@ -3517,6 +3519,37 @@ const EditChannelModal = (props) => {
                         />
                       </Col>
                     </Row>
+
+                    {inputs.type === 14 && (
+                      <Row gutter={12}>
+                        <Col span={12}>
+                          <Form.InputNumber
+                            field='max_sessions'
+                            label={t('最大会话数')}
+                            placeholder={t('0 表示不限制')}
+                            min={0}
+                            onNumberChange={(value) =>
+                              handleInputChange('max_sessions', value)
+                            }
+                            style={{ width: '100%' }}
+                            extraText={t('限制可使用该渠道的最大会话数（基于 session_id 请求头），0 表示不限制')}
+                          />
+                        </Col>
+                        <Col span={12}>
+                          <Form.InputNumber
+                            field='session_bind_expire_minutes'
+                            label={t('会话绑定过期时间(分钟)')}
+                            placeholder={t('0 表示不过期')}
+                            min={0}
+                            onNumberChange={(value) =>
+                              handleInputChange('session_bind_expire_minutes', value)
+                            }
+                            style={{ width: '100%' }}
+                            extraText={t('会话绑定自动过期时间，0 表示不过期仅手动释放')}
+                          />
+                        </Col>
+                      </Row>
+                    )}
 
                     {inputs.max_users > 0 && (<>
                       <Form.Switch
