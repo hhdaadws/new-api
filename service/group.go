@@ -3,14 +3,17 @@ package service
 import (
 	"strings"
 
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
 func GetUserUsableGroups(userGroup string) map[string]string {
+	// Resolve shard to parent for usable group lookup
+	displayGroup := model.GetParentGroup(userGroup)
 	groupsCopy := setting.GetUserUsableGroupsCopy()
-	if userGroup != "" {
-		specialSettings, b := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.Get(userGroup)
+	if displayGroup != "" {
+		specialSettings, b := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.Get(displayGroup)
 		if b {
 			// 处理特殊可用分组
 			for specialGroup, desc := range specialSettings {
@@ -28,9 +31,9 @@ func GetUserUsableGroups(userGroup string) map[string]string {
 				}
 			}
 		}
-		// 如果userGroup不在UserUsableGroups中，返回UserUsableGroups + userGroup
-		if _, ok := groupsCopy[userGroup]; !ok {
-			groupsCopy[userGroup] = "用户分组"
+		// 如果displayGroup不在UserUsableGroups中，返回UserUsableGroups + displayGroup
+		if _, ok := groupsCopy[displayGroup]; !ok {
+			groupsCopy[displayGroup] = "用户分组"
 		}
 	}
 	return groupsCopy
@@ -56,10 +59,13 @@ func GetUserAutoGroup(userGroup string) []string {
 // GetUserGroupRatio 获取用户使用某个分组的倍率
 // userGroup 用户分组
 // group 需要获取倍率的分组
+// Shard-aware: resolves shard groups to parent for ratio lookup
 func GetUserGroupRatio(userGroup, group string) float64 {
-	ratio, ok := ratio_setting.GetGroupGroupRatio(userGroup, group)
+	lookupUserGroup := model.GetParentGroup(userGroup)
+	lookupGroup := model.GetParentGroup(group)
+	ratio, ok := ratio_setting.GetGroupGroupRatio(lookupUserGroup, lookupGroup)
 	if ok {
 		return ratio
 	}
-	return ratio_setting.GetGroupRatio(group)
+	return ratio_setting.GetGroupRatio(lookupGroup)
 }

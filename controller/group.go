@@ -28,12 +28,14 @@ func GetUserGroups(c *gin.Context) {
 	userGroup := ""
 	userId := c.GetInt("id")
 	userGroup, _ = model.GetUserGroup(userId, false)
-	userUsableGroups := service.GetUserUsableGroups(userGroup)
+	// Use parent group for usable groups lookup (shard-aware)
+	displayGroup := model.GetParentGroup(userGroup)
+	userUsableGroups := service.GetUserUsableGroups(displayGroup)
 	for groupName, _ := range ratio_setting.GetGroupRatioCopy() {
 		// UserUsableGroups contains the groups that the user can use
 		if desc, ok := userUsableGroups[groupName]; ok {
 			usableGroups[groupName] = map[string]interface{}{
-				"ratio": service.GetUserGroupRatio(userGroup, groupName),
+				"ratio": service.GetUserGroupRatio(displayGroup, groupName),
 				"desc":  desc,
 			}
 		}

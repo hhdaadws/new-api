@@ -112,6 +112,25 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 }
 
 func GetChannel(group string, model string, retry int, userId int) (*Channel, error) {
+	// Try with the given group first; if it's a shard, also try the parent group
+	groupsToTry := []string{group}
+	if parentGroup := GetParentGroup(group); parentGroup != group {
+		groupsToTry = append(groupsToTry, parentGroup)
+	}
+
+	for _, tryGroup := range groupsToTry {
+		ch, err := getChannelForGroup(tryGroup, model, retry, userId)
+		if err != nil {
+			return nil, err
+		}
+		if ch != nil {
+			return ch, nil
+		}
+	}
+	return nil, nil
+}
+
+func getChannelForGroup(group string, model string, retry int, userId int) (*Channel, error) {
 	var abilities []Ability
 
 	// Get all priority levels to support fallback when user binding limits filter out all channels

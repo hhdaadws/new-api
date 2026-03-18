@@ -27,6 +27,7 @@ import SettingsLog from '../../pages/Setting/Operation/SettingsLog';
 import SettingsMonitoring from '../../pages/Setting/Operation/SettingsMonitoring';
 import SettingsCreditLimit from '../../pages/Setting/Operation/SettingsCreditLimit';
 import SettingsCheckin from '../../pages/Setting/Operation/SettingsCheckin';
+import SettingsGroupSharding from '../../pages/Setting/Operation/SettingsGroupSharding';
 import { API, showError, toBoolean } from '../../helpers';
 
 const OperationSetting = () => {
@@ -155,6 +156,10 @@ const OperationSetting = () => {
         {/* 签到设置 */}
         <Card style={{ marginTop: '10px' }}>
           <SettingsCheckin options={inputs} refresh={onRefresh} />
+        </Card>
+        {/* 分组分片设置 */}
+        <Card style={{ marginTop: '10px' }}>
+          <SettingsGroupSharding />
         </Card>
       </Spin>
     </>

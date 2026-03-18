@@ -253,8 +253,10 @@ func SearchUsers(keyword string, group string, startIdx int, num int) ([]*User, 
 		// 如果是数字，同时搜索ID和其他字段
 		likeCondition = "id = ? OR " + likeCondition
 		if group != "" {
-			query = query.Where("("+likeCondition+") AND "+commonGroupCol+" = ?",
-				keywordInt, "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%", group)
+			// Shard-aware: search parent group + all shard groups
+			groupsToSearch := GetAllShardGroupsForParent(group)
+			query = query.Where("("+likeCondition+") AND "+commonGroupCol+" IN ?",
+				keywordInt, "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%", groupsToSearch)
 		} else {
 			query = query.Where(likeCondition,
 				keywordInt, "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
@@ -262,8 +264,10 @@ func SearchUsers(keyword string, group string, startIdx int, num int) ([]*User, 
 	} else {
 		// 非数字关键字，只搜索字符串字段
 		if group != "" {
-			query = query.Where("("+likeCondition+") AND "+commonGroupCol+" = ?",
-				"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%", group)
+			// Shard-aware: search parent group + all shard groups
+			groupsToSearch := GetAllShardGroupsForParent(group)
+			query = query.Where("("+likeCondition+") AND "+commonGroupCol+" IN ?",
+				"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%", groupsToSearch)
 		} else {
 			query = query.Where(likeCondition,
 				"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
@@ -522,6 +526,12 @@ func (user *User) Edit(updatePassword bool) error {
 	}
 
 	newUser := *user
+
+	// Get old user data for shard tracking
+	var oldUser User
+	DB.First(&oldUser, user.Id)
+	oldGroup := oldUser.Group
+
 	updates := map[string]interface{}{
 		"username":       newUser.Username,
 		"display_name":   newUser.DisplayName,
@@ -534,10 +544,22 @@ func (user *User) Edit(updatePassword bool) error {
 		updates["password"] = newUser.Password
 	}
 
-	DB.First(&user, user.Id)
 	if err = DB.Model(user).Updates(updates).Error; err != nil {
 		return err
 	}
+
+	// Handle shard count changes when group changes
+	if oldGroup != newUser.Group {
+		if IsShardGroup(oldGroup) {
+			_ = decrementShardUserCountTx(DB, oldGroup)
+		}
+		if IsShardGroup(newUser.Group) {
+			_ = incrementShardUserCountTx(DB, newUser.Group)
+		}
+	}
+
+	// Reload user for cache
+	DB.First(&user, user.Id)
 
 	// Update cache
 	return updateUserCache(*user)
@@ -577,6 +599,10 @@ func (user *User) ClearBinding(bindingType string) error {
 func (user *User) Delete() error {
 	if user.Id == 0 {
 		return errors.New("id 为空！")
+	}
+	// Decrement shard count if user is in a shard
+	if IsShardGroup(user.Group) {
+		_ = decrementShardUserCountTx(DB, user.Group)
 	}
 	if err := DB.Delete(user).Error; err != nil {
 		return err

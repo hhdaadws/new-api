@@ -343,6 +343,17 @@ func SetApiRouter(router *gin.Engine) {
 			groupRoute.GET("/", controller.GetGroups)
 		}
 
+		groupShardRoute := apiRouter.Group("/group_shard")
+		groupShardRoute.Use(middleware.AdminAuth())
+		{
+			groupShardRoute.GET("/", controller.GetGroupShards)
+			groupShardRoute.POST("/", controller.CreateGroupShard)
+			groupShardRoute.PUT("/", controller.UpdateGroupShard)
+			groupShardRoute.DELETE("/:id", controller.DeleteGroupShard)
+			groupShardRoute.POST("/recount", controller.RecountGroupShardUsers)
+			groupShardRoute.POST("/assign_user", controller.AssignUserToShard)
+		}
+
 		prefillGroupRoute := apiRouter.Group("/prefill_group")
 		prefillGroupRoute.Use(middleware.AdminAuth())
 		{

@@ -285,6 +285,7 @@ func migrateDB() error {
 		&Commission{},
 		&Ticket{},
 		&TicketMessage{},
+		&GroupShard{},
 	)
 	if err != nil {
 		return err

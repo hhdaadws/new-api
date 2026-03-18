@@ -53,6 +53,29 @@ func InitChannelCache() {
 		}
 	}
 
+	// Initialize group shard cache before inheriting channels
+	InitGroupShardCache()
+
+	// Inherit parent group channels into shard groups
+	shardCacheLock.RLock()
+	for parentGroup, shards := range parentToShards {
+		parentModels, ok := newGroup2model2channels[parentGroup]
+		if !ok {
+			continue
+		}
+		for _, shard := range shards {
+			if _, exists := newGroup2model2channels[shard.ShardGroup]; !exists {
+				newGroup2model2channels[shard.ShardGroup] = make(map[string][]int)
+			}
+			for model, channelIds := range parentModels {
+				existing := newGroup2model2channels[shard.ShardGroup][model]
+				merged := mergeUniqueChannelIds(existing, channelIds)
+				newGroup2model2channels[shard.ShardGroup][model] = merged
+			}
+		}
+	}
+	shardCacheLock.RUnlock()
+
 	// sort by priority
 	for group, model2channels := range newGroup2model2channels {
 		for model, channels := range model2channels {
@@ -660,4 +683,21 @@ func CacheUpdateChannel(channel *Channel) {
 	println("before:", channelsIDM[channel.Id].ChannelInfo.MultiKeyPollingIndex)
 	channelsIDM[channel.Id] = channel
 	println("after :", channelsIDM[channel.Id].ChannelInfo.MultiKeyPollingIndex)
+}
+
+// mergeUniqueChannelIds merges two channel ID slices, returning unique values.
+func mergeUniqueChannelIds(existing, toAdd []int) []int {
+	seen := make(map[int]bool, len(existing))
+	for _, id := range existing {
+		seen[id] = true
+	}
+	result := make([]int, len(existing))
+	copy(result, existing)
+	for _, id := range toAdd {
+		if !seen[id] {
+			seen[id] = true
+			result = append(result, id)
+		}
+	}
+	return result
 }

@@ -209,6 +209,7 @@ const renderOperations = (
     showResetPasskeyModal,
     showResetTwoFAModal,
     showUserSubscriptionsModal,
+    showAssignShardModal,
     t,
   },
 ) => {
@@ -221,6 +222,11 @@ const renderOperations = (
       node: 'item',
       name: t('订阅管理'),
       onClick: () => showUserSubscriptionsModal(record),
+    },
+    {
+      node: 'item',
+      name: t('分配分片'),
+      onClick: () => showAssignShardModal(record),
     },
     {
       node: 'divider',
@@ -309,6 +315,7 @@ export const getUsersColumns = ({
   showResetPasskeyModal,
   showResetTwoFAModal,
   showUserSubscriptionsModal,
+  showAssignShardModal,
 }) => {
   return [
     {
@@ -366,6 +373,7 @@ export const getUsersColumns = ({
           showResetPasskeyModal,
           showResetTwoFAModal,
           showUserSubscriptionsModal,
+          showAssignShardModal,
           t,
         }),
     },

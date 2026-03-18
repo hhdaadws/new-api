@@ -262,6 +262,9 @@ type UserSubscription struct {
 	UpgradeGroup  string `json:"upgrade_group" gorm:"type:varchar(64);default:''"`
 	PrevUserGroup string `json:"prev_user_group" gorm:"type:varchar(64);default:''"`
 
+	// ActualAssignedGroup is the real group assigned (may be a shard), not persisted.
+	ActualAssignedGroup string `json:"-" gorm:"-:all"`
+
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
 	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
 }
@@ -442,7 +445,7 @@ func downgradeUserGroupForSubscriptionTx(tx *gorm.DB, sub *UserSubscription, now
 	if err != nil {
 		return "", err
 	}
-	if currentGroup != upgradeGroup {
+	if currentGroup != upgradeGroup && GetParentGroup(currentGroup) != upgradeGroup {
 		return "", nil
 	}
 	var activeSub UserSubscription
@@ -457,6 +460,10 @@ func downgradeUserGroupForSubscriptionTx(tx *gorm.DB, sub *UserSubscription, now
 	prevGroup := strings.TrimSpace(sub.PrevUserGroup)
 	if prevGroup == "" || prevGroup == currentGroup {
 		return "", nil
+	}
+	// Decrement shard user count if current group is a shard
+	if IsShardGroup(currentGroup) {
+		_ = decrementShardUserCountTx(tx, currentGroup)
 	}
 	if err := tx.Model(&User{}).Where("id = ?", sub.UserId).
 		Update("group", prevGroup).Error; err != nil {
@@ -511,38 +518,52 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 
 	upgradeGroup := strings.TrimSpace(plan.UpgradeGroup)
 	prevGroup := ""
+	actualGroup := upgradeGroup
 	if upgradeGroup != "" {
 		currentGroup, err := getUserGroupByIdTx(tx, userId)
 		if err != nil {
 			return nil, err
 		}
-		if currentGroup != upgradeGroup {
+		// Check if user is already in this group or one of its shards
+		if !isUserInGroupOrShard(currentGroup, upgradeGroup) {
 			prevGroup = currentGroup
+			// If this is a sharded parent group, assign to a shard
+			if IsParentGroup(upgradeGroup) {
+				shardGroup, err := assignToShardTx(tx, upgradeGroup)
+				if err != nil {
+					return nil, err
+				}
+				actualGroup = shardGroup
+			}
 			if err := tx.Model(&User{}).Where("id = ?", userId).
-				Update("group", upgradeGroup).Error; err != nil {
+				Update("group", actualGroup).Error; err != nil {
 				return nil, err
 			}
+		} else {
+			// User already in group or shard, keep actual group for cache update
+			actualGroup = currentGroup
 		}
 	}
 	sub := &UserSubscription{
-		UserId:            userId,
-		PlanId:            plan.Id,
-		AmountTotal:       plan.TotalAmount,
-		AmountUsed:        0,
-		StartTime:         now.Unix(),
-		EndTime:           endUnix,
-		Status:            "active",
-		Source:            source,
-		LastResetTime:     lastReset,
-		NextResetTime:     nextReset,
-		FiveHourUsed:      0,
-		FiveHourResetTime: fiveHourReset,
-		WeeklyUsed:        0,
-		WeeklyResetTime:   weeklyReset,
-		UpgradeGroup:      upgradeGroup,
-		PrevUserGroup:     prevGroup,
-		CreatedAt:         common.GetTimestamp(),
-		UpdatedAt:         common.GetTimestamp(),
+		UserId:              userId,
+		PlanId:              plan.Id,
+		AmountTotal:         plan.TotalAmount,
+		AmountUsed:          0,
+		StartTime:           now.Unix(),
+		EndTime:             endUnix,
+		Status:              "active",
+		Source:              source,
+		LastResetTime:       lastReset,
+		NextResetTime:       nextReset,
+		FiveHourUsed:        0,
+		FiveHourResetTime:   fiveHourReset,
+		WeeklyUsed:          0,
+		WeeklyResetTime:     weeklyReset,
+		UpgradeGroup:        upgradeGroup,
+		PrevUserGroup:       prevGroup,
+		ActualAssignedGroup: actualGroup,
+		CreatedAt:           common.GetTimestamp(),
+		UpdatedAt:           common.GetTimestamp(),
 	}
 	if err := tx.Create(sub).Error; err != nil {
 		return nil, err
@@ -564,6 +585,7 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string) error {
 	var logMoney float64
 	var logPaymentMethod string
 	var upgradeGroup string
+	var actualAssignedGroup string
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var order SubscriptionOrder
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where(refCol+" = ?", tradeNo).First(&order).Error; err != nil {
@@ -583,10 +605,11 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string) error {
 			// still allow completion for already purchased orders
 		}
 		upgradeGroup = strings.TrimSpace(plan.UpgradeGroup)
-		_, err = CreateUserSubscriptionFromPlanTx(tx, order.UserId, plan, "order")
+		sub, err := CreateUserSubscriptionFromPlanTx(tx, order.UserId, plan, "order")
 		if err != nil {
 			return err
 		}
+		actualAssignedGroup = sub.ActualAssignedGroup
 		if err := upsertSubscriptionTopUpTx(tx, &order); err != nil {
 			return err
 		}
@@ -608,7 +631,12 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string) error {
 		return err
 	}
 	if upgradeGroup != "" && logUserId > 0 {
-		_ = UpdateUserGroupCache(logUserId, upgradeGroup)
+		// Use the actual assigned group (may be a shard) for cache update
+		cacheGroup := actualAssignedGroup
+		if cacheGroup == "" {
+			cacheGroup = upgradeGroup
+		}
+		_ = UpdateUserGroupCache(logUserId, cacheGroup)
 	}
 	if logUserId > 0 {
 		msg := fmt.Sprintf("订阅购买成功，套餐: %s，支付金额: %.2f，支付方式: %s", logPlanTitle, logMoney, logPaymentMethod)
@@ -682,15 +710,24 @@ func AdminBindSubscription(userId int, planId int, sourceNote string) (string, e
 	if err != nil {
 		return "", err
 	}
+	var actualGroup string
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		_, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "admin")
-		return err
+		sub, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "admin")
+		if err != nil {
+			return err
+		}
+		actualGroup = sub.ActualAssignedGroup
+		return nil
 	})
 	if err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(plan.UpgradeGroup) != "" {
-		_ = UpdateUserGroupCache(userId, plan.UpgradeGroup)
+		cacheGroup := actualGroup
+		if cacheGroup == "" {
+			cacheGroup = plan.UpgradeGroup
+		}
+		_ = UpdateUserGroupCache(userId, cacheGroup)
 		return fmt.Sprintf("用户分组将升级到 %s", plan.UpgradeGroup), nil
 	}
 	return "", nil
@@ -922,8 +959,14 @@ func ExpireDueSubscriptions(limit int) (int, error) {
 			if err != nil {
 				return err
 			}
-			if currentGroup != upgradeGroup || currentGroup == prevGroup {
+			// Shard-aware check: user might be in a shard of the upgrade group
+			isInGroupOrShard := currentGroup == upgradeGroup || GetParentGroup(currentGroup) == upgradeGroup
+			if !isInGroupOrShard || currentGroup == prevGroup {
 				return nil
+			}
+			// Decrement shard user count if current group is a shard
+			if IsShardGroup(currentGroup) {
+				_ = decrementShardUserCountTx(tx, currentGroup)
 			}
 			if err := tx.Model(&User{}).Where("id = ?", userId).
 				Update("group", prevGroup).Error; err != nil {
