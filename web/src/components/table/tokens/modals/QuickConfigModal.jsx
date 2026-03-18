@@ -59,12 +59,13 @@ function getUrlOptions() {
 function generateOneLiner(os, platform, tokenKey, url) {
   const fullToken = `sk-${tokenKey}`;
   const platformArg = platform === 'claude-code' ? 'claude' : 'codex';
+  const cleanUrl = url.replace(/\/+$/, '');
 
   if (os === 'windows') {
-    return `irm ${url}/setup.ps1 -OutFile setup.ps1; .\\setup.ps1 -Url '${url}' -Key '${fullToken}' -Platform '${platformArg}'; Remove-Item setup.ps1`;
+    return `irm ${cleanUrl}/setup.ps1 -OutFile setup.ps1; .\\setup.ps1 -Url '${cleanUrl}' -Key '${fullToken}' -Platform '${platformArg}'; Remove-Item setup.ps1`;
   }
 
-  return `curl -s ${url}/setup.sh | bash -s -- --url ${url} --key ${fullToken} --platform ${platformArg}`;
+  return `curl -s ${cleanUrl}/setup.sh | bash -s -- --url ${cleanUrl} --key ${fullToken} --platform ${platformArg}`;
 }
 
 export default function QuickConfigModal({

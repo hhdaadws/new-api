@@ -14,6 +14,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Strip trailing slashes from URL
+URL="${URL%/}"
+
 if [ -z "$URL" ] || [ -z "$KEY" ]; then
   echo "Usage: curl -s <server>/setup.sh | bash -s -- --url <url> --key <key> [--platform claude|codex]"
   exit 1

@@ -4,6 +4,9 @@ param(
     [string]$Platform = "claude"
 )
 
+# Strip trailing slashes from URL
+$Url = $Url.TrimEnd('/')
+
 if (-not $Url -or -not $Key) {
     Write-Host "Usage: .\setup.ps1 -Url <url> -Key <key> [-Platform claude|codex]"
     exit 1
