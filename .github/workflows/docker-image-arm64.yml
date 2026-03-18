@@ -71,7 +71,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            w3ng/best-new-api
+            miku66/newapi
 
       - name: Build & push single-arch
         uses: docker/build-push-action@v6
@@ -80,8 +80,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: true
           tags: |
-            w3ng/best-new-api:${{ env.TAG }}-${{ matrix.arch }}
-            w3ng/best-new-api:latest-${{ matrix.arch }}
+            miku66/newapi:${{ env.TAG }}-${{ matrix.arch }}
+            miku66/newapi:latest-${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -112,13 +112,13 @@ jobs:
       - name: Create & push manifest (Docker Hub - version)
         run: |
           docker buildx imagetools create \
-            -t w3ng/best-new-api:${TAG} \
-            w3ng/best-new-api:${TAG}-amd64 \
-            w3ng/best-new-api:${TAG}-arm64
+            -t miku66/newapi:${TAG} \
+            miku66/newapi:${TAG}-amd64 \
+            miku66/newapi:${TAG}-arm64
 
       - name: Create & push manifest (Docker Hub - latest)
         run: |
           docker buildx imagetools create \
-            -t w3ng/best-new-api:latest \
-            w3ng/best-new-api:latest-amd64 \
-            w3ng/best-new-api:latest-arm64
+            -t miku66/newapi:latest \
+            miku66/newapi:latest-amd64 \
+            miku66/newapi:latest-arm64

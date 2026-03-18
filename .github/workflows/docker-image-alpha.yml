@@ -66,7 +66,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            w3ng/best-new-api
+            miku66/newapi
             ghcr.io/${{ env.GHCR_REPOSITORY }}
 
       - name: Build & push single-arch (to both registries)
@@ -76,8 +76,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: true
           tags: |
-            w3ng/best-new-api:alpha-${{ matrix.arch }}
-            w3ng/best-new-api:${{ steps.version.outputs.value }}-${{ matrix.arch }}
+            miku66/newapi:alpha-${{ matrix.arch }}
+            miku66/newapi:${{ steps.version.outputs.value }}-${{ matrix.arch }}
             ghcr.io/${{ env.GHCR_REPOSITORY }}:alpha-${{ matrix.arch }}
             ghcr.io/${{ env.GHCR_REPOSITORY }}:${{ steps.version.outputs.value }}-${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -118,16 +118,16 @@ jobs:
       - name: Create & push manifest (Docker Hub - alpha)
         run: |
           docker buildx imagetools create \
-            -t w3ng/best-new-api:alpha \
-            w3ng/best-new-api:alpha-amd64 \
-            w3ng/best-new-api:alpha-arm64
+            -t miku66/newapi:alpha \
+            miku66/newapi:alpha-amd64 \
+            miku66/newapi:alpha-arm64
 
       - name: Create & push manifest (Docker Hub - versioned alpha)
         run: |
           docker buildx imagetools create \
-            -t w3ng/best-new-api:${VERSION} \
-            w3ng/best-new-api:${VERSION}-amd64 \
-            w3ng/best-new-api:${VERSION}-arm64
+            -t miku66/newapi:${VERSION} \
+            miku66/newapi:${VERSION}-amd64 \
+            miku66/newapi:${VERSION}-arm64
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
