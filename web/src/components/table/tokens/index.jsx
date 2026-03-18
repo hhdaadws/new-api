@@ -408,6 +408,8 @@ function TokensPage() {
               setShowEdit={setShowEdit}
               batchCopyTokens={batchCopyTokens}
               batchDeleteTokens={batchDeleteTokens}
+              tokens={tokensData.tokens}
+              fetchTokenKey={tokensData.fetchTokenKey}
               t={t}
             />
 

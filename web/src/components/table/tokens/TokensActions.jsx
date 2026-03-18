@@ -22,6 +22,7 @@ import { Button, Space } from '@douyinfe/semi-ui';
 import { showError } from '../../../helpers';
 import CopyTokensModal from './modals/CopyTokensModal';
 import DeleteTokensModal from './modals/DeleteTokensModal';
+import QuickConfigModal from './modals/QuickConfigModal';
 
 const TokensActions = ({
   selectedKeys,
@@ -29,11 +30,14 @@ const TokensActions = ({
   setShowEdit,
   batchCopyTokens,
   batchDeleteTokens,
+  tokens,
+  fetchTokenKey,
   t,
 }) => {
   // Modal states
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showQuickConfig, setShowQuickConfig] = useState(false);
 
   // Handle copy selected tokens with options
   const handleCopySelectedTokens = () => {
@@ -77,6 +81,15 @@ const TokensActions = ({
         </Button>
 
         <Button
+          type='secondary'
+          className='flex-1 md:flex-initial'
+          onClick={() => setShowQuickConfig(true)}
+          size='small'
+        >
+          {t('一键配置')}
+        </Button>
+
+        <Button
           type='tertiary'
           className='flex-1 md:flex-initial'
           onClick={handleCopySelectedTokens}
@@ -107,6 +120,14 @@ const TokensActions = ({
         onCancel={() => setShowDeleteModal(false)}
         onConfirm={handleConfirmDelete}
         selectedKeys={selectedKeys}
+        t={t}
+      />
+
+      <QuickConfigModal
+        visible={showQuickConfig}
+        onClose={() => setShowQuickConfig(false)}
+        tokens={tokens}
+        fetchTokenKey={fetchTokenKey}
         t={t}
       />
     </>
