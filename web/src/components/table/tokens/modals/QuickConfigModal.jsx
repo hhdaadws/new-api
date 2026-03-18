@@ -28,7 +28,6 @@ import {
 } from '@douyinfe/semi-ui';
 import { IconCopy } from '@douyinfe/semi-icons';
 import { copy, showSuccess, showError } from '../../../../helpers';
-import { getServerAddress } from '../../../../helpers/token';
 import { selectFilter } from '../../../../helpers';
 
 function detectOS() {
@@ -38,15 +37,8 @@ function detectOS() {
   return 'linux';
 }
 
-function getUrlOptions(t) {
-  const serverAddress = getServerAddress();
-  const options = [
-    {
-      label: t('默认服务器地址') + ` (${serverAddress})`,
-      value: serverAddress,
-    },
-  ];
-
+function getUrlOptions() {
+  const options = [];
   try {
     const raw = localStorage.getItem('status');
     if (raw) {
@@ -61,69 +53,18 @@ function getUrlOptions(t) {
       }
     }
   } catch (_) {}
-
   return options;
 }
 
-function generateClaudeCommands(os, tokenKey, url) {
+function generateOneLiner(os, platform, tokenKey, url) {
   const fullToken = `sk-${tokenKey}`;
+  const platformArg = platform === 'claude-code' ? 'claude' : 'codex';
 
   if (os === 'windows') {
-    return [
-      `setx ANTHROPIC_AUTH_TOKEN "${fullToken}"`,
-      `setx ANTHROPIC_BASE_URL "${url}"`,
-    ].join('\n');
+    return `irm ${url}/setup.ps1 -OutFile setup.ps1; .\\setup.ps1 -Url '${url}' -Key '${fullToken}' -Platform '${platformArg}'; Remove-Item setup.ps1`;
   }
 
-  // Mac and Linux both use ~/.zshrc
-  return [
-    `# Claude Code 配置`,
-    `grep -q 'ANTHROPIC_AUTH_TOKEN' ~/.zshrc 2>/dev/null && sed -i${os === 'mac' ? " ''" : ''} 's|^export ANTHROPIC_AUTH_TOKEN=.*|export ANTHROPIC_AUTH_TOKEN="${fullToken}"|' ~/.zshrc || echo 'export ANTHROPIC_AUTH_TOKEN="${fullToken}"' >> ~/.zshrc`,
-    `grep -q 'ANTHROPIC_BASE_URL' ~/.zshrc 2>/dev/null && sed -i${os === 'mac' ? " ''" : ''} 's|^export ANTHROPIC_BASE_URL=.*|export ANTHROPIC_BASE_URL="${url}"|' ~/.zshrc || echo 'export ANTHROPIC_BASE_URL="${url}"' >> ~/.zshrc`,
-    `source ~/.zshrc`,
-  ].join('\n');
-}
-
-function generateCodexCommands(os, tokenKey, url) {
-  const fullToken = `sk-${tokenKey}`;
-  const baseUrl = url.endsWith('/') ? url + 'v1' : url + '/v1';
-
-  const configToml = `model_provider = "MikuCode"
-model = "gpt-5.4"
-model_reasoning_effort = "high"
-disable_response_storage = true
-preferred_auth_method = "apikey"
-[model_providers.MikuCode]
-name = "MikuCode"
-base_url = "${baseUrl}"
-wire_api = "responses"
-requires_openai_auth = true`;
-
-  const authJson = `{
-  "OPENAI_API_KEY": "${fullToken}"
-}`;
-
-  if (os === 'windows') {
-    return `New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\\.codex" | Out-Null
-
-@"
-${configToml}
-"@ | Set-Content -Path "$env:USERPROFILE\\.codex\\config.toml" -Encoding UTF8
-
-@"
-${authJson}
-"@ | Set-Content -Path "$env:USERPROFILE\\.codex\\auth.json" -Encoding UTF8`;
-  }
-
-  return `mkdir -p ~/.codex
-
-cat > ~/.codex/config.toml << 'EOF'
-${configToml}
-EOF
-
-cat > ~/.codex/auth.json << 'EOF'
-${authJson}
-EOF`;
+  return `curl -s ${url}/setup.sh | bash -s -- --url ${url} --key ${fullToken} --platform ${platformArg}`;
 }
 
 export default function QuickConfigModal({
@@ -137,10 +78,10 @@ export default function QuickConfigModal({
   const [platform, setPlatform] = useState('claude-code');
   const [selectedUrl, setSelectedUrl] = useState('');
   const [os, setOs] = useState('windows');
-  const [generatedCommands, setGeneratedCommands] = useState('');
+  const [generatedCommand, setGeneratedCommand] = useState('');
   const [generating, setGenerating] = useState(false);
 
-  const urlOptions = useMemo(() => getUrlOptions(t), [visible, t]);
+  const urlOptions = useMemo(() => getUrlOptions(), [visible]);
 
   const tokenOptions = useMemo(() => {
     return (tokens || [])
@@ -154,10 +95,10 @@ export default function QuickConfigModal({
   useEffect(() => {
     if (visible) {
       setOs(detectOS());
-      setGeneratedCommands('');
+      setGeneratedCommand('');
       setSelectedTokenId(null);
       setPlatform('claude-code');
-      setSelectedUrl(getServerAddress());
+      setSelectedUrl('');
     }
   }, [visible]);
 
@@ -178,14 +119,9 @@ export default function QuickConfigModal({
         showError(t('获取令牌密钥失败'));
         return;
       }
-
-      let commands = '';
-      if (platform === 'claude-code') {
-        commands = generateClaudeCommands(os, tokenKey, selectedUrl);
-      } else {
-        commands = generateCodexCommands(os, tokenKey, selectedUrl);
-      }
-      setGeneratedCommands(commands);
+      setGeneratedCommand(
+        generateOneLiner(os, platform, tokenKey, selectedUrl),
+      );
     } catch (e) {
       showError(e.message || t('获取令牌密钥失败'));
     } finally {
@@ -194,7 +130,7 @@ export default function QuickConfigModal({
   };
 
   const handleCopy = async () => {
-    await copy(generatedCommands);
+    await copy(generatedCommand);
     showSuccess(t('配置命令已复制到剪贴板'));
   };
 
@@ -228,7 +164,7 @@ export default function QuickConfigModal({
             value={selectedTokenId}
             onChange={(val) => {
               setSelectedTokenId(val);
-              setGeneratedCommands('');
+              setGeneratedCommand('');
             }}
             filter={selectFilter}
             style={{ width: '100%' }}
@@ -248,7 +184,7 @@ export default function QuickConfigModal({
             value={platform}
             onChange={(e) => {
               setPlatform(e.target.value);
-              setGeneratedCommands('');
+              setGeneratedCommand('');
             }}
             style={{ width: '100%' }}
           >
@@ -268,7 +204,7 @@ export default function QuickConfigModal({
             value={selectedUrl}
             onChange={(val) => {
               setSelectedUrl(val);
-              setGeneratedCommands('');
+              setGeneratedCommand('');
             }}
             filter={selectFilter}
             style={{ width: '100%' }}
@@ -285,7 +221,7 @@ export default function QuickConfigModal({
             value={os}
             onChange={(e) => {
               setOs(e.target.value);
-              setGeneratedCommands('');
+              setGeneratedCommand('');
             }}
             style={{ width: '100%' }}
           >
@@ -305,7 +241,7 @@ export default function QuickConfigModal({
           {t('生成配置命令')}
         </Button>
 
-        {generatedCommands && (
+        {generatedCommand && (
           <div style={{ position: 'relative' }}>
             <pre
               style={{
@@ -313,14 +249,14 @@ export default function QuickConfigModal({
                 padding: '12px 40px 12px 12px',
                 borderRadius: 6,
                 overflow: 'auto',
-                maxHeight: 350,
+                maxHeight: 200,
                 fontSize: 13,
                 lineHeight: 1.5,
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-all',
               }}
             >
-              <code>{generatedCommands}</code>
+              <code>{generatedCommand}</code>
             </pre>
             <Button
               size='small'
