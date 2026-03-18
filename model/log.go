@@ -139,7 +139,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 		TokenId:          tokenId,
 		UseTime:          useTimeSeconds,
 		IsStream:         isStream,
-		Group:            group,
+		Group:            GetParentGroup(group),
 		Ip: func() string {
 			if needRecordIp {
 				return c.ClientIP()
@@ -244,7 +244,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		TokenId:          params.TokenId,
 		UseTime:          params.UseTimeSeconds,
 		IsStream:         params.IsStream,
-		Group:            params.Group,
+		Group:            GetParentGroup(params.Group),
 		Ip: func() string {
 			if needRecordIp {
 				return c.ClientIP()
@@ -299,7 +299,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		Quota:     params.Quota,
 		ChannelId: params.ChannelId,
 		TokenId:   params.TokenId,
-		Group:     params.Group,
+		Group:     GetParentGroup(params.Group),
 		Other:     common.MapToJsonStr(params.Other),
 	}
 	err := LOG_DB.Create(log).Error
