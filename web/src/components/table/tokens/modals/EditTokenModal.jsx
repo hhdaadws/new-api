@@ -74,7 +74,6 @@ const EditTokenModal = (props) => {
     allow_ips: '',
     group: '',
     cross_group_retry: false,
-    claude_cache_ttl: '',
     tokenCount: 1,
   });
 
@@ -556,22 +555,6 @@ const EditTokenModal = (props) => {
                       filter={selectFilter}
                       autoClearSearchValue={false}
                       searchPosition='dropdown'
-                      showClear
-                      style={{ width: '100%' }}
-                    />
-                  </Col>
-                  <Col span={24}>
-                    <Form.Select
-                      field='claude_cache_ttl'
-                      label={t('Claude缓存TTL')}
-                      placeholder={t('默认（5分钟）')}
-                      optionList={[
-                        { label: t('默认（5分钟）'), value: '' },
-                        { label: t('1小时'), value: '1h' },
-                      ]}
-                      extraText={t(
-                        '仅对Claude渠道生效，覆盖请求中的缓存创建TTL',
-                      )}
                       showClear
                       style={{ width: '100%' }}
                     />

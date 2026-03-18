@@ -389,9 +389,6 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 	}
 	common.SetContextKey(c, constant.ContextKeyTokenGroup, token.Group)
 	common.SetContextKey(c, constant.ContextKeyTokenCrossGroupRetry, token.CrossGroupRetry)
-	if token.ClaudeCacheTTL != "" {
-		common.SetContextKey(c, constant.ContextKeyTokenClaudeCacheTTL, token.ClaudeCacheTTL)
-	}
 	if len(parts) > 1 {
 		if model.IsAdmin(token.UserId) {
 			c.Set("specific_channel_id", parts[1])
