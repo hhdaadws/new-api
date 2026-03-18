@@ -13,8 +13,16 @@ import (
 
 func GetGroups(c *gin.Context) {
 	groupNames := make([]string, 0)
+	seen := make(map[string]bool)
 	for groupName := range ratio_setting.GetGroupRatioCopy() {
 		groupNames = append(groupNames, groupName)
+		seen[groupName] = true
+	}
+	// Include shard groups so they appear in user/channel group selectors
+	for _, shardGroup := range model.GetAllShardGroupNames() {
+		if !seen[shardGroup] {
+			groupNames = append(groupNames, shardGroup)
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

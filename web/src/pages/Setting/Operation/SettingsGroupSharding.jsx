@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Button,
   Table,
@@ -27,6 +27,16 @@ export default function SettingsGroupSharding() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingShard, setEditingShard] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Filter out shard groups from parent group selector to prevent shard-of-shard
+  const shardGroupNames = useMemo(
+    () => new Set(shards.map((s) => s.shard_group)),
+    [shards],
+  );
+  const parentGroupOptions = useMemo(
+    () => groups.filter((g) => !shardGroupNames.has(g)),
+    [groups, shardGroupNames],
+  );
 
   const loadShards = useCallback(async () => {
     setLoading(true);
@@ -278,7 +288,7 @@ export default function SettingsGroupSharding() {
             rules={[{ required: true, message: t('请选择父分组') }]}
             disabled={!!editingShard}
           >
-            {groups.map((g) => (
+            {parentGroupOptions.map((g) => (
               <Select.Option key={g} value={g}>
                 {g}
               </Select.Option>

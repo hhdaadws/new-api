@@ -112,6 +112,17 @@ func GetAllShardGroupsForParent(group string) []string {
 	return result
 }
 
+// GetAllShardGroupNames returns all shard group names from the cache.
+func GetAllShardGroupNames() []string {
+	shardCacheLock.RLock()
+	defer shardCacheLock.RUnlock()
+	result := make([]string, 0, len(shardToParent))
+	for shardGroup := range shardToParent {
+		result = append(result, shardGroup)
+	}
+	return result
+}
+
 // isUserInGroupOrShard checks if the user's current group matches the target group
 // or is a shard of the target group.
 func isUserInGroupOrShard(currentGroup, targetGroup string) bool {
