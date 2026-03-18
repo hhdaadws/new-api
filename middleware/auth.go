@@ -357,7 +357,12 @@ func TokenAuth() func(c *gin.Context) {
 					return
 				}
 			}
-			userGroup = tokenGroup
+			// 如果 Token 分组是父分组且用户在其分片中，保留用户的分片分组
+			if model.IsParentGroup(tokenGroup) && model.GetParentGroup(userCache.Group) == tokenGroup {
+				// userGroup 保持为 userCache.Group（即分片分组）
+			} else {
+				userGroup = tokenGroup
+			}
 		}
 		common.SetContextKey(c, constant.ContextKeyUsingGroup, userGroup)
 
