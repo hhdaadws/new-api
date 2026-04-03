@@ -130,3 +130,21 @@ For request structs that are parsed from client JSON and then re-marshaled to up
   - field absent in client JSON => `nil` => omitted on marshal;
   - field explicitly set to zero/false => non-`nil` pointer => must still be sent upstream.
 - Avoid using non-pointer scalars with `omitempty` for optional request parameters, because zero values (`0`, `0.0`, `false`) will be silently dropped during marshal.
+
+### Rule 7: Merge Feature Branch to Main After Each Task
+
+After completing work on the feature branch, always merge it into `main` and push both branches. This keeps `main` up to date.
+
+### Rule 8: Upstream Sync Workflow
+
+The upstream repository is `https://github.com/QuantumNous/new-api.git` (remote name: `upstream`). When syncing upstream changes:
+
+1. `git fetch upstream main`
+2. `git checkout main && git merge upstream/main --allow-unrelated-histories -X ours` — histories are unrelated, use `-X ours` to keep local versions for conflicts
+3. After merge, check all **newly added files** from upstream for references to fields/functions/constants that may be missing in local code (because `-X ours` kept our versions of existing files). Common issues:
+   - New upstream files referencing struct fields added to existing files upstream (e.g., `dto.Usage` fields)
+   - New upstream files referencing constants added to existing files upstream (e.g., `common.TopUpStatusFailed`)
+   - New upstream files referencing functions added to existing files upstream (e.g., `model.RechargeWaffo`)
+   - New upstream dependencies missing from `go.mod`/`go.sum`
+4. Fix all missing references, then push `main`
+5. Merge `main` into the feature branch and push
