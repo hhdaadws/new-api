@@ -15,6 +15,9 @@ func ApplyHiddenRatio(info *relaycommon.RelayInfo, usage *dto.Usage) bool {
 	if hr == 0 || hr == 1.0 {
 		return false
 	}
+	if !ratio_setting.IsHiddenRatioTargetModel(info.OriginModelName) {
+		return false
+	}
 
 	// Smart truncation: cap hr so inflated tokens don't exceed model limits
 	actualTotal := usage.PromptTokens + usage.CompletionTokens

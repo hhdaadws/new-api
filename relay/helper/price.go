@@ -62,6 +62,9 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	} else {
 		hiddenRatio = ratio_setting.GetHiddenGroupRatio(info.UsingGroup)
 	}
+	if !ratio_setting.IsHiddenRatioTargetModel(info.OriginModelName) {
+		hiddenRatio = 1.0
+	}
 
 	var preConsumedQuota int
 	var modelRatio float64

@@ -37,6 +37,7 @@ export default function GroupRatioSettings(props) {
     UserUsableGroups: '',
     GroupGroupRatio: '',
     HiddenGroupRatio: '',
+    HiddenRatioTargetModels: '',
     ModelContextLimit: '',
     ModelMaxOutput: '',
     'group_ratio_setting.group_special_usable_group': '',
@@ -209,6 +210,43 @@ export default function GroupRatioSettings(props) {
               ]}
               onChange={(value) =>
                 setInputs({ ...inputs, HiddenGroupRatio: value })
+              }
+            />
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col xs={24} sm={16}>
+            <Form.TextArea
+              label={t('隐藏倍率目标模型')}
+              placeholder={t('为一个 JSON 数组，包含模型名称前缀')}
+              extraText={t(
+                '指定哪些模型应用隐藏倍率。为空数组时对所有模型生效（默认），非空时仅对模型名称匹配前缀的模型生效。格式如：["claude", "gpt-4o"]，表示仅 claude 和 gpt-4o 开头的模型应用隐藏倍率',
+              )}
+              field={'HiddenRatioTargetModels'}
+              autosize={{ minRows: 6, maxRows: 12 }}
+              trigger='blur'
+              stopValidateWithError
+              rules={[
+                {
+                  validator: (rule, value) => {
+                    if (!value || value.trim() === '') {
+                      return true;
+                    }
+                    try {
+                      const parsed = JSON.parse(value);
+                      if (!Array.isArray(parsed)) {
+                        return false;
+                      }
+                      return parsed.every((item) => typeof item === 'string');
+                    } catch (error) {
+                      return false;
+                    }
+                  },
+                  message: t('必须是有效的 JSON 字符串数组，例如：["claude","gpt-4o"]'),
+                },
+              ]}
+              onChange={(value) =>
+                setInputs({ ...inputs, HiddenRatioTargetModels: value })
               }
             />
           </Col>
