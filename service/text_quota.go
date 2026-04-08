@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -51,6 +52,8 @@ type textQuotaSummary struct {
 	FileSearchCallCount      int
 	AudioInputPrice          float64
 	ImageGenerationCallPrice float64
+	ServiceTier              string
+	ServiceTierRatio         float64
 }
 
 func cacheWriteTokensTotal(summary textQuotaSummary) int {
@@ -92,6 +95,8 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		CacheCreationRatio5m: relayInfo.PriceData.CacheCreation5mRatio,
 		CacheCreationRatio1h: relayInfo.PriceData.CacheCreation1hRatio,
 		UsageSemantic:        usageSemanticFromUsage(relayInfo, usage),
+		ServiceTier:          relayInfo.ServiceTier,
+		ServiceTierRatio:     ratio_setting.GetServiceTierRatio(relayInfo.ServiceTier),
 	}
 	summary.IsClaudeUsageSemantic = summary.UsageSemantic == "anthropic"
 

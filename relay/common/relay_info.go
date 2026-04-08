@@ -150,6 +150,7 @@ type RelayInfo struct {
 	RuntimeHeadersOverride                map[string]interface{}
 	UseRuntimeHeadersOverride             bool
 	ParamOverrideAudit                    []string
+	ServiceTier                           string // 请求中的 service_tier（如 "priority"）
 
 	PriceData types.PriceData
 

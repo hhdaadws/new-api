@@ -122,6 +122,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		return
 	}
 
+	// 提取 service_tier 用于计费调整
+	extractServiceTier(relayInfo, request)
+
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
 	needCountToken := constant.CountToken
 	// Avoid building huge CombineText (strings.Join) when token counting and sensitive check are both disabled.
@@ -252,6 +255,23 @@ func addUsedChannel(c *gin.Context, channelId int) {
 	useChannel := c.GetStringSlice("use_channel")
 	useChannel = append(useChannel, fmt.Sprintf("%d", channelId))
 	c.Set("use_channel", useChannel)
+}
+
+// extractServiceTier 从请求中提取 service_tier 并存入 relayInfo，用于后续计费调整。
+func extractServiceTier(relayInfo *relaycommon.RelayInfo, request dto.Request) {
+	switch req := request.(type) {
+	case *dto.GeneralOpenAIRequest:
+		if req.ServiceTier != nil {
+			var tier string
+			if err := common.Unmarshal(req.ServiceTier, &tier); err == nil {
+				relayInfo.ServiceTier = tier
+			}
+		}
+	case *dto.OpenAIResponsesRequest:
+		relayInfo.ServiceTier = req.ServiceTier
+	case *dto.ClaudeRequest:
+		relayInfo.ServiceTier = req.ServiceTier
+	}
 }
 
 func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {

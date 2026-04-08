@@ -7,6 +7,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -44,6 +45,10 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	other["frt"] = float64(relayInfo.FirstResponseTime.UnixMilli() - relayInfo.StartTime.UnixMilli())
 	if relayInfo.ReasoningEffort != "" {
 		other["reasoning_effort"] = relayInfo.ReasoningEffort
+	}
+	if relayInfo.ServiceTier != "" {
+		other["service_tier"] = relayInfo.ServiceTier
+		other["service_tier_ratio"] = ratio_setting.GetServiceTierRatio(relayInfo.ServiceTier)
 	}
 	if relayInfo.IsModelMapped {
 		other["is_model_mapped"] = true

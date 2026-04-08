@@ -149,6 +149,14 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		QuotaToPreConsume:    preConsumedQuota,
 	}
 
+	// 注入 service_tier 倍率
+	if info.ServiceTier != "" {
+		tierRatio := ratio_setting.GetServiceTierRatio(info.ServiceTier)
+		if tierRatio != 1.0 {
+			priceData.AddOtherRatio("service_tier", tierRatio)
+		}
+	}
+
 	if common.DebugEnabled {
 		println(fmt.Sprintf("model_price_helper result: %s", priceData.ToSetting()))
 	}
