@@ -85,7 +85,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 
 			// 解析 UserLocation JSON
 			var userLocationMap map[string]interface{}
-			if err := json.Unmarshal(textRequest.WebSearchOptions.UserLocation, &userLocationMap); err == nil {
+			if err := common.Unmarshal(textRequest.WebSearchOptions.UserLocation, &userLocationMap); err == nil {
 				// 检查是否有 approximate 字段
 				if approximateData, ok := userLocationMap["approximate"].(map[string]interface{}); ok {
 					if timezone, ok := approximateData["timezone"].(string); ok && timezone != "" {
@@ -177,7 +177,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		}
 		// TODO: 临时处理
 		// https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#important-considerations-when-using-extended-thinking
-		claudeRequest.TopP = common.GetPointer[float64](0)
+		claudeRequest.TopP = nil
 		claudeRequest.Temperature = common.GetPointer[float64](1.0)
 		if !model_setting.ShouldPreserveThinkingSuffix(textRequest.Model) {
 			claudeRequest.Model = strings.TrimSuffix(textRequest.Model, "-thinking")
@@ -354,22 +354,27 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 						claudeMediaMessage.Source = &dto.ClaudeMessageSource{
 							Type: "base64",
 						}
-						// 使用统一的文件服务获取图片数据
-						var source *types.FileSource
-						if strings.HasPrefix(imageUrl.Url, "http") {
-							source = types.NewURLFileSource(imageUrl.Url)
-						} else {
-							source = types.NewBase64FileSource(imageUrl.Url, "")
-						}
 						base64Data, mimeType, err := service.GetBase64Data(c, source, "formatting image for Claude")
 						if err != nil {
 							return nil, fmt.Errorf("get file data failed: %s", err.Error())
 						}
+						claudeMediaMessage := dto.ClaudeMediaMessage{
+							Source: &dto.ClaudeMessageSource{
+								Type: "base64",
+							},
+						}
+						if strings.HasPrefix(mimeType, "application/pdf") {
+							claudeMediaMessage.Type = "document"
+						} else {
+							claudeMediaMessage.Type = "image"
+						}
+
 						claudeMediaMessage.Source.MediaType = mimeType
 						claudeMediaMessage.Source.Data = base64Data
 					}
 					claudeMediaMessages = append(claudeMediaMessages, claudeMediaMessage)
 				}
+
 				if message.ToolCalls != nil {
 					for _, toolCall := range message.ParseToolCalls() {
 						inputObj := make(map[string]any)
@@ -575,11 +580,26 @@ func buildMessageDeltaPatchUsage(claudeResponse *dto.ClaudeResponse, claudeInfo 
 	if usage.CacheCreationInputTokens == 0 && claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens > 0 {
 		usage.CacheCreationInputTokens = claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens
 	}
-	if usage.CacheCreation == nil && (claudeInfo.Usage.ClaudeCacheCreation5mTokens > 0 || claudeInfo.Usage.ClaudeCacheCreation1hTokens > 0) {
-		usage.CacheCreation = &dto.ClaudeCacheCreationUsage{
-			Ephemeral5mInputTokens: claudeInfo.Usage.ClaudeCacheCreation5mTokens,
-			Ephemeral1hInputTokens: claudeInfo.Usage.ClaudeCacheCreation1hTokens,
-		}
+	cacheCreation5m := 0
+	cacheCreation1h := 0
+	if usage.CacheCreation != nil {
+		cacheCreation5m = usage.CacheCreation.Ephemeral5mInputTokens
+		cacheCreation1h = usage.CacheCreation.Ephemeral1hInputTokens
+	} else {
+		cacheCreation5m = claudeInfo.Usage.ClaudeCacheCreation5mTokens
+		cacheCreation1h = claudeInfo.Usage.ClaudeCacheCreation1hTokens
+	}
+	cacheCreation5m, cacheCreation1h = service.NormalizeCacheCreationSplit(
+		usage.CacheCreationInputTokens,
+		cacheCreation5m,
+		cacheCreation1h,
+	)
+	if usage.CacheCreation == nil && (cacheCreation5m > 0 || cacheCreation1h > 0) {
+		usage.CacheCreation = &dto.ClaudeCacheCreationUsage{}
+	}
+	if usage.CacheCreation != nil {
+		usage.CacheCreation.Ephemeral5mInputTokens = cacheCreation5m
+		usage.CacheCreation.Ephemeral1hInputTokens = cacheCreation1h
 	}
 	return usage
 }
