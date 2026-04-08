@@ -343,16 +343,16 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 			} else {
 				claudeMediaMessages := make([]dto.ClaudeMediaMessage, 0)
 				for _, mediaMessage := range message.ParseContent() {
-					claudeMediaMessage := dto.ClaudeMediaMessage{
-						Type: mediaMessage.Type,
-					}
-					if mediaMessage.Type == "text" {
-						claudeMediaMessage.Text = common.GetPointer[string](mediaMessage.Text)
-					} else {
-						imageUrl := mediaMessage.GetImageMedia()
-						claudeMediaMessage.Type = "image"
-						claudeMediaMessage.Source = &dto.ClaudeMessageSource{
-							Type: "base64",
+					switch mediaMessage.Type {
+					case "text":
+						claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
+							Type: "text",
+							Text: common.GetPointer[string](mediaMessage.Text),
+						})
+					default:
+						source := mediaMessage.ToFileSource()
+						if source == nil {
+							continue
 						}
 						base64Data, mimeType, err := service.GetBase64Data(c, source, "formatting image for Claude")
 						if err != nil {
@@ -371,8 +371,9 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 
 						claudeMediaMessage.Source.MediaType = mimeType
 						claudeMediaMessage.Source.Data = base64Data
+						claudeMediaMessages = append(claudeMediaMessages, claudeMediaMessage)
+						continue
 					}
-					claudeMediaMessages = append(claudeMediaMessages, claudeMediaMessage)
 				}
 
 				if message.ToolCalls != nil {
