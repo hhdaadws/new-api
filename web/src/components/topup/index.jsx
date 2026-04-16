@@ -53,7 +53,7 @@ const TopUp = () => {
   const [topUpLink, setTopUpLink] = useState(
     statusState?.status?.top_up_link || '',
   );
-  const [xianyuLink] = useState(
+  const [xianyuLink, setXianyuLink] = useState(
     statusState?.status?.xianyu_link || '',
   );
   const [enableOnlineTopUp, setEnableOnlineTopUp] = useState(
@@ -559,6 +559,7 @@ const TopUp = () => {
       // setMinTopUp(minTopUpValue);
       // setTopUpCount(minTopUpValue);
       setTopUpLink(statusState.status.top_up_link || '');
+      setXianyuLink(statusState.status.xianyu_link || '');
       setPriceRatio(statusState.status.price || 1);
 
       setStatusLoading(false);
