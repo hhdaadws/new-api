@@ -45,6 +45,7 @@ export default function GeneralSettings(props) {
   const [showQuotaWarning, setShowQuotaWarning] = useState(false);
   const [inputs, setInputs] = useState({
     TopUpLink: '',
+    XianyuLink: '',
     'general_setting.docs_link': '',
     'general_setting.quota_display_type': 'USD',
     'general_setting.custom_currency_symbol': '¤',
@@ -177,6 +178,16 @@ export default function GeneralSettings(props) {
                   initValue={''}
                   placeholder={t('例如发卡网站的购买链接')}
                   onChange={handleFieldChange('TopUpLink')}
+                  showClear
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Input
+                  field={'XianyuLink'}
+                  label={t('闲鱼/淘宝店铺链接')}
+                  initValue={''}
+                  placeholder={t('在线充值关闭时展示，例如闲鱼店铺链接')}
+                  onChange={handleFieldChange('XianyuLink')}
                   showClear
                 />
               </Col>

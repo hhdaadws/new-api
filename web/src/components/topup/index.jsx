@@ -53,6 +53,9 @@ const TopUp = () => {
   const [topUpLink, setTopUpLink] = useState(
     statusState?.status?.top_up_link || '',
   );
+  const [xianyuLink] = useState(
+    statusState?.status?.xianyu_link || '',
+  );
   const [enableOnlineTopUp, setEnableOnlineTopUp] = useState(
     statusState?.status?.enable_online_topup || false,
   );
@@ -762,6 +765,7 @@ const TopUp = () => {
           topUp={topUp}
           isSubmitting={isSubmitting}
           topUpLink={topUpLink}
+          xianyuLink={xianyuLink}
           openTopUpLink={openTopUpLink}
           userState={userState}
           renderQuota={renderQuota}

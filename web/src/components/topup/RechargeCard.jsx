@@ -81,6 +81,7 @@ const RechargeCard = ({
   topUp,
   isSubmitting,
   topUpLink,
+  xianyuLink,
   openTopUpLink,
   userState,
   renderQuota,
@@ -514,9 +515,28 @@ const RechargeCard = ({
         ) : (
           <Banner
             type='info'
-            description={t(
-              '管理员未开启在线充值功能，请联系管理员开启或使用兑换码充值。',
-            )}
+            description={
+              xianyuLink ? (
+                <div className='flex flex-col gap-2'>
+                  <div>
+                    {t('管理员未开启在线充值功能，请到以下闲鱼店铺充值：')}
+                  </div>
+                  <div>
+                    <Button
+                      type='primary'
+                      theme='solid'
+                      onClick={() => window.open(xianyuLink, '_blank')}
+                    >
+                      {t('前往店铺充值')}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                t(
+                  '管理员未开启在线充值功能，请联系管理员开启或使用兑换码充值。',
+                )
+              )
+            }
             className='!rounded-xl'
             closeIcon={null}
           />
