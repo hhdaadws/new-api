@@ -211,6 +211,7 @@ const EditChannelModal = (props) => {
     allow_safety_identifier: false,
     allow_include_obfuscation: false,
     allow_inference_geo: false,
+    allow_speed: false,
     claude_beta_query: false,
     upstream_model_update_check_enabled: false,
     upstream_model_update_auto_sync_enabled: false,
@@ -916,6 +917,7 @@ const EditChannelModal = (props) => {
             parsedSettings.allow_include_obfuscation || false;
           data.allow_inference_geo =
             parsedSettings.allow_inference_geo || false;
+          data.allow_speed = parsedSettings.allow_speed || false;
           data.claude_beta_query = parsedSettings.claude_beta_query || false;
           data.upstream_model_update_check_enabled =
             parsedSettings.upstream_model_update_check_enabled === true;
@@ -945,6 +947,7 @@ const EditChannelModal = (props) => {
           data.allow_safety_identifier = false;
           data.allow_include_obfuscation = false;
           data.allow_inference_geo = false;
+          data.allow_speed = false;
           data.claude_beta_query = false;
           data.upstream_model_update_check_enabled = false;
           data.upstream_model_update_auto_sync_enabled = false;
@@ -962,6 +965,7 @@ const EditChannelModal = (props) => {
         data.allow_safety_identifier = false;
         data.allow_include_obfuscation = false;
         data.allow_inference_geo = false;
+        data.allow_speed = false;
         data.claude_beta_query = false;
         data.upstream_model_update_check_enabled = false;
         data.upstream_model_update_auto_sync_enabled = false;
@@ -1779,6 +1783,7 @@ const EditChannelModal = (props) => {
       }
       if (localInputs.type === 14) {
         settings.allow_inference_geo = localInputs.allow_inference_geo === true;
+        settings.allow_speed = localInputs.allow_speed === true;
         settings.claude_beta_query = localInputs.claude_beta_query === true;
       }
     }
@@ -1829,6 +1834,7 @@ const EditChannelModal = (props) => {
     delete localInputs.allow_safety_identifier;
     delete localInputs.allow_include_obfuscation;
     delete localInputs.allow_inference_geo;
+    delete localInputs.allow_speed;
     delete localInputs.claude_beta_query;
     delete localInputs.upstream_model_update_check_enabled;
     delete localInputs.upstream_model_update_auto_sync_enabled;

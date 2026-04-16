@@ -66,6 +66,7 @@ const (
 
 	// ContextKeyLanguage stores the user's language preference for i18n
 	ContextKeyLanguage ContextKey = "language"
+	ContextKeyIsStream ContextKey = "is_stream"
 
 	// ContextKeySessionId stores the real session_id extracted from client headers for sticky session binding
 	ContextKeySessionId ContextKey = "session_id"
