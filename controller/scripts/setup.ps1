@@ -49,8 +49,11 @@ requires_openai_auth = true
 }
 "@
 
-    Set-Content -Path "$codexDir\config.toml" -Value $configToml -Encoding UTF8
-    Set-Content -Path "$codexDir\auth.json" -Value $authJson -Encoding UTF8
+    # Write UTF-8 without BOM — PowerShell 5.1's `Set-Content -Encoding UTF8`
+    # emits a BOM (EF BB BF), which breaks Codex's TOML/JSON parsers.
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText("$codexDir\config.toml", $configToml, $utf8NoBom)
+    [System.IO.File]::WriteAllText("$codexDir\auth.json",   $authJson,   $utf8NoBom)
 
     Write-Host "`n✅ Codex configured successfully!"
     Write-Host "   Config written to $codexDir\config.toml"
