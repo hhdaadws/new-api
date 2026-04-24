@@ -49,7 +49,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.POST("/stripe/webhook", controller.StripeWebhook)
 		apiRouter.POST("/creem/webhook", controller.CreemWebhook)
 		apiRouter.POST("/waffo/webhook", controller.WaffoWebhook)
-		//apiRouter.POST("/waffo-pancake/webhook", controller.WaffoPancakeWebhook)
+		apiRouter.POST("/waffo-pancake/webhook", controller.WaffoPancakeWebhook)
 
 		// Universal secure verification routes
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UniversalVerify)
@@ -93,8 +93,8 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/creem/pay", middleware.CriticalRateLimit(), controller.RequestCreemPay)
 				selfRoute.POST("/waffo/amount", controller.RequestWaffoAmount)
 				selfRoute.POST("/waffo/pay", middleware.CriticalRateLimit(), controller.RequestWaffoPay)
-				//selfRoute.POST("/waffo-pancake/amount", controller.RequestWaffoPancakeAmount)
-				//selfRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), controller.RequestWaffoPancakePay)
+				selfRoute.POST("/waffo-pancake/amount", controller.RequestWaffoPancakeAmount)
+				selfRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), controller.RequestWaffoPancakePay)
 				selfRoute.POST("/aff_transfer", controller.TransferAffQuota)
 				selfRoute.PUT("/setting", controller.UpdateUserSetting)
 
@@ -207,6 +207,39 @@ func SetApiRouter(router *gin.Engine) {
 			ratioSyncRoute.GET("/channels", controller.GetSyncableChannels)
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
 		}
+		commissionRoute := apiRouter.Group("/commission")
+		commissionRoute.Use(middleware.AdminAuth())
+		{
+			commissionRoute.GET("/", controller.GetAllCommissions)
+			commissionRoute.POST("/approve", controller.ApproveCommission)
+			commissionRoute.POST("/reject", controller.RejectCommission)
+			commissionRoute.POST("/batch/approve", controller.BatchApproveCommissions)
+			commissionRoute.POST("/batch/reject", controller.BatchRejectCommissions)
+		}
+
+		ticketUserRoute := apiRouter.Group("/ticket")
+		ticketUserRoute.Use(middleware.UserAuth())
+		{
+			ticketUserRoute.POST("/", controller.CreateTicket)
+			ticketUserRoute.GET("/self", controller.GetUserTickets)
+			ticketUserRoute.GET("/self/search", middleware.SearchRateLimit(), controller.SearchUserTickets)
+			ticketUserRoute.GET("/self/:id", controller.GetUserTicket)
+			ticketUserRoute.POST("/self/:id/message", controller.AddTicketMessage)
+			ticketUserRoute.POST("/self/:id/close", controller.CloseTicket)
+			ticketUserRoute.POST("/self/:id/rate", controller.RateTicket)
+		}
+		ticketAdminRoute := apiRouter.Group("/ticket")
+		ticketAdminRoute.Use(middleware.AdminAuth())
+		{
+			ticketAdminRoute.GET("/", controller.GetAllTickets)
+			ticketAdminRoute.GET("/search", controller.SearchTickets)
+			ticketAdminRoute.GET("/stats", controller.GetTicketStats)
+			ticketAdminRoute.GET("/admins", controller.GetAdminUsers)
+			ticketAdminRoute.GET("/:id", controller.GetTicketDetail)
+			ticketAdminRoute.PUT("/:id/status", controller.UpdateTicketStatus)
+			ticketAdminRoute.PUT("/:id/assign", controller.AssignTicket)
+			ticketAdminRoute.POST("/:id/message", controller.AdminAddTicketMessage)
+		}
 		channelRoute := apiRouter.Group("/channel")
 		channelRoute.Use(middleware.AdminAuth())
 		{
@@ -249,6 +282,15 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.POST("/upstream_updates/apply_all", controller.ApplyAllChannelUpstreamModelUpdates)
 			channelRoute.POST("/upstream_updates/detect", controller.DetectChannelUpstreamModelUpdates)
 			channelRoute.POST("/upstream_updates/detect_all", controller.DetectAllChannelUpstreamModelUpdates)
+			channelRoute.GET("/:id/user_bindings", controller.GetChannelUserBindings)
+			channelRoute.DELETE("/:id/user_bindings/:user_id", controller.ReleaseChannelUserBinding)
+			channelRoute.DELETE("/:id/user_bindings", controller.ReleaseAllChannelUserBindings)
+			channelRoute.GET("/:id/session_bindings", controller.GetChannelSessionBindings)
+			channelRoute.DELETE("/:id/session_bindings/:session_id", controller.ReleaseChannelSessionBinding)
+			channelRoute.DELETE("/:id/session_bindings", controller.ReleaseAllChannelSessionBindings)
+			channelRoute.GET("/:id/session_spoof", controller.GetChannelSpoofSessionId)
+			channelRoute.POST("/analyze_users", controller.AnalyzeChannelUsers)
+			channelRoute.POST("/:id/user_bindings/batch", controller.BatchBindChannelUsers)
 		}
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())
@@ -308,6 +350,17 @@ func SetApiRouter(router *gin.Engine) {
 		groupRoute.Use(middleware.AdminAuth())
 		{
 			groupRoute.GET("/", controller.GetGroups)
+		}
+
+		groupShardRoute := apiRouter.Group("/group_shard")
+		groupShardRoute.Use(middleware.AdminAuth())
+		{
+			groupShardRoute.GET("/", controller.GetGroupShards)
+			groupShardRoute.POST("/", controller.CreateGroupShard)
+			groupShardRoute.PUT("/", controller.UpdateGroupShard)
+			groupShardRoute.DELETE("/:id", controller.DeleteGroupShard)
+			groupShardRoute.POST("/recount", controller.RecountGroupShardUsers)
+			groupShardRoute.POST("/assign_user", controller.AssignUserToShard)
 		}
 
 		prefillGroupRoute := apiRouter.Group("/prefill_group")

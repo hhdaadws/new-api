@@ -54,6 +54,8 @@ const PaymentSetting = () => {
     WaffoPancakeSandbox: false,
     WaffoPancakeMerchantID: '',
     WaffoPancakePrivateKey: '',
+    WaffoPancakeWebhookPublicKey: '',
+    WaffoPancakeWebhookTestKey: '',
     WaffoPancakeStoreID: '',
     WaffoPancakeProductID: '',
     WaffoPancakeReturnURL: '',
@@ -114,6 +116,8 @@ const PaymentSetting = () => {
             break;
           case 'WaffoPancakeMerchantID':
           case 'WaffoPancakePrivateKey':
+          case 'WaffoPancakeWebhookPublicKey':
+          case 'WaffoPancakeWebhookTestKey':
           case 'WaffoPancakeStoreID':
           case 'WaffoPancakeProductID':
           case 'WaffoPancakeReturnURL':
@@ -198,13 +202,13 @@ const PaymentSetting = () => {
                 hideSectionTitle
               />
             </Tabs.TabPane>
-            {/*<Tabs.TabPane tab={t('Waffo Pancake 设置')} itemKey='waffo-pancake'>*/}
-            {/*  <SettingsPaymentGatewayWaffoPancake*/}
-            {/*    options={inputs}*/}
-            {/*    refresh={onRefresh}*/}
-            {/*    hideSectionTitle*/}
-            {/*  />*/}
-            {/*</Tabs.TabPane>*/}
+            <Tabs.TabPane tab={t('Waffo Pancake 设置')} itemKey='waffo-pancake'>
+              <SettingsPaymentGatewayWaffoPancake
+                options={inputs}
+                refresh={onRefresh}
+                hideSectionTitle
+              />
+            </Tabs.TabPane>
           </Tabs>
         </Card>
       </Spin>
