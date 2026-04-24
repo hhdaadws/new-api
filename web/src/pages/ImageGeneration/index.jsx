@@ -93,8 +93,11 @@ const CodeBlock = ({ title, language, code, copyLabel, onCopy }) => (
         {copyLabel}
       </Button>
     </div>
-    <pre className='m-0 max-h-[520px] overflow-auto bg-[#101828] p-4 text-xs leading-5 text-white'>
-      <code>{code}</code>
+    <pre
+      className='m-0 max-h-[520px] overflow-auto p-4 text-xs leading-5'
+      style={{ backgroundColor: '#101828', color: '#f8fafc' }}
+    >
+      <code style={{ color: 'inherit' }}>{code}</code>
     </pre>
   </div>
 );
