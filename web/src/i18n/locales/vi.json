@@ -4072,5 +4072,22 @@
     "请求配置": "Cấu hình yêu cầu",
     "请输入有效的数值": "Vui lòng nhập giá trị hợp lệ",
     "高级套餐，半价优惠": "Premium plan, 50% off"
-  }
+  },
+  "Service Tier": "Service Tier",
+  "Service Tier 计费设置": "Cài đặt tính phí Service Tier",
+  "当渠道启用 service_tier 透传时，用户请求中携带的 service_tier 将影响计费倍率。需在渠道设置中启用「允许 service_tier 透传」后生效。": "Khi kênh cho phép truyền service_tier, service_tier trong yêu cầu sẽ ảnh hưởng đến hệ số tính phí. Hãy bật cho phép truyền service_tier trong cài đặt kênh.",
+  "Priority 层级倍率": "Hệ số cấp Priority",
+  "分模型倍率": "Hệ số theo mô hình",
+  "模型或前缀": "Mô hình hoặc tiền tố",
+  "倍率": "Hệ số",
+  "新增模型倍率": "Thêm hệ số mô hình",
+  "JSON 必须是对象": "JSON phải là một đối tượng",
+  "模型名不能为空": "Tên mô hình không được để trống",
+  "倍率必须大于 0": "Hệ số phải lớn hơn 0",
+  "保存 Service Tier 设置": "Lưu cài đặt Service Tier",
+  "精确模型名优先，带 * 的配置按最长前缀匹配；未命中时使用全局倍率。": "Tên mô hình chính xác được ưu tiên; mục có * khớp theo tiền tố dài nhất. Nếu không khớp, dùng hệ số toàn cục.",
+  "闲鱼购买": "Mua trên Xianyu",
+  "超级管理员未设置闲鱼链接！": "Quản trị viên cấp cao chưa cấu hình liên kết Xianyu!",
+  "gpt-5.4*": "gpt-5.4*",
+  "{\"gpt-5.4\": 2, \"gpt-5.5\": 2.5, \"gpt-5.4*\": 2}": "{\"gpt-5.4\": 2, \"gpt-5.5\": 2.5, \"gpt-5.4*\": 2}"
 }
