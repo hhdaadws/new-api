@@ -445,7 +445,7 @@ func TestComposeTieredTextQuotaAppliesOtherRatios(t *testing.T) {
 	relayInfo := &relaycommon.RelayInfo{
 		PriceData: types.PriceData{
 			OtherRatios: map[string]float64{
-				"service_tier": 2.5,
+				"request_multiplier": 2.5,
 			},
 		},
 		TieredBillingSnapshot: &billingexpr.BillingSnapshot{

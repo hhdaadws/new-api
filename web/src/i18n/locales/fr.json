@@ -3526,21 +3526,10 @@
     "请输入有效的数值": "Veuillez saisir une valeur valide",
     "高级套餐，半价优惠": "Premium plan, 50% off"
   },
-  "Service Tier": "Service Tier",
-  "Service Tier 计费设置": "Paramètres de facturation Service Tier",
-  "当渠道启用 service_tier 透传时，用户请求中携带的 service_tier 将影响计费倍率。需在渠道设置中启用「允许 service_tier 透传」后生效。": "Lorsque le canal transmet service_tier, cette valeur influence le multiplicateur de facturation. Activez la transmission de service_tier dans les paramètres du canal.",
-  "Priority 层级倍率": "Multiplicateur du niveau Priority",
-  "分模型倍率": "Multiplicateurs par modèle",
-  "模型或前缀": "Modèle ou préfixe",
   "倍率": "Multiplicateur",
-  "新增模型倍率": "Ajouter un multiplicateur",
   "JSON 必须是对象": "Le JSON doit être un objet",
   "模型名不能为空": "Le nom du modèle ne peut pas être vide",
   "倍率必须大于 0": "Le multiplicateur doit être supérieur à 0",
-  "保存 Service Tier 设置": "Enregistrer les paramètres Service Tier",
-  "精确模型名优先，带 * 的配置按最长前缀匹配；未命中时使用全局倍率。": "Les noms exacts sont prioritaires; les entrées avec * utilisent le préfixe le plus long. Sinon, le multiplicateur global est utilisé.",
   "闲鱼购买": "Acheter sur Xianyu",
-  "超级管理员未设置闲鱼链接！": "Le super administrateur n’a pas configuré le lien Xianyu !",
-  "gpt-5.4*": "gpt-5.4*",
-  "{\"gpt-5.4\": 2, \"gpt-5.5\": 2.5, \"gpt-5.4*\": 2}": "{\"gpt-5.4\": 2, \"gpt-5.5\": 2.5, \"gpt-5.4*\": 2}"
+  "超级管理员未设置闲鱼链接！": "Le super administrateur n’a pas configuré le lien Xianyu !"
 }

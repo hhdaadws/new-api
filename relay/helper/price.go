@@ -2,7 +2,6 @@ package helper
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -77,7 +76,6 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 			return types.PriceData{}, err
 		}
 		priceData.HiddenRatio = hiddenRatio
-		applyServiceTierRatio(info, &priceData)
 		info.PriceData = priceData
 		return priceData, nil
 	}
@@ -164,7 +162,6 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		HiddenRatio:          hiddenRatio,
 		QuotaToPreConsume:    preConsumedQuota,
 	}
-	applyServiceTierRatio(info, &priceData)
 
 	if common.DebugEnabled {
 		println(fmt.Sprintf("model_price_helper result: %s", priceData.ToSetting()))
@@ -182,20 +179,6 @@ func hiddenRatioForPriceData(info *relaycommon.RelayInfo) float64 {
 		return 1.0
 	}
 	return hiddenRatio
-}
-
-func applyServiceTierRatio(info *relaycommon.RelayInfo, priceData *types.PriceData) {
-	if info == nil || priceData == nil {
-		return
-	}
-	ratio := billing_setting.GetServiceTierRatio(info.ServiceTier, info.OriginModelName)
-	if ratio == 1.0 {
-		return
-	}
-	priceData.AddOtherRatio("service_tier", ratio)
-	if priceData.QuotaToPreConsume > 0 {
-		priceData.QuotaToPreConsume = int(math.Round(float64(priceData.QuotaToPreConsume) * ratio))
-	}
 }
 
 // ModelPriceHelperPerCall 按次/按量计费的 PriceHelper (MJ、Task)

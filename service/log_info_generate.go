@@ -9,7 +9,6 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
-	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -50,7 +49,6 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	}
 	if relayInfo.ServiceTier != "" {
 		other["service_tier"] = relayInfo.ServiceTier
-		other["service_tier_ratio"] = billing_setting.GetServiceTierRatio(relayInfo.ServiceTier, relayInfo.OriginModelName)
 	}
 	if relayInfo.IsModelMapped {
 		other["is_model_mapped"] = true

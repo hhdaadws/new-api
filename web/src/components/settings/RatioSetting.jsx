@@ -26,7 +26,6 @@ import GroupRatioSettings from '../../pages/Setting/Ratio/GroupRatioSettings';
 import ModelRatioNotSetEditor from '../../pages/Setting/Ratio/ModelRationNotSetEditor';
 import UpstreamRatioSync from '../../pages/Setting/Ratio/UpstreamRatioSync';
 import ToolPriceSettings from '../../pages/Setting/Ratio/ToolPriceSettings';
-import ServiceTierSettings from '../../pages/Setting/Ratio/ServiceTierSettings';
 
 import { API, showError, toBoolean } from '../../helpers';
 
@@ -49,8 +48,6 @@ const RatioSetting = () => {
     ExposeRatioEnabled: false,
     UserUsableGroups: '',
     'group_ratio_setting.group_special_usable_group': '',
-    'service_tier_setting.priority_ratio': 2,
-    'service_tier_setting.priority_model_ratios': '{}',
   });
 
   const [loading, setLoading] = useState(false);
@@ -111,9 +108,6 @@ const RatioSetting = () => {
           </Tabs.TabPane>
           <Tabs.TabPane tab={t('上游倍率同步')} itemKey='upstream_sync'>
             <UpstreamRatioSync options={inputs} refresh={onRefresh} />
-          </Tabs.TabPane>
-          <Tabs.TabPane tab={t('Service Tier')} itemKey='service_tier'>
-            <ServiceTierSettings options={inputs} refresh={onRefresh} />
           </Tabs.TabPane>
           <Tabs.TabPane tab={t('工具调用定价')} itemKey='tool_price'>
             <ToolPriceSettings options={inputs} />
