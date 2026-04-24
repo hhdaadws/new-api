@@ -71,3 +71,21 @@ func TestOpenAIResponsesRequestPreserveExplicitZeroValues(t *testing.T) {
 	require.True(t, gjson.GetBytes(encoded, "stream").Exists())
 	require.True(t, gjson.GetBytes(encoded, "top_p").Exists())
 }
+
+func TestImageRequestAcceptsStringN(t *testing.T) {
+	raw := []byte(`{
+		"model":"gpt-image-1",
+		"prompt":"draw a cat",
+		"n":"2"
+	}`)
+
+	var req ImageRequest
+	err := common.Unmarshal(raw, &req)
+	require.NoError(t, err)
+	require.NotNil(t, req.N)
+	require.Equal(t, uint(2), *req.N)
+
+	encoded, err := common.Marshal(req)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), gjson.GetBytes(encoded, "n").Int())
+}

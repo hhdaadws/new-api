@@ -227,15 +227,18 @@ const ImageGeneration = () => {
     }
   };
 
-  const buildPayload = () => ({
-    model: form.model,
-    group: form.group,
-    prompt: form.prompt.trim(),
-    size: form.size,
-    quality: form.quality,
-    output_format: form.output_format,
-    n: form.n,
-  });
+  const buildPayload = () => {
+    const count = Number.parseInt(form.n, 10);
+    return {
+      model: form.model,
+      group: form.group,
+      prompt: form.prompt.trim(),
+      size: form.size,
+      quality: form.quality,
+      output_format: form.output_format,
+      n: Number.isFinite(count) && count > 0 ? count : 1,
+    };
+  };
 
   const handleSuccessItems = (items, mode) => {
     setHistory((prev) => [...items, ...prev].slice(0, pageSize));
