@@ -11,6 +11,7 @@ type ImageGeneration struct {
 	ID            int64  `json:"id" gorm:"primaryKey;AUTO_INCREMENT"`
 	CreatedAt     int64  `json:"created_at" gorm:"index"`
 	UserId        int    `json:"user_id" gorm:"index"`
+	Kind          string `json:"kind" gorm:"type:varchar(24);index"`
 	Model         string `json:"model" gorm:"type:varchar(191);index"`
 	Group         string `json:"group" gorm:"type:varchar(64);index"`
 	Prompt        string `json:"prompt" gorm:"type:text"`

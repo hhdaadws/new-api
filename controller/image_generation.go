@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -46,6 +47,7 @@ type imageGenerationPageRequest struct {
 type imageGenerationItem struct {
 	ID            int64  `json:"id"`
 	CreatedAt     int64  `json:"created_at"`
+	Kind          string `json:"kind"`
 	Model         string `json:"model"`
 	Group         string `json:"group"`
 	Prompt        string `json:"prompt"`
@@ -127,16 +129,10 @@ func GetImageGenerationConfig(c *gin.Context) {
 }
 
 func ImageGenerationPageGenerate(c *gin.Context) {
-	if c.GetBool("use_access_token") {
-		common.ApiErrorMsg(c, "暂不支持使用 access token")
+	req, ok := prepareImageGenerationPageRequest(c, relayconstant.RelayModeImagesGenerations)
+	if !ok {
 		return
 	}
-	if !common.ImageGenerationPageEnabled {
-		common.ApiErrorMsg(c, "图像生成页面未启用")
-		return
-	}
-
-	req := &imageGenerationPageRequest{}
 	if err := common.UnmarshalBodyReusable(c, req); err != nil {
 		common.ApiError(c, err)
 		return
@@ -149,28 +145,34 @@ func ImageGenerationPageGenerate(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-
-	userId := c.GetInt("id")
-	userCache, err := model.GetUserCache(userId)
-	if err != nil {
+	if err := setupImageGenerationRelayContext(c, req); err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	userCache.WriteContext(c)
-	common.SetContextKey(c, constant.ContextKeyUsingGroup, req.Group)
-	common.SetContextKey(c, constant.ContextKeyTokenGroup, req.Group)
-	c.Set("relay_mode", relayconstant.RelayModeImagesGenerations)
+	relayAndSaveImageGeneration(c, req, "generation")
+}
 
-	tempToken := &model.Token{
-		UserId: userId,
-		Name:   fmt.Sprintf("image-generation-%s", req.Group),
-		Group:  req.Group,
+func ImageGenerationPageEdit(c *gin.Context) {
+	req, ok := prepareImageGenerationPageRequest(c, relayconstant.RelayModeImagesEdits)
+	if !ok {
+		return
 	}
-	if err := middleware.SetupContextForToken(c, tempToken); err != nil {
+	if err := fillImageEditRequestFromMultipart(c, req); err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	if err := normalizeAndValidateImageGenerationRequest(req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := setupImageGenerationRelayContext(c, req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	relayAndSaveImageGeneration(c, req, "edit")
+}
 
+func relayAndSaveImageGeneration(c *gin.Context, req *imageGenerationPageRequest, kind string) {
 	originalWriter := c.Writer
 	captureWriter := &imageGenerationCaptureWriter{ResponseWriter: originalWriter}
 	c.Writer = captureWriter
@@ -190,10 +192,10 @@ func ImageGenerationPageGenerate(c *gin.Context) {
 
 	imageResponse := &dto.ImageResponse{}
 	if err := common.Unmarshal(responseBody, imageResponse); err != nil {
-		common.ApiError(c, fmt.Errorf("图像生成成功，但解析上游响应失败: %w", err))
+		common.ApiError(c, fmt.Errorf("图像处理成功，但解析上游响应失败: %w", err))
 		return
 	}
-	items, err := saveGeneratedImages(c, userId, req, imageResponse)
+	items, err := saveGeneratedImages(c, c.GetInt("id"), req, imageResponse, kind)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -201,6 +203,27 @@ func ImageGenerationPageGenerate(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{
 		"items": items,
 	})
+}
+
+func prepareImageGenerationPageRequest(c *gin.Context, relayMode int) (*imageGenerationPageRequest, bool) {
+	if c.GetBool("use_access_token") {
+		common.ApiErrorMsg(c, "暂不支持使用 access token")
+		return nil, false
+	}
+	if !common.ImageGenerationPageEnabled {
+		common.ApiErrorMsg(c, "图像生成页面未启用")
+		return nil, false
+	}
+
+	userId := c.GetInt("id")
+	userCache, err := model.GetUserCache(userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return nil, false
+	}
+	userCache.WriteContext(c)
+	c.Set("relay_mode", relayMode)
+	return &imageGenerationPageRequest{}, true
 }
 
 func GetImageGenerationHistory(c *gin.Context) {
@@ -317,6 +340,47 @@ func normalizeAndValidateImageGenerationRequest(req *imageGenerationPageRequest)
 	return nil
 }
 
+func fillImageEditRequestFromMultipart(c *gin.Context, req *imageGenerationPageRequest) error {
+	form, err := common.ParseMultipartFormReusable(c)
+	if err != nil {
+		return err
+	}
+	defer form.RemoveAll()
+
+	req.Model = getMultipartValue(form, "model")
+	req.Group = getMultipartValue(form, "group")
+	req.Prompt = getMultipartValue(form, "prompt")
+	req.Size = getMultipartValue(form, "size")
+	req.Quality = getMultipartValue(form, "quality")
+	req.OutputFormat = getMultipartValue(form, "output_format")
+	if nValue := strings.TrimSpace(getMultipartValue(form, "n")); nValue != "" {
+		n, err := strconv.ParseUint(nValue, 10, 32)
+		if err != nil {
+			return errors.New("生成数量必须是数字")
+		}
+		req.N = common.GetPointer(uint(n))
+	}
+
+	imageFiles := form.File["image"]
+	if len(imageFiles) != 1 {
+		return errors.New("请上传一张图片")
+	}
+	return validateImageEditFile(imageFiles[0])
+}
+
+func setupImageGenerationRelayContext(c *gin.Context, req *imageGenerationPageRequest) error {
+	userId := c.GetInt("id")
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, req.Group)
+	common.SetContextKey(c, constant.ContextKeyTokenGroup, req.Group)
+
+	tempToken := &model.Token{
+		UserId: userId,
+		Name:   fmt.Sprintf("image-generation-%s", req.Group),
+		Group:  req.Group,
+	}
+	return middleware.SetupContextForToken(c, tempToken)
+}
+
 func replaceImageGenerationRequestBody(c *gin.Context, req *imageGenerationPageRequest) error {
 	payload := map[string]any{
 		"model":         req.Model,
@@ -343,7 +407,7 @@ func replaceImageGenerationRequestBody(c *gin.Context, req *imageGenerationPageR
 	return nil
 }
 
-func saveGeneratedImages(c *gin.Context, userId int, req *imageGenerationPageRequest, imageResponse *dto.ImageResponse) ([]imageGenerationItem, error) {
+func saveGeneratedImages(c *gin.Context, userId int, req *imageGenerationPageRequest, imageResponse *dto.ImageResponse, kind string) ([]imageGenerationItem, error) {
 	if len(imageResponse.Data) == 0 {
 		return nil, errors.New("上游未返回图片数据")
 	}
@@ -359,6 +423,7 @@ func saveGeneratedImages(c *gin.Context, userId int, req *imageGenerationPageReq
 		}
 		record := &model.ImageGeneration{
 			UserId:        userId,
+			Kind:          kind,
 			Model:         req.Model,
 			Group:         req.Group,
 			Prompt:        req.Prompt,
@@ -489,6 +554,39 @@ func getImageGenerationStorageDir() string {
 	return filepath.Join("data", "image-generations")
 }
 
+func getMultipartValue(form *multipart.Form, key string) string {
+	values := form.Value[key]
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func validateImageEditFile(fileHeader *multipart.FileHeader) error {
+	if fileHeader == nil {
+		return errors.New("请上传一张图片")
+	}
+	if fileHeader.Size <= 0 {
+		return errors.New("图片文件为空")
+	}
+	if fileHeader.Size > maxStoredGeneratedImageBytes {
+		return errors.New("图片文件过大")
+	}
+
+	contentType := strings.ToLower(fileHeader.Header.Get("Content-Type"))
+	switch contentType {
+	case "image/png", "image/jpeg", "image/jpg", "image/webp":
+		return nil
+	}
+
+	switch strings.ToLower(filepath.Ext(fileHeader.Filename)) {
+	case ".png", ".jpg", ".jpeg", ".webp":
+		return nil
+	default:
+		return errors.New("仅支持 PNG、JPEG、WebP 图片")
+	}
+}
+
 func getUserImageGenerationFromParam(c *gin.Context) (*model.ImageGeneration, bool) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
@@ -516,9 +614,14 @@ func getUserImageGenerationFromParam(c *gin.Context) (*model.ImageGeneration, bo
 }
 
 func buildImageGenerationItem(record *model.ImageGeneration) imageGenerationItem {
+	kind := record.Kind
+	if kind == "" {
+		kind = "generation"
+	}
 	return imageGenerationItem{
 		ID:            record.ID,
 		CreatedAt:     record.CreatedAt,
+		Kind:          kind,
 		Model:         record.Model,
 		Group:         record.Group,
 		Prompt:        record.Prompt,

@@ -110,7 +110,7 @@ func Distribute() func(c *gin.Context) {
 						common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
 					}
 				}
-				if strings.HasPrefix(c.Request.URL.Path, "/pg/images/generations") {
+				if strings.HasPrefix(c.Request.URL.Path, "/pg/images/generations") || strings.HasPrefix(c.Request.URL.Path, "/pg/images/edits") {
 					if !common.ImageGenerationPageEnabled {
 						abortWithOpenAiMessage(c, http.StatusForbidden, "图像生成页面未启用")
 						return
@@ -132,7 +132,11 @@ func Distribute() func(c *gin.Context) {
 					usingGroup = imageRequest.Group
 					common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
 					common.SetContextKey(c, constant.ContextKeyTokenGroup, usingGroup)
-					c.Set("relay_mode", relayconstant.RelayModeImagesGenerations)
+					if strings.HasPrefix(c.Request.URL.Path, "/pg/images/edits") {
+						c.Set("relay_mode", relayconstant.RelayModeImagesEdits)
+					} else {
+						c.Set("relay_mode", relayconstant.RelayModeImagesGenerations)
+					}
 				}
 
 				// Sticky session binding lookup: check if session is already bound to a channel
@@ -427,7 +431,7 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		modelRequest.Group = req.Group
 		common.SetContextKey(c, constant.ContextKeyTokenGroup, modelRequest.Group)
 	}
-	if strings.HasPrefix(c.Request.URL.Path, "/pg/images/generations") {
+	if strings.HasPrefix(c.Request.URL.Path, "/pg/images/generations") || strings.HasPrefix(c.Request.URL.Path, "/pg/images/edits") {
 		req, err := getModelFromRequest(c)
 		if err != nil {
 			return nil, false, err
@@ -435,7 +439,11 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		modelRequest.Model = req.Model
 		modelRequest.Group = req.Group
 		common.SetContextKey(c, constant.ContextKeyTokenGroup, modelRequest.Group)
-		c.Set("relay_mode", relayconstant.RelayModeImagesGenerations)
+		if strings.HasPrefix(c.Request.URL.Path, "/pg/images/edits") {
+			c.Set("relay_mode", relayconstant.RelayModeImagesEdits)
+		} else {
+			c.Set("relay_mode", relayconstant.RelayModeImagesGenerations)
+		}
 	}
 
 	if strings.HasPrefix(c.Request.URL.Path, "/v1/responses/compact") && modelRequest.Model != "" {
