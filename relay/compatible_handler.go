@@ -222,6 +222,11 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 }
 
 func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent ...string) {
+	if relayInfo != nil && relayInfo.TieredBillingSnapshot != nil {
+		service.PostTextConsumeQuota(ctx, relayInfo, usage, extraContent)
+		return
+	}
+
 	originUsage := usage
 	if usage == nil {
 		usage = &dto.Usage{

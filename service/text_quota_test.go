@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -462,4 +463,51 @@ func TestComposeTieredTextQuotaAppliesOtherRatios(t *testing.T) {
 	})
 
 	require.Equal(t, 2750, quota)
+}
+
+func TestTieredTextQuotaUsesExpressionWhenLegacyRatiosUnset(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+
+	expr := `(p <= 272000 ? tier("standard", p * 2.5 + c * 15 + cr * 0.25) : tier("long_context", p * 5 + c * 22.5 + cr * 0.5)) * (param("service_tier") == "priority" ? 2 : 1)`
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "gpt-5.4",
+		PriceData: types.PriceData{
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 0.35},
+		},
+		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
+			BillingMode:  "tiered_expr",
+			ModelName:    "gpt-5.4",
+			ExprString:   expr,
+			ExprHash:     billingexpr.ExprHashString(expr),
+			GroupRatio:   0.35,
+			QuotaPerUnit: common.QuotaPerUnit,
+			ExprVersion:  billingexpr.DefaultExprVersion,
+		},
+		BillingRequestInput: &billingexpr.RequestInput{
+			Body: []byte(`{"service_tier":"standard"}`),
+		},
+		StartTime: time.Now(),
+	}
+
+	usage := &dto.Usage{
+		PromptTokens:     30988,
+		CompletionTokens: 288,
+		TotalTokens:      31276,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens: 29568,
+		},
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+	require.Equal(t, 0, summary.Quota, "legacy ratio billing would incorrectly settle this request as free")
+
+	usedVars := billingexpr.UsedVars(expr)
+	ok, tieredQuota, tieredResult := TryTieredSettle(relayInfo, BuildTieredTokenParams(usage, summary.IsClaudeUsageSemantic, usedVars))
+	require.True(t, ok)
+	require.NotNil(t, tieredResult)
+	require.Equal(t, "standard", tieredResult.MatchedTier)
+	require.Equal(t, 2671, tieredQuota)
+	require.Equal(t, 2671, composeTieredTextQuota(relayInfo, summary, tieredQuota, tieredResult))
 }
