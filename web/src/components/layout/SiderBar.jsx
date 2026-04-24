@@ -49,6 +49,7 @@ const routerMap = {
   models: '/console/models',
   deployment: '/console/deployment',
   playground: '/console/playground',
+  image_generation: '/console/image-generation',
   personal: '/console/personal',
   ticket: '/console/ticket',
 };
@@ -92,6 +93,15 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         to: '/log',
       },
       {
+        text: t('图像生成'),
+        itemKey: 'image_generation',
+        to: '/image-generation',
+        className:
+          localStorage.getItem('enable_image_generation') === 'true'
+            ? ''
+            : 'tableHiddle',
+      },
+      {
         text: t('绘图日志'),
         itemKey: 'midjourney',
         to: '/midjourney',
@@ -124,6 +134,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
   }, [
     localStorage.getItem('enable_data_export'),
     localStorage.getItem('enable_drawing'),
+    localStorage.getItem('enable_image_generation'),
     localStorage.getItem('enable_task'),
     t,
     isModuleVisible,

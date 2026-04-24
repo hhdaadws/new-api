@@ -243,6 +243,16 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "ImageGenerationPageGroups", "ImageGenerationPageModels":
+		var values []string
+		err = common.UnmarshalJsonStr(option.Value.(string), &values)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "图像生成页面配置必须是 JSON 字符串数组: " + err.Error(),
+			})
+			return
+		}
 	case "ModelRequestRateLimitGroup":
 		err = setting.CheckModelRequestRateLimitGroup(option.Value.(string))
 		if err != nil {

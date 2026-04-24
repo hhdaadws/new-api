@@ -110,6 +110,30 @@ func Distribute() func(c *gin.Context) {
 						common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
 					}
 				}
+				if strings.HasPrefix(c.Request.URL.Path, "/pg/images/generations") {
+					if !common.ImageGenerationPageEnabled {
+						abortWithOpenAiMessage(c, http.StatusForbidden, "图像生成页面未启用")
+						return
+					}
+					imageRequest := &ModelRequest{}
+					err = common.UnmarshalBodyReusable(c, imageRequest)
+					if err != nil {
+						abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
+						return
+					}
+					if !common.ImageGenerationPageModelAllowed(imageRequest.Model) {
+						abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("模型 %s 不在图像生成页面允许列表中", imageRequest.Model))
+						return
+					}
+					if !common.ImageGenerationPageGroupAllowed(imageRequest.Group) {
+						abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("分组 %s 不在图像生成页面允许列表中", imageRequest.Group))
+						return
+					}
+					usingGroup = imageRequest.Group
+					common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
+					common.SetContextKey(c, constant.ContextKeyTokenGroup, usingGroup)
+					c.Set("relay_mode", relayconstant.RelayModeImagesGenerations)
+				}
 
 				// Sticky session binding lookup: check if session is already bound to a channel
 				if sessionId != "" {
@@ -402,6 +426,16 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		modelRequest.Model = req.Model
 		modelRequest.Group = req.Group
 		common.SetContextKey(c, constant.ContextKeyTokenGroup, modelRequest.Group)
+	}
+	if strings.HasPrefix(c.Request.URL.Path, "/pg/images/generations") {
+		req, err := getModelFromRequest(c)
+		if err != nil {
+			return nil, false, err
+		}
+		modelRequest.Model = req.Model
+		modelRequest.Group = req.Group
+		common.SetContextKey(c, constant.ContextKeyTokenGroup, modelRequest.Group)
+		c.Set("relay_mode", relayconstant.RelayModeImagesGenerations)
 	}
 
 	if strings.HasPrefix(c.Request.URL.Path, "/v1/responses/compact") && modelRequest.Model != "" {

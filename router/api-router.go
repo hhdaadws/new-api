@@ -169,6 +169,16 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/subscription/epay/notify", controller.SubscriptionEpayNotify)
 		apiRouter.GET("/subscription/epay/return", controller.SubscriptionEpayReturn)
 		apiRouter.POST("/subscription/epay/return", controller.SubscriptionEpayReturn)
+
+		imageGenerationRoute := apiRouter.Group("/image_generation")
+		imageGenerationRoute.Use(middleware.UserAuth())
+		{
+			imageGenerationRoute.GET("/config", controller.GetImageGenerationConfig)
+			imageGenerationRoute.GET("/history", controller.GetImageGenerationHistory)
+			imageGenerationRoute.GET("/:id/file", controller.GetImageGenerationFile)
+			imageGenerationRoute.DELETE("/:id", controller.DeleteImageGeneration)
+		}
+
 		optionRoute := apiRouter.Group("/option")
 		optionRoute.Use(middleware.RootAuth())
 		{

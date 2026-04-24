@@ -52,6 +52,9 @@ func InitOptionMap() {
 	common.OptionMap["DrawingEnabled"] = strconv.FormatBool(common.DrawingEnabled)
 	common.OptionMap["TaskEnabled"] = strconv.FormatBool(common.TaskEnabled)
 	common.OptionMap["DataExportEnabled"] = strconv.FormatBool(common.DataExportEnabled)
+	common.OptionMap["ImageGenerationPageEnabled"] = strconv.FormatBool(common.ImageGenerationPageEnabled)
+	common.OptionMap["ImageGenerationPageGroups"] = common.ImageGenerationPageGroups2JSONString()
+	common.OptionMap["ImageGenerationPageModels"] = common.ImageGenerationPageModels2JSONString()
 	common.OptionMap["ChannelDisableThreshold"] = strconv.FormatFloat(common.ChannelDisableThreshold, 'f', -1, 64)
 	common.OptionMap["EmailDomainRestrictionEnabled"] = strconv.FormatBool(common.EmailDomainRestrictionEnabled)
 	common.OptionMap["EmailAliasRestrictionEnabled"] = strconv.FormatBool(common.EmailAliasRestrictionEnabled)
@@ -300,6 +303,8 @@ func updateOptionMap(key string, value string) (err error) {
 			common.TaskEnabled = boolValue
 		case "DataExportEnabled":
 			common.DataExportEnabled = boolValue
+		case "ImageGenerationPageEnabled":
+			common.ImageGenerationPageEnabled = boolValue
 		case "DefaultCollapseSidebar":
 			common.DefaultCollapseSidebar = boolValue
 		case "MjNotifyEnabled":
@@ -508,6 +513,10 @@ func updateOptionMap(key string, value string) (err error) {
 		common.DataExportInterval, _ = strconv.Atoi(value)
 	case "DataExportDefaultTime":
 		common.DataExportDefaultTime = value
+	case "ImageGenerationPageGroups":
+		err = common.UpdateImageGenerationPageGroupsByJSONString(value)
+	case "ImageGenerationPageModels":
+		err = common.UpdateImageGenerationPageModelsByJSONString(value)
 	case "ModelRatio":
 		err = ratio_setting.UpdateModelRatioByJSONString(value)
 	case "GroupRatio":

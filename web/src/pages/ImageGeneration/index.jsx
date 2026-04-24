@@ -1,0 +1,497 @@
+/*
+Copyright (C) 2025 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import {
+  Button,
+  Card,
+  Empty,
+  InputNumber,
+  Select,
+  Space,
+  Spin,
+  Tag,
+  TextArea,
+  Typography,
+} from '@douyinfe/semi-ui';
+import {
+  Download,
+  Image as ImageIcon,
+  RefreshCw,
+  Send,
+  Trash2,
+} from 'lucide-react';
+import { API, showError, showSuccess, timestamp2string } from '../../helpers';
+
+const { Text } = Typography;
+
+const pageSize = 12;
+
+const getErrorMessage = (error) =>
+  error?.response?.data?.message ||
+  error?.response?.data?.error?.message ||
+  error;
+
+const ImageGeneration = () => {
+  const { t } = useTranslation();
+  const [config, setConfig] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [previewUrls, setPreviewUrls] = useState({});
+  const previewUrlsRef = useRef({});
+  const [form, setForm] = useState({
+    model: '',
+    group: '',
+    prompt: '',
+    size: '1024x1024',
+    quality: 'auto',
+    output_format: 'png',
+    n: 1,
+  });
+
+  const modelOptions = useMemo(
+    () => (config?.models || []).map((model) => ({ label: model, value: model })),
+    [config?.models],
+  );
+  const groupOptions = useMemo(
+    () => (config?.groups || []).map((group) => ({ label: group, value: group })),
+    [config?.groups],
+  );
+  const sizeOptions = useMemo(
+    () => (config?.sizes || []).map((size) => ({ label: size, value: size })),
+    [config?.sizes],
+  );
+  const qualityOptions = useMemo(
+    () =>
+      (config?.qualities || []).map((quality) => ({
+        label: quality,
+        value: quality,
+      })),
+    [config?.qualities],
+  );
+  const outputFormatOptions = useMemo(
+    () =>
+      (config?.output_formats || []).map((format) => ({
+        label: format,
+        value: format,
+      })),
+    [config?.output_formats],
+  );
+
+  const updateForm = (key, value) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const loadConfig = async () => {
+    setLoading(true);
+    try {
+      const res = await API.get('/api/image_generation/config');
+      const { success, message, data } = res.data;
+      if (!success) {
+        showError(message);
+        return;
+      }
+      setConfig(data);
+      setForm((prev) => ({
+        ...prev,
+        model: prev.model || data.models?.[0] || '',
+        group: prev.group || data.groups?.[0] || '',
+        size: prev.size || data.defaults?.size || '1024x1024',
+        quality: prev.quality || data.defaults?.quality || 'auto',
+        output_format: prev.output_format || data.defaults?.output_format || 'png',
+        n: prev.n || data.defaults?.n || 1,
+      }));
+    } catch (error) {
+      showError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const revokePreview = (id) => {
+    const url = previewUrlsRef.current[id];
+    if (url) {
+      URL.revokeObjectURL(url);
+      delete previewUrlsRef.current[id];
+      setPreviewUrls((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
+  };
+
+  const loadPreview = async (item) => {
+    if (!item?.id || previewUrlsRef.current[item.id]) return;
+    try {
+      const res = await API.get(item.url, {
+        responseType: 'blob',
+        disableDuplicate: true,
+      });
+      const objectUrl = URL.createObjectURL(res.data);
+      previewUrlsRef.current[item.id] = objectUrl;
+      setPreviewUrls((prev) => ({ ...prev, [item.id]: objectUrl }));
+    } catch (error) {
+      showError(error);
+    }
+  };
+
+  const loadHistory = async (targetPage = page) => {
+    setHistoryLoading(true);
+    try {
+      const res = await API.get('/api/image_generation/history', {
+        params: { p: targetPage, page_size: pageSize },
+        disableDuplicate: true,
+      });
+      const { success, message, data } = res.data;
+      if (!success) {
+        showError(message);
+        return;
+      }
+      setHistory(data.items || []);
+      setTotal(data.total || 0);
+      setPage(data.page || targetPage);
+      (data.items || []).forEach(loadPreview);
+    } catch (error) {
+      showError(error);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const generateImage = async () => {
+    if (!form.prompt.trim()) {
+      showError(t('请输入提示词'));
+      return;
+    }
+    if (!form.model || !form.group) {
+      showError(t('请选择模型和分组'));
+      return;
+    }
+    setGenerating(true);
+    try {
+      const payload = {
+        model: form.model,
+        group: form.group,
+        prompt: form.prompt.trim(),
+        size: form.size,
+        quality: form.quality,
+        output_format: form.output_format,
+        n: form.n,
+      };
+      const res = await API.post('/pg/images/generations', payload, {
+        skipErrorHandler: true,
+      });
+      const { success, message, data } = res.data;
+      if (!success) {
+        showError(message || t('生成失败'));
+        return;
+      }
+      const items = data?.items || [];
+      setHistory((prev) => [...items, ...prev].slice(0, pageSize));
+      setTotal((prev) => prev + items.length);
+      items.forEach(loadPreview);
+      showSuccess(t('生成成功'));
+    } catch (error) {
+      showError(getErrorMessage(error));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const downloadImage = async (item) => {
+    try {
+      const res = await API.get(item.url, {
+        responseType: 'blob',
+        disableDuplicate: true,
+      });
+      const objectUrl = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = item.filename || `image-${item.id}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      showError(error);
+    }
+  };
+
+  const deleteImage = async (item) => {
+    try {
+      const res = await API.delete(`/api/image_generation/${item.id}`);
+      const { success, message } = res.data;
+      if (!success) {
+        showError(message);
+        return;
+      }
+      revokePreview(item.id);
+      setHistory((prev) => prev.filter((historyItem) => historyItem.id !== item.id));
+      setTotal((prev) => Math.max(0, prev - 1));
+      showSuccess(t('删除成功'));
+    } catch (error) {
+      showError(error);
+    }
+  };
+
+  useEffect(() => {
+    loadConfig();
+    loadHistory(1);
+    return () => {
+      Object.values(previewUrlsRef.current).forEach((url) =>
+        URL.revokeObjectURL(url),
+      );
+      previewUrlsRef.current = {};
+    };
+  }, []);
+
+  const disabled = !config?.enabled || !modelOptions.length || !groupOptions.length;
+  const maxPage = Math.max(1, Math.ceil(total / pageSize));
+
+  return (
+    <div className='mt-[60px] px-2 pb-6'>
+      <Spin spinning={loading}>
+        <div className='mx-auto flex w-full max-w-[1280px] flex-col gap-4'>
+          <div className='flex flex-col gap-2 md:flex-row md:items-end md:justify-between'>
+            <div>
+              <Typography.Title heading={4} style={{ margin: 0 }}>
+                {t('图像生成')}
+              </Typography.Title>
+            </div>
+            <Button
+              icon={<RefreshCw size={16} />}
+              onClick={() => loadHistory(page)}
+              loading={historyLoading}
+            >
+              {t('刷新')}
+            </Button>
+          </div>
+
+          {!config?.enabled && (
+            <Card>
+              <Empty title={t('图像生成页面未启用')} />
+            </Card>
+          )}
+
+          {config?.enabled && (
+            <div className='grid grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]'>
+              <Card bodyStyle={{ padding: 16 }}>
+                <div className='flex flex-col gap-4'>
+                  <div>
+                    <Text strong>{t('提示词')}</Text>
+                    <TextArea
+                      autosize={{ minRows: 6, maxRows: 12 }}
+                      value={form.prompt}
+                      onChange={(value) => updateForm('prompt', value)}
+                      placeholder={t('描述你想生成的图片')}
+                      disabled={disabled || generating}
+                      style={{ marginTop: 8 }}
+                    />
+                  </div>
+
+                  <div className='grid grid-cols-1 gap-3'>
+                    <div>
+                      <Text strong>{t('模型')}</Text>
+                      <Select
+                        value={form.model}
+                        optionList={modelOptions}
+                        onChange={(value) => updateForm('model', value)}
+                        disabled={disabled || generating}
+                        style={{ width: '100%', marginTop: 8 }}
+                      />
+                    </div>
+                    <div>
+                      <Text strong>{t('分组')}</Text>
+                      <Select
+                        value={form.group}
+                        optionList={groupOptions}
+                        onChange={(value) => updateForm('group', value)}
+                        disabled={disabled || generating}
+                        style={{ width: '100%', marginTop: 8 }}
+                      />
+                    </div>
+                    <div className='grid grid-cols-2 gap-3'>
+                      <div>
+                        <Text strong>{t('尺寸')}</Text>
+                        <Select
+                          value={form.size}
+                          optionList={sizeOptions}
+                          onChange={(value) => updateForm('size', value)}
+                          disabled={disabled || generating}
+                          style={{ width: '100%', marginTop: 8 }}
+                        />
+                      </div>
+                      <div>
+                        <Text strong>{t('质量')}</Text>
+                        <Select
+                          value={form.quality}
+                          optionList={qualityOptions}
+                          onChange={(value) => updateForm('quality', value)}
+                          disabled={disabled || generating}
+                          style={{ width: '100%', marginTop: 8 }}
+                        />
+                      </div>
+                    </div>
+                    <div className='grid grid-cols-2 gap-3'>
+                      <div>
+                        <Text strong>{t('格式')}</Text>
+                        <Select
+                          value={form.output_format}
+                          optionList={outputFormatOptions}
+                          onChange={(value) => updateForm('output_format', value)}
+                          disabled={disabled || generating}
+                          style={{ width: '100%', marginTop: 8 }}
+                        />
+                      </div>
+                      <div>
+                        <Text strong>{t('数量')}</Text>
+                        <InputNumber
+                          min={1}
+                          max={config?.defaults?.max_n || 4}
+                          value={form.n}
+                          onChange={(value) => updateForm('n', value || 1)}
+                          disabled={disabled || generating}
+                          style={{ width: '100%', marginTop: 8 }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <Button
+                    type='primary'
+                    icon={<Send size={16} />}
+                    loading={generating}
+                    disabled={disabled}
+                    onClick={generateImage}
+                    block
+                  >
+                    {t('生成图片')}
+                  </Button>
+                </div>
+              </Card>
+
+              <div className='flex min-w-0 flex-col gap-3'>
+                <Spin spinning={historyLoading || generating}>
+                  {history.length === 0 ? (
+                    <Card>
+                      <Empty
+                        image={<ImageIcon size={42} />}
+                        title={t('暂无图片')}
+                      />
+                    </Card>
+                  ) : (
+                    <div className='grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3'>
+                      {history.map((item) => (
+                        <Card
+                          key={item.id}
+                          bodyStyle={{ padding: 0 }}
+                          className='overflow-hidden'
+                        >
+                          <div className='aspect-square w-full bg-[var(--semi-color-fill-0)]'>
+                            {previewUrls[item.id] ? (
+                              <img
+                                src={previewUrls[item.id]}
+                                alt={item.prompt}
+                                className='h-full w-full object-contain'
+                              />
+                            ) : (
+                              <div className='flex h-full w-full items-center justify-center text-[var(--semi-color-text-2)]'>
+                                <ImageIcon size={32} />
+                              </div>
+                            )}
+                          </div>
+                          <div className='flex flex-col gap-3 p-3'>
+                            <div className='line-clamp-2 min-h-[40px] text-sm'>
+                              {item.prompt}
+                            </div>
+                            <div className='flex flex-wrap gap-2'>
+                              <Tag color='blue'>{item.model}</Tag>
+                              <Tag>{item.group}</Tag>
+                              <Tag>{item.size}</Tag>
+                            </div>
+                            {item.revised_prompt && (
+                              <Text
+                                type='secondary'
+                                size='small'
+                                ellipsis={{ showTooltip: true }}
+                              >
+                                {item.revised_prompt}
+                              </Text>
+                            )}
+                            <div className='flex items-center justify-between gap-2'>
+                              <Text type='secondary' size='small'>
+                                {timestamp2string(item.created_at)}
+                              </Text>
+                              <Space>
+                                <Button
+                                  size='small'
+                                  icon={<Download size={14} />}
+                                  onClick={() => downloadImage(item)}
+                                />
+                                <Button
+                                  size='small'
+                                  type='danger'
+                                  theme='borderless'
+                                  icon={<Trash2 size={14} />}
+                                  onClick={() => deleteImage(item)}
+                                />
+                              </Space>
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </Spin>
+
+                {total > pageSize && (
+                  <div className='flex items-center justify-end gap-2'>
+                    <Button
+                      disabled={page <= 1}
+                      onClick={() => loadHistory(page - 1)}
+                    >
+                      {t('上一页')}
+                    </Button>
+                    <Text type='secondary'>
+                      {page} / {maxPage}
+                    </Text>
+                    <Button
+                      disabled={page >= maxPage}
+                      onClick={() => loadHistory(page + 1)}
+                    >
+                      {t('下一页')}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </Spin>
+    </div>
+  );
+};
+
+export default ImageGeneration;
