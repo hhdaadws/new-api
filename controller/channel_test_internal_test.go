@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -68,4 +69,42 @@ func TestBuildTestLogOtherInjectsTieredInfo(t *testing.T) {
 	require.Equal(t, "tiered_expr", other["billing_mode"])
 	require.Equal(t, "base", other["matched_tier"])
 	require.NotEmpty(t, other["expr_b64"])
+}
+
+func TestServiceTierPassThroughAllowedHandlesNilChannelMeta(t *testing.T) {
+	settings := model_setting.GetGlobalSettings()
+	previousPassThrough := settings.PassThroughRequestEnabled
+	settings.PassThroughRequestEnabled = false
+	t.Cleanup(func() {
+		settings.PassThroughRequestEnabled = previousPassThrough
+	})
+
+	require.False(t, serviceTierPassThroughAllowed(&relaycommon.RelayInfo{}))
+
+	settings.PassThroughRequestEnabled = true
+	require.True(t, serviceTierPassThroughAllowed(&relaycommon.RelayInfo{}))
+}
+
+func TestExtractServiceTierFromResponsesRequestWhenAllowed(t *testing.T) {
+	settings := model_setting.GetGlobalSettings()
+	previousPassThrough := settings.PassThroughRequestEnabled
+	settings.PassThroughRequestEnabled = false
+	t.Cleanup(func() {
+		settings.PassThroughRequestEnabled = previousPassThrough
+	})
+
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelOtherSettings: dto.ChannelOtherSettings{
+				AllowServiceTier: true,
+			},
+		},
+	}
+	request := &dto.OpenAIResponsesRequest{
+		ServiceTier: "priority",
+	}
+
+	extractServiceTier(info, request)
+
+	require.Equal(t, "priority", info.ServiceTier)
 }

@@ -122,6 +122,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
+	relayInfo.InitChannelMeta(c)
 
 	// 提取 service_tier 用于计费调整
 	extractServiceTier(relayInfo, request)
@@ -262,8 +263,13 @@ func serviceTierPassThroughAllowed(relayInfo *relaycommon.RelayInfo) bool {
 	if relayInfo == nil {
 		return false
 	}
-	return model_setting.GetGlobalSettings().PassThroughRequestEnabled ||
-		relayInfo.ChannelSetting.PassThroughBodyEnabled ||
+	if model_setting.GetGlobalSettings().PassThroughRequestEnabled {
+		return true
+	}
+	if relayInfo.ChannelMeta == nil {
+		return false
+	}
+	return relayInfo.ChannelSetting.PassThroughBodyEnabled ||
 		relayInfo.ChannelOtherSettings.AllowServiceTier
 }
 
