@@ -34,6 +34,7 @@ import {
   Typography,
 } from '@douyinfe/semi-ui';
 import {
+  Copy as CopyIcon,
   Download,
   Edit,
   Image as ImageIcon,
@@ -43,7 +44,13 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { API, showError, showSuccess, timestamp2string } from '../../helpers';
+import {
+  API,
+  copy,
+  showError,
+  showSuccess,
+  timestamp2string,
+} from '../../helpers';
 
 const { Text } = Typography;
 
@@ -61,6 +68,36 @@ const getFileExtension = (filename, mimeType) => {
   if (mimeType === 'image/webp') return 'webp';
   return 'png';
 };
+
+const CodeBlock = ({ title, language, code, copyLabel, onCopy }) => (
+  <div
+    className='overflow-hidden rounded-md border'
+    style={{ borderColor: 'var(--semi-color-border)' }}
+  >
+    <div
+      className='flex items-center justify-between gap-2 px-3 py-2'
+      style={{ backgroundColor: 'var(--semi-color-fill-0)' }}
+    >
+      <div className='min-w-0'>
+        <Text strong>{title}</Text>
+        <Text type='secondary' size='small' className='ml-2'>
+          {language}
+        </Text>
+      </div>
+      <Button
+        size='small'
+        type='tertiary'
+        icon={<CopyIcon size={14} />}
+        onClick={() => onCopy(code)}
+      >
+        {copyLabel}
+      </Button>
+    </div>
+    <pre className='m-0 max-h-[520px] overflow-auto bg-[#101828] p-4 text-xs leading-5 text-white'>
+      <code>{code}</code>
+    </pre>
+  </div>
+);
 
 const ImageGeneration = () => {
   const { t } = useTranslation();
@@ -117,6 +154,112 @@ const ImageGeneration = () => {
       })),
     [config?.output_formats],
   );
+
+  const apiBaseUrl = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return 'https://your-domain.example';
+    }
+    return window.location.origin;
+  }, []);
+
+  const apiExample = useMemo(() => {
+    const model = form.model || config?.models?.[0] || 'gpt-image-2';
+    const size = form.size || config?.defaults?.size || '1024x1024';
+    const quality = form.quality || config?.defaults?.quality || 'auto';
+    const outputFormat =
+      form.output_format || config?.defaults?.output_format || 'png';
+
+    const generationPayload = {
+      model,
+      prompt: '一只白色小猫坐在窗边，柔和自然光，照片风格',
+      n: 1,
+      size,
+      quality,
+      output_format: outputFormat,
+    };
+
+    const pythonSaveBlock = `image = payload["data"][0]
+
+if image.get("b64_json"):
+    OUTPUT_FILE.write_bytes(base64.b64decode(image["b64_json"]))
+elif image.get("url"):
+    image_response = requests.get(image["url"], timeout=120)
+    image_response.raise_for_status()
+    OUTPUT_FILE.write_bytes(image_response.content)
+else:
+    raise RuntimeError("No image data returned")
+
+print("saved to", OUTPUT_FILE)`;
+
+    return {
+      installRequests: 'pip install requests',
+      pythonGeneration: `import base64
+import pathlib
+import requests
+
+BASE_URL = "${apiBaseUrl}"
+API_KEY = "sk-xxxx"
+OUTPUT_FILE = pathlib.Path("image.${outputFormat === 'jpeg' ? 'jpg' : outputFormat}")
+
+response = requests.post(
+    BASE_URL + "/v1/images/generations",
+    headers={"Authorization": "Bearer " + API_KEY},
+    json=${JSON.stringify(generationPayload, null, 8)
+      .replace(/^{/, '{')
+      .replace(/\n/g, '\n    ')},
+    timeout=120,
+)
+response.raise_for_status()
+payload = response.json()
+${pythonSaveBlock}`,
+      pythonEdit: `import base64
+import pathlib
+import requests
+
+BASE_URL = "${apiBaseUrl}"
+API_KEY = "sk-xxxx"
+INPUT_FILE = pathlib.Path("input.png")
+OUTPUT_FILE = pathlib.Path("edited.${outputFormat === 'jpeg' ? 'jpg' : outputFormat}")
+
+with INPUT_FILE.open("rb") as image_file:
+    response = requests.post(
+        BASE_URL + "/v1/images/edits",
+        headers={"Authorization": "Bearer " + API_KEY},
+        data={
+            "model": "${model}",
+            "prompt": "保留主体构图，改成黄昏电影感光线",
+            "n": "1",
+            "size": "${size}",
+            "quality": "${quality}",
+            "output_format": "${outputFormat}",
+        },
+        files={"image": (INPUT_FILE.name, image_file, "image/png")},
+        timeout=120,
+    )
+response.raise_for_status()
+payload = response.json()
+${pythonSaveBlock}`,
+      curlGeneration: `BASE_URL="${apiBaseUrl}"
+API_KEY="sk-xxxx"
+
+curl -X POST "$BASE_URL/v1/images/generations" \\
+  -H "Authorization: Bearer $API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '${JSON.stringify(generationPayload, null, 2)}'`,
+      curlEdit: `BASE_URL="${apiBaseUrl}"
+API_KEY="sk-xxxx"
+
+curl -X POST "$BASE_URL/v1/images/edits" \\
+  -H "Authorization: Bearer $API_KEY" \\
+  -F model="${model}" \\
+  -F prompt="保留主体构图，改成黄昏电影感光线" \\
+  -F n="1" \\
+  -F size="${size}" \\
+  -F quality="${quality}" \\
+  -F output_format="${outputFormat}" \\
+  -F image="@input.png"`,
+    };
+  }, [apiBaseUrl, config, form]);
 
   const updateForm = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -358,6 +501,14 @@ const ImageGeneration = () => {
     }
   };
 
+  const copyCode = async (code) => {
+    if (await copy(code)) {
+      showSuccess(t('代码已复制到剪贴板'));
+    } else {
+      showError(t('复制失败，请手动复制'));
+    }
+  };
+
   useEffect(() => {
     loadConfig();
     loadHistory(1);
@@ -384,13 +535,15 @@ const ImageGeneration = () => {
                 {t('图像生成')}
               </Typography.Title>
             </div>
-            <Button
-              icon={<RefreshCw size={16} />}
-              onClick={() => loadHistory(page)}
-              loading={historyLoading}
-            >
-              {t('刷新')}
-            </Button>
+            {activeMode !== 'api' && (
+              <Button
+                icon={<RefreshCw size={16} />}
+                onClick={() => loadHistory(page)}
+                loading={historyLoading}
+              >
+                {t('刷新')}
+              </Button>
+            )}
           </div>
 
           {!config?.enabled && (
@@ -400,7 +553,13 @@ const ImageGeneration = () => {
           )}
 
           {config?.enabled && (
-            <div className='grid grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]'>
+            <div
+              className={
+                activeMode === 'api'
+                  ? 'grid grid-cols-1 gap-4'
+                  : 'grid grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]'
+              }
+            >
               <Card bodyStyle={{ padding: 16 }}>
                 <Tabs
                   type='button'
@@ -410,8 +569,153 @@ const ImageGeneration = () => {
                 >
                   <TabPane tab={t('生成图片')} itemKey='generation' />
                   <TabPane tab={t('上传改图')} itemKey='edit' />
+                  <TabPane tab={t('API 接入')} itemKey='api' />
                 </Tabs>
-                <div className='flex flex-col gap-4'>
+                {activeMode === 'api' ? (
+                  <div className='flex flex-col gap-5'>
+                    <div>
+                      <Typography.Title heading={5} style={{ marginTop: 0 }}>
+                        {t('第三方 API 接入')}
+                      </Typography.Title>
+                      <Text type='secondary'>
+                        {t(
+                          '使用 API Key 调用开放接口，适合 Python 脚本、自动化任务和外部系统。',
+                        )}
+                      </Text>
+                    </div>
+
+                    <div className='grid grid-cols-1 gap-3 md:grid-cols-3'>
+                      <div
+                        className='rounded-md border p-3'
+                        style={{ borderColor: 'var(--semi-color-border)' }}
+                      >
+                        <Text strong>{t('基础地址')}</Text>
+                        <div className='mt-2 break-all font-mono text-xs'>
+                          {apiBaseUrl}
+                        </div>
+                      </div>
+                      <div
+                        className='rounded-md border p-3'
+                        style={{ borderColor: 'var(--semi-color-border)' }}
+                      >
+                        <Text strong>{t('生图接口')}</Text>
+                        <div className='mt-2 break-all font-mono text-xs'>
+                          POST /v1/images/generations
+                        </div>
+                      </div>
+                      <div
+                        className='rounded-md border p-3'
+                        style={{ borderColor: 'var(--semi-color-border)' }}
+                      >
+                        <Text strong>{t('改图接口')}</Text>
+                        <div className='mt-2 break-all font-mono text-xs'>
+                          POST /v1/images/edits
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      className='rounded-md border p-3'
+                      style={{ borderColor: 'var(--semi-color-border)' }}
+                    >
+                      <div className='flex flex-col gap-2'>
+                        <Text>
+                          <Text strong>{t('鉴权')}</Text>
+                          {t('：请求头使用 Authorization: Bearer <API Key>。')}
+                        </Text>
+                        <Text>
+                          <Text strong>{t('令牌分组')}</Text>
+                          {t(
+                            '：在令牌页面创建 API Key，令牌分组决定可用渠道、模型权限和计费。',
+                          )}
+                        </Text>
+                        <Text>
+                          <Text strong>{t('响应')}</Text>
+                          {t(
+                            '：兼容 OpenAI Images 响应，可能返回 b64_json 或 url；脚本需要自行解码或下载保存。',
+                          )}
+                        </Text>
+                        <Text type='secondary'>
+                          {t(
+                            '官网内部 /pg/images/* 依赖网页登录态，不建议第三方接入。',
+                          )}
+                        </Text>
+                        <Text type='secondary'>
+                          {t(
+                            'Python 示例依赖 requests，可先执行 pip install requests。',
+                          )}
+                        </Text>
+                      </div>
+                    </div>
+
+                    <div
+                      className='rounded-md border p-3'
+                      style={{ borderColor: 'var(--semi-color-border)' }}
+                    >
+                      <Text strong>{t('常用参数')}</Text>
+                      <div className='mt-3 grid grid-cols-1 gap-2 text-sm md:grid-cols-2'>
+                        <Text>
+                          <code>model</code> - {t('模型名称')}
+                        </Text>
+                        <Text>
+                          <code>prompt</code> - {t('提示词')}
+                        </Text>
+                        <Text>
+                          <code>n</code> - {t('数量')}
+                        </Text>
+                        <Text>
+                          <code>size</code> - {t('尺寸')}
+                        </Text>
+                        <Text>
+                          <code>quality</code> - {t('质量')}
+                        </Text>
+                        <Text>
+                          <code>output_format</code> - {t('格式')}
+                        </Text>
+                        <Text>
+                          <code>image</code> - {t('改图时上传的图片文件')}
+                        </Text>
+                      </div>
+                    </div>
+
+                    <CodeBlock
+                      title={t('安装 Python 依赖')}
+                      language='bash'
+                      code={apiExample.installRequests}
+                      copyLabel={t('复制')}
+                      onCopy={copyCode}
+                    />
+                    <CodeBlock
+                      title={t('Python 生图并保存')}
+                      language='python'
+                      code={apiExample.pythonGeneration}
+                      copyLabel={t('复制')}
+                      onCopy={copyCode}
+                    />
+                    <CodeBlock
+                      title={t('Python 改图并保存')}
+                      language='python'
+                      code={apiExample.pythonEdit}
+                      copyLabel={t('复制')}
+                      onCopy={copyCode}
+                    />
+                    <CodeBlock
+                      title={t('cURL 生图')}
+                      language='bash'
+                      code={apiExample.curlGeneration}
+                      copyLabel={t('复制')}
+                      onCopy={copyCode}
+                    />
+                    <CodeBlock
+                      title={t('cURL 改图')}
+                      language='bash'
+                      code={apiExample.curlEdit}
+                      copyLabel={t('复制')}
+                      onCopy={copyCode}
+                    />
+                  </div>
+                ) : (
+                  <div className='flex flex-col gap-4'>
                   {activeMode === 'edit' && (
                     <div>
                       <Text strong>{t('图像来源')}</Text>
@@ -564,10 +868,12 @@ const ImageGeneration = () => {
                   >
                     {activeMode === 'edit' ? t('提交改图') : t('生成图片')}
                   </Button>
-                </div>
+                  </div>
+                )}
               </Card>
 
-              <div className='flex min-w-0 flex-col gap-3'>
+              {activeMode !== 'api' && (
+                <div className='flex min-w-0 flex-col gap-3'>
                 <Spin spinning={historyLoading || generating}>
                   {history.length === 0 ? (
                     <Card>
@@ -670,7 +976,8 @@ const ImageGeneration = () => {
                     </Button>
                   </div>
                 )}
-              </div>
+                </div>
+              )}
             </div>
           )}
         </div>
