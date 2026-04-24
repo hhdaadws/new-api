@@ -56,6 +56,7 @@ type TieredResult struct {
 	ActualQuotaAfterGroup  int     `json:"actual_quota_after_group"`
 	MatchedTier            string  `json:"matched_tier"`
 	CrossedTier            bool    `json:"crossed_tier"`
+	EffectiveMultiplier    float64 `json:"effective_multiplier"`
 }
 
 // ExprHashString returns the SHA-256 hex digest of an expression string.

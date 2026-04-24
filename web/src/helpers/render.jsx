@@ -1268,6 +1268,11 @@ function formatRatioValue(value, digits = 6) {
   return Number(num.toFixed(digits));
 }
 
+function hasTieredMultiplier(value) {
+  const num = Number(value);
+  return Number.isFinite(num) && Math.abs(num - 1) > 1e-9 && num !== 0;
+}
+
 function renderDisplayAmountFromUsd(usdAmount, digits = 6) {
   return renderQuotaWithAmount(Number(Number(usdAmount || 0).toFixed(digits)));
 }
@@ -1634,10 +1639,9 @@ function renderPriceSimpleCore({
 
 export function renderTaskBillingProcess(other, content) {
   if (other?.task_id != null) {
-    return renderBillingArticle(
-      [content].filter(Boolean),
-      { showReferenceNote: false },
-    );
+    return renderBillingArticle([content].filter(Boolean), {
+      showReferenceNote: false,
+    });
   }
   return renderBillingArticle([
     buildBillingText('任务预扣费（将在任务完成后按实际token重算）'),
@@ -2254,7 +2258,10 @@ export function parseTiersFromExpr(exprStr) {
   try {
     const { body } = stripExprVersion(exprStr);
     const condGroup = `((?:(?:p|c)\\s*(?:<|<=|>|>=)\\s*[\\d.eE+]+)(?:\\s*&&\\s*(?:p|c)\\s*(?:<|<=|>|>=)\\s*[\\d.eE+]+)*)`;
-    const tierRe = new RegExp(`(?:${condGroup}\\s*\\?\\s*)?tier\\("([^"]*)",\\s*([^)]+)\\)`, 'g');
+    const tierRe = new RegExp(
+      `(?:${condGroup}\\s*\\?\\s*)?tier\\("([^"]*)",\\s*([^)]+)\\)`,
+      'g',
+    );
     const tiers = [];
     let m;
     while ((m = tierRe.exec(body)) !== null) {
@@ -2263,7 +2270,8 @@ export function parseTiersFromExpr(exprStr) {
       if (condStr) {
         for (const cp of condStr.split(/\s*&&\s*/)) {
           const cm = cp.trim().match(/^(p|c)\s*(<|<=|>|>=)\s*([\d.eE+]+)$/);
-          if (cm) conditions.push({ var: cm[1], op: cm[2], value: Number(cm[3]) });
+          if (cm)
+            conditions.push({ var: cm[1], op: cm[2], value: Number(cm[3]) });
         }
       }
       const tier = parseTierBody(m[3]);
@@ -2283,6 +2291,8 @@ export function renderTieredModelPrice(opts) {
     completion_tokens: completionTokens = 0,
     expr_b64: exprB64,
     matched_tier: matchedTier,
+    service_tier: serviceTier,
+    tiered_multiplier: tieredMultiplier,
     group_ratio: groupRatio,
     cache_tokens: cacheTokens = 0,
     cache_creation_tokens: cacheCreationTokens = 0,
@@ -2290,7 +2300,11 @@ export function renderTieredModelPrice(opts) {
     cache_creation_tokens_1h: cacheCreationTokens1h = 0,
   } = opts;
   let exprStr = '';
-  try { exprStr = atob(exprB64); } catch { /* ignore */ }
+  try {
+    exprStr = atob(exprB64);
+  } catch {
+    /* ignore */
+  }
   const tiers = parseTiersFromExpr(exprStr);
   if (tiers.length === 0) {
     return i18next.t('阶梯计费（表达式解析失败）');
@@ -2304,12 +2318,24 @@ export function renderTieredModelPrice(opts) {
 
   const lines = [
     buildBillingText('命中档位：{{tier}}', { tier: matchedTier || tier.label }),
+    serviceTier
+      ? buildBillingText('服务层级：{{tier}}', { tier: serviceTier })
+      : null,
+    hasTieredMultiplier(tieredMultiplier)
+      ? buildBillingText('表达式倍率：{{multiplier}}x', {
+          multiplier: formatRatioValue(tieredMultiplier),
+        })
+      : null,
     ...priceLines
       .filter(([field]) => tier[field] > 0)
       .map(([field, label]) =>
-        buildBillingPriceText(`${label}：{{symbol}}{{price}} / 1M tokens`, { symbol, usdAmount: tier[field], rate }),
+        buildBillingPriceText(`${label}：{{symbol}}{{price}} / 1M tokens`, {
+          symbol,
+          usdAmount: tier[field],
+          rate,
+        }),
       ),
-  ];
+  ].filter(Boolean);
 
   return renderBillingArticle(lines);
 }
@@ -2318,6 +2344,8 @@ export function renderTieredModelPriceSimple(opts) {
   const {
     expr_b64: exprB64,
     matched_tier: matchedTier,
+    service_tier: serviceTier,
+    tiered_multiplier: tieredMultiplier,
     group_ratio: groupRatio,
     user_group_ratio,
     cache_tokens: cacheTokens = 0,
@@ -2328,7 +2356,11 @@ export function renderTieredModelPriceSimple(opts) {
     outputMode = 'segments',
   } = opts;
   let exprStr = '';
-  try { exprStr = atob(exprB64); } catch { /* ignore */ }
+  try {
+    exprStr = atob(exprB64);
+  } catch {
+    /* ignore */
+  }
   const tiers = parseTiersFromExpr(exprStr);
   const tier = tiers.find((t) => t.label === matchedTier) || tiers[0];
 
@@ -2339,6 +2371,22 @@ export function renderTieredModelPriceSimple(opts) {
         text: getGroupRatioText(groupRatio, user_group_ratio),
       },
     ];
+
+    if (serviceTier) {
+      segments.push({
+        tone: 'secondary',
+        text: i18next.t('服务层级 {{tier}}', { tier: serviceTier }),
+      });
+    }
+
+    if (hasTieredMultiplier(tieredMultiplier)) {
+      segments.push({
+        tone: 'secondary',
+        text: i18next.t('表达式倍率 {{multiplier}}x', {
+          multiplier: formatRatioValue(tieredMultiplier),
+        }),
+      });
+    }
 
     if (tier && isPriceDisplayMode(displayMode)) {
       const priceSegments = BILLING_VARS.map((v) => [v.field, v.shortLabel]);

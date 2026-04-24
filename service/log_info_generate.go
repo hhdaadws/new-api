@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/base64"
+	"math"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -12,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 func appendRequestPath(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
@@ -241,7 +243,37 @@ func InjectTieredBillingInfo(other map[string]interface{}, relayInfo *relaycommo
 	}
 	other["billing_mode"] = "tiered_expr"
 	other["expr_b64"] = base64.StdEncoding.EncodeToString([]byte(snap.ExprString))
+	if serviceTier := tieredServiceTier(relayInfo); serviceTier != "" {
+		other["service_tier"] = serviceTier
+	}
 	if result != nil {
 		other["matched_tier"] = result.MatchedTier
+		if !isDefaultTieredMultiplier(result.EffectiveMultiplier) {
+			other["tiered_multiplier"] = result.EffectiveMultiplier
+		}
 	}
+}
+
+func tieredServiceTier(relayInfo *relaycommon.RelayInfo) string {
+	if relayInfo == nil {
+		return ""
+	}
+	if relayInfo.ServiceTier != "" {
+		return relayInfo.ServiceTier
+	}
+	if relayInfo.BillingRequestInput == nil || len(relayInfo.BillingRequestInput.Body) == 0 {
+		return ""
+	}
+	result := gjson.GetBytes(relayInfo.BillingRequestInput.Body, "service_tier")
+	if !result.Exists() {
+		return ""
+	}
+	return result.String()
+}
+
+func isDefaultTieredMultiplier(multiplier float64) bool {
+	if multiplier == 0 || math.IsNaN(multiplier) || math.IsInf(multiplier, 0) {
+		return true
+	}
+	return math.Abs(multiplier-1) < 1e-9
 }

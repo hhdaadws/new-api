@@ -824,6 +824,37 @@ func TestComputeTieredQuotaWithRequest_ProbeAffectsQuota(t *testing.T) {
 	}
 }
 
+func TestComputeTieredQuotaWithRequest_ExternalMultiplier(t *testing.T) {
+	exprStr := `tier("standard", p * 2 + c * 10) * (param("service_tier") == "priority" ? 2 : 1)`
+	snap := &billingexpr.BillingSnapshot{
+		BillingMode:   "tiered_expr",
+		ExprString:    exprStr,
+		ExprHash:      billingexpr.ExprHashString(exprStr),
+		GroupRatio:    1.0,
+		EstimatedTier: "standard",
+		QuotaPerUnit:  500_000,
+	}
+
+	result, err := billingexpr.ComputeTieredQuotaWithRequest(snap, billingexpr.TokenParams{P: 1000, C: 100}, billingexpr.RequestInput{
+		Body: []byte(`{"service_tier":"priority"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.MatchedTier != "standard" {
+		t.Fatalf("matched tier = %q, want standard", result.MatchedTier)
+	}
+	if result.EffectiveMultiplier != 2 {
+		t.Fatalf("effective multiplier = %v, want 2", result.EffectiveMultiplier)
+	}
+	// Base cost: 1000*2 + 100*10 = 3000. Priority multiplier doubles to
+	// 6000; quota = 6000 / 1M * 500K = 3000.
+	if result.ActualQuotaAfterGroup != 3000 {
+		t.Fatalf("quota = %d, want 3000", result.ActualQuotaAfterGroup)
+	}
+}
+
 func TestComputeTieredQuota_BoundaryTierCrossing(t *testing.T) {
 	exprStr := `p <= 100000 ? tier("small", p * 1) : tier("large", p * 2)`
 	snap := &billingexpr.BillingSnapshot{
