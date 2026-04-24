@@ -1273,6 +1273,77 @@ function hasTieredMultiplier(value) {
   return Number.isFinite(num) && Math.abs(num - 1) > 1e-9 && num !== 0;
 }
 
+function resolveTieredMultiplier(exprStr, serviceTier, tieredMultiplier) {
+  const loggedMultiplier = Number(tieredMultiplier);
+  if (
+    Number.isFinite(loggedMultiplier) &&
+    loggedMultiplier !== 0 &&
+    Math.abs(loggedMultiplier - 1) > 1e-9
+  ) {
+    return loggedMultiplier;
+  }
+
+  if (!serviceTier || !exprStr) {
+    return 1;
+  }
+
+  let multiplier = 1;
+  const re =
+    /param\("service_tier"\)\s*==\s*"([^"]+)"\s*\?\s*([\d.eE+-]+)\s*:\s*([\d.eE+-]+)/g;
+  let matched = false;
+  let m;
+  while ((m = re.exec(exprStr)) !== null) {
+    const branch = serviceTier === m[1] ? Number(m[2]) : Number(m[3]);
+    if (Number.isFinite(branch)) {
+      multiplier *= branch;
+      matched = true;
+    }
+  }
+  return matched ? multiplier : 1;
+}
+
+function tieredTokenComponents(tier, opts) {
+  const inputTokens = Number(opts.inputTokens || 0);
+  const completionTokens = Number(opts.completionTokens || 0);
+  const cacheTokens = Number(opts.cacheTokens || 0);
+  const cacheCreationTokens = Number(
+    opts.cacheCreationTokens5m || opts.cacheCreationTokens || 0,
+  );
+  const cacheCreationTokens1h = Number(opts.cacheCreationTokens1h || 0);
+  const imageInputTokens = Number(opts.imageInputTokens || 0);
+  const imageOutputTokens = Number(opts.imageOutputTokens || 0);
+  const audioInputTokens = Number(opts.audioInputTokens || 0);
+  const audioOutputTokens = Number(opts.audioOutputTokens || 0);
+
+  const textInputTokens = Math.max(
+    inputTokens -
+      (tier.cacheReadPrice > 0 ? cacheTokens : 0) -
+      (tier.cacheCreatePrice > 0 ? cacheCreationTokens : 0) -
+      (tier.cacheCreate1hPrice > 0 ? cacheCreationTokens1h : 0) -
+      (tier.imagePrice > 0 ? imageInputTokens : 0) -
+      (tier.audioInputPrice > 0 ? audioInputTokens : 0),
+    0,
+  );
+  const textOutputTokens = Math.max(
+    completionTokens -
+      (tier.imageOutputPrice > 0 ? imageOutputTokens : 0) -
+      (tier.audioOutputPrice > 0 ? audioOutputTokens : 0),
+    0,
+  );
+
+  return {
+    inputPrice: textInputTokens,
+    outputPrice: textOutputTokens,
+    cacheReadPrice: cacheTokens,
+    cacheCreatePrice: cacheCreationTokens,
+    cacheCreate1hPrice: cacheCreationTokens1h,
+    imagePrice: imageInputTokens,
+    imageOutputPrice: imageOutputTokens,
+    audioInputPrice: audioInputTokens,
+    audioOutputPrice: audioOutputTokens,
+  };
+}
+
 function renderDisplayAmountFromUsd(usdAmount, digits = 6) {
   return renderQuotaWithAmount(Number(Number(usdAmount || 0).toFixed(digits)));
 }
@@ -2293,12 +2364,25 @@ export function renderTieredModelPrice(opts) {
     matched_tier: matchedTier,
     service_tier: serviceTier,
     tiered_multiplier: tieredMultiplier,
-    group_ratio: groupRatio,
+    group_ratio: _groupRatio,
+    user_group_ratio,
     cache_tokens: cacheTokens = 0,
     cache_creation_tokens: cacheCreationTokens = 0,
     cache_creation_tokens_5m: cacheCreationTokens5m = 0,
     cache_creation_tokens_1h: cacheCreationTokens1h = 0,
+    image_output: imageInputTokens = 0,
+    audio_input_token_count: audioInputTokens = 0,
+    audio_input: fallbackAudioInputTokens = 0,
+    audio_output: audioOutputTokens = 0,
+    tiered_quota_after_group: tieredQuotaAfterGroup,
+    quota,
   } = opts;
+  const { ratio: rawGroupRatio, label: ratioLabel } = getEffectiveRatio(
+    _groupRatio,
+    user_group_ratio,
+  );
+  const parsedGroupRatio = Number(rawGroupRatio);
+  const groupRatio = Number.isFinite(parsedGroupRatio) ? parsedGroupRatio : 1;
   let exprStr = '';
   try {
     exprStr = atob(exprB64);
@@ -2312,18 +2396,61 @@ export function renderTieredModelPrice(opts) {
 
   const tier = tiers.find((t) => t.label === matchedTier) || tiers[0];
   const { symbol, rate } = getCurrencyConfig();
-  const gr = groupRatio || 1;
+  const multiplier = resolveTieredMultiplier(
+    exprStr,
+    serviceTier,
+    tieredMultiplier,
+  );
+  const componentTokens = tieredTokenComponents(tier, {
+    inputTokens,
+    completionTokens,
+    cacheTokens,
+    cacheCreationTokens,
+    cacheCreationTokens5m,
+    cacheCreationTokens1h,
+    imageInputTokens,
+    audioInputTokens: audioInputTokens || fallbackAudioInputTokens,
+    audioOutputTokens,
+  });
 
   const priceLines = BILLING_VARS.map((v) => [v.field, v.label]);
+  const calculationLines = BILLING_VARS.map((v) => {
+    const unitPrice = tier[v.field] || 0;
+    const tokens = componentTokens[v.field] || 0;
+    if (unitPrice <= 0 || tokens <= 0) {
+      return null;
+    }
+    const amount = (tokens / 1000000) * unitPrice;
+    return {
+      line: buildBillingText(
+        '{{label}}：{{tokens}} / 1M * {{symbol}}{{price}} = {{symbol}}{{amount}}',
+        {
+          label: i18next.t(v.shortLabel),
+          tokens,
+          symbol,
+          price: formatBillingDisplayPrice(unitPrice, rate),
+          amount: formatBillingDisplayPrice(amount, rate),
+        },
+      ),
+      amount,
+    };
+  }).filter(Boolean);
+  const tierSubtotal = calculationLines.reduce(
+    (sum, item) => sum + item.amount,
+    0,
+  );
+  const afterMultiplier = tierSubtotal * multiplier;
+  const total = afterMultiplier * groupRatio;
+  const actualQuota = Number(tieredQuotaAfterGroup ?? quota);
 
   const lines = [
     buildBillingText('命中档位：{{tier}}', { tier: matchedTier || tier.label }),
     serviceTier
       ? buildBillingText('服务层级：{{tier}}', { tier: serviceTier })
       : null,
-    hasTieredMultiplier(tieredMultiplier)
+    hasTieredMultiplier(multiplier)
       ? buildBillingText('表达式倍率：{{multiplier}}x', {
-          multiplier: formatRatioValue(tieredMultiplier),
+          multiplier: formatRatioValue(multiplier),
         })
       : null,
     ...priceLines
@@ -2335,6 +2462,41 @@ export function renderTieredModelPrice(opts) {
           rate,
         }),
       ),
+    ...calculationLines.map((item) => item.line),
+    buildBillingText('档位小计：{{symbol}}{{amount}}', {
+      symbol,
+      amount: formatBillingDisplayPrice(tierSubtotal, rate),
+    }),
+    hasTieredMultiplier(multiplier)
+      ? buildBillingText(
+          'Fast/服务层级倍率：{{symbol}}{{subtotal}} * 表达式倍率 {{multiplier}} = {{symbol}}{{amount}}',
+          {
+            symbol,
+            subtotal: formatBillingDisplayPrice(tierSubtotal, rate),
+            multiplier: formatRatioValue(multiplier),
+            amount: formatBillingDisplayPrice(afterMultiplier, rate),
+          },
+        )
+      : null,
+    buildBillingText(
+      '分组结算：{{symbol}}{{subtotal}} * {{ratioType}} {{ratio}} = {{symbol}}{{total}}',
+      {
+        symbol,
+        subtotal: formatBillingDisplayPrice(afterMultiplier, rate),
+        ratioType: ratioLabel,
+        ratio: groupRatio,
+        total: formatBillingDisplayPrice(total, rate),
+      },
+    ),
+    buildBillingText('合计：{{symbol}}{{total}}', {
+      symbol,
+      total: formatBillingDisplayPrice(total, rate),
+    }),
+    Number.isFinite(actualQuota) && actualQuota > 0
+      ? buildBillingText('实际扣费：{{quota}}', {
+          quota: renderQuota(actualQuota, 6),
+        })
+      : null,
   ].filter(Boolean);
 
   return renderBillingArticle(lines);

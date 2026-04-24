@@ -248,6 +248,8 @@ func InjectTieredBillingInfo(other map[string]interface{}, relayInfo *relaycommo
 	}
 	if result != nil {
 		other["matched_tier"] = result.MatchedTier
+		other["tiered_quota_before_group"] = result.ActualQuotaBeforeGroup
+		other["tiered_quota_after_group"] = result.ActualQuotaAfterGroup
 		if !isDefaultTieredMultiplier(result.EffectiveMultiplier) {
 			other["tiered_multiplier"] = result.EffectiveMultiplier
 		}

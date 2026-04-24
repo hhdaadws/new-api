@@ -36,3 +36,27 @@ func TestInjectTieredBillingInfoAddsServiceTierAndMultiplier(t *testing.T) {
 		t.Fatalf("tiered_multiplier = %v, want 2", other["tiered_multiplier"])
 	}
 }
+
+func TestInjectTieredBillingInfoAddsActualQuota(t *testing.T) {
+	other := map[string]interface{}{}
+	relayInfo := &relaycommon.RelayInfo{
+		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
+			BillingMode: "tiered_expr",
+			ExprString:  `tier("standard", p * 2)`,
+		},
+	}
+	result := &billingexpr.TieredResult{
+		MatchedTier:            "standard",
+		ActualQuotaBeforeGroup: 1234.5,
+		ActualQuotaAfterGroup:  432,
+	}
+
+	InjectTieredBillingInfo(other, relayInfo, result)
+
+	if other["tiered_quota_before_group"] != 1234.5 {
+		t.Fatalf("tiered_quota_before_group = %v, want 1234.5", other["tiered_quota_before_group"])
+	}
+	if other["tiered_quota_after_group"] != 432 {
+		t.Fatalf("tiered_quota_after_group = %v, want 432", other["tiered_quota_after_group"])
+	}
+}
