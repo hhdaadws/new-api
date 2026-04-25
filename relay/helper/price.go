@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
@@ -68,7 +69,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
 
 	groupRatioInfo := HandleGroupRatio(c, info)
-	hiddenRatio := hiddenRatioForPriceData(info)
+	hiddenRatio := hiddenRatioForPriceData(c, info)
 
 	// Check if this model uses tiered_expr billing
 	if billing_setting.GetBillingMode(info.OriginModelName) == billing_setting.BillingModeTieredExpr {
@@ -171,13 +172,16 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	return priceData, nil
 }
 
-func hiddenRatioForPriceData(info *relaycommon.RelayInfo) float64 {
+func hiddenRatioForPriceData(c *gin.Context, info *relaycommon.RelayInfo) float64 {
 	if info == nil || !ratio_setting.IsHiddenRatioTargetModel(info.OriginModelName) {
 		return 1.0
 	}
 	hiddenRatio := ratio_setting.GetHiddenGroupRatio(info.UsingGroup)
 	if hiddenRatio <= 0 {
-		return 1.0
+		hiddenRatio = 1.0
+	}
+	if personalRatio, ok := common.GetContextKeyType[float64](c, constant.ContextKeyPersonalRatio); ok && personalRatio > 0 {
+		hiddenRatio *= personalRatio
 	}
 	return hiddenRatio
 }

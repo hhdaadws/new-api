@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
@@ -107,6 +108,52 @@ func TestModelPriceHelperTieredAppliesHiddenRatioToPreConsume(t *testing.T) {
 	require.Equal(t, 1500, info.TieredBillingSnapshot.EstimatedPromptTokens)
 	require.Equal(t, 150, info.TieredBillingSnapshot.EstimatedCompletionTokens)
 	require.Equal(t, 2250, info.TieredBillingSnapshot.EstimatedQuotaAfterGroup)
+}
+
+func TestModelPriceHelperAppliesUserPersonalRatioToHiddenRatio(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		saved[key] = value
+		return nil
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(saved))
+	})
+
+	savedHiddenRatio := ratio_setting.HiddenGroupRatio2JSONString()
+	savedTargets := ratio_setting.HiddenRatioTargetModels2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateHiddenGroupRatioByJSONString(savedHiddenRatio))
+		require.NoError(t, ratio_setting.UpdateHiddenRatioTargetModelsByJSONString(savedTargets))
+	})
+
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode": `{"tiered-user-hidden-model":"tiered_expr"}`,
+		"billing_setting.billing_expr": `{"tiered-user-hidden-model":"tier(\"base\", p + c)"}`,
+	}))
+	require.NoError(t, ratio_setting.UpdateHiddenGroupRatioByJSONString(`{"default":1.5}`))
+	require.NoError(t, ratio_setting.UpdateHiddenRatioTargetModelsByJSONString(`[]`))
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	common.SetContextKey(ctx, constant.ContextKeyPersonalRatio, 2.0)
+
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "tiered-user-hidden-model",
+		UserGroup:       "default",
+		UsingGroup:      "default",
+	}
+
+	priceData, err := ModelPriceHelper(ctx, info, 100, &types.TokenCountMeta{MaxTokens: 10})
+	require.NoError(t, err)
+	require.Equal(t, 3.0, priceData.HiddenRatio)
+	require.Equal(t, 165, priceData.QuotaToPreConsume)
+	require.NotNil(t, info.TieredBillingSnapshot)
+	require.Equal(t, 300, info.TieredBillingSnapshot.EstimatedPromptTokens)
+	require.Equal(t, 30, info.TieredBillingSnapshot.EstimatedCompletionTokens)
 }
 
 func TestModelPriceHelperIgnoresServiceTierForRatioBilling(t *testing.T) {
