@@ -70,6 +70,34 @@ func TestCalculateTextQuotaSummaryUnifiedForClaudeSemantic(t *testing.T) {
 	require.Equal(t, 1488, chatSummary.Quota)
 }
 
+func TestCalculateTextQuotaSummaryUsePriceIgnoresHiddenRatioForFinalQuota(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "fixed-price-model",
+		PriceData: types.PriceData{
+			UsePrice:    true,
+			ModelPrice:  0.01,
+			HiddenRatio: 2,
+			GroupRatioInfo: types.GroupRatioInfo{
+				GroupRatio: 3,
+			},
+		},
+	}
+
+	usage := &dto.Usage{
+		PromptTokens:       200,
+		CompletionTokens:   100,
+		TotalTokens:        300,
+		HiddenRatioApplied: true,
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+	require.Equal(t, int(decimal.NewFromFloat(0.01).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).Mul(decimal.NewFromInt(3)).Round(0).IntPart()), summary.Quota)
+}
+
 func TestCalculateTextQuotaSummaryUsesSplitClaudeCacheCreationRatios(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

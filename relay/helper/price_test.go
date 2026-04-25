@@ -62,6 +62,53 @@ func TestModelPriceHelperTieredUsesPreloadedRequestInput(t *testing.T) {
 	require.Equal(t, common.QuotaPerUnit, info.TieredBillingSnapshot.QuotaPerUnit)
 }
 
+func TestModelPriceHelperTieredAppliesHiddenRatioToPreConsume(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		saved[key] = value
+		return nil
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(saved))
+	})
+
+	savedHiddenRatio := ratio_setting.HiddenGroupRatio2JSONString()
+	savedTargets := ratio_setting.HiddenRatioTargetModels2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateHiddenGroupRatioByJSONString(savedHiddenRatio))
+		require.NoError(t, ratio_setting.UpdateHiddenRatioTargetModelsByJSONString(savedTargets))
+	})
+
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode": `{"tiered-hidden-model":"tiered_expr"}`,
+		"billing_setting.billing_expr": `{"tiered-hidden-model":"tier(\"base\", p * 2 + c * 10)"}`,
+	}))
+	require.NoError(t, ratio_setting.UpdateHiddenGroupRatioByJSONString(`{"default":1.5}`))
+	require.NoError(t, ratio_setting.UpdateHiddenRatioTargetModelsByJSONString(`[]`))
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	ctx.Set("group", "default")
+
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "tiered-hidden-model",
+		UserGroup:       "default",
+		UsingGroup:      "default",
+	}
+
+	priceData, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 100})
+	require.NoError(t, err)
+	require.Equal(t, 1.5, priceData.HiddenRatio)
+	require.Equal(t, 2250, priceData.QuotaToPreConsume)
+	require.NotNil(t, info.TieredBillingSnapshot)
+	require.Equal(t, 1500, info.TieredBillingSnapshot.EstimatedPromptTokens)
+	require.Equal(t, 150, info.TieredBillingSnapshot.EstimatedCompletionTokens)
+	require.Equal(t, 2250, info.TieredBillingSnapshot.EstimatedQuotaAfterGroup)
+}
+
 func TestModelPriceHelperIgnoresServiceTierForRatioBilling(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

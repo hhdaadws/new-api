@@ -57,6 +57,11 @@ func xAIStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			usage.PromptTokens = xAIResp.Usage.PromptTokens
 			usage.TotalTokens = xAIResp.Usage.TotalTokens
 			usage.CompletionTokens = usage.TotalTokens - usage.PromptTokens
+			if helper.ApplyHiddenRatio(info, usage) {
+				xAIResp.Usage.PromptTokens = usage.PromptTokens
+				xAIResp.Usage.CompletionTokens = usage.CompletionTokens
+				xAIResp.Usage.TotalTokens = usage.TotalTokens
+			}
 		}
 
 		openaiResponse := streamResponseXAI2OpenAI(xAIResp, usage)
@@ -93,6 +98,7 @@ func xAIHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response
 	if xaiResponse.Usage != nil {
 		xaiResponse.Usage.CompletionTokens = xaiResponse.Usage.TotalTokens - xaiResponse.Usage.PromptTokens
 		xaiResponse.Usage.CompletionTokenDetails.TextTokens = xaiResponse.Usage.CompletionTokens - xaiResponse.Usage.CompletionTokenDetails.ReasoningTokens
+		helper.ApplyHiddenRatio(info, xaiResponse.Usage)
 	}
 
 	// new body

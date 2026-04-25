@@ -188,6 +188,7 @@ func cohereHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	usage.PromptTokens = cohereResp.Meta.BilledUnits.InputTokens
 	usage.CompletionTokens = cohereResp.Meta.BilledUnits.OutputTokens
 	usage.TotalTokens = cohereResp.Meta.BilledUnits.InputTokens + cohereResp.Meta.BilledUnits.OutputTokens
+	helper.ApplyHiddenRatio(info, &usage)
 
 	var openaiResp dto.TextResponse
 	openaiResp.Id = cohereResp.ResponseId
@@ -235,6 +236,7 @@ func cohereRerankHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 		usage.CompletionTokens = cohereResp.Meta.BilledUnits.OutputTokens
 		usage.TotalTokens = cohereResp.Meta.BilledUnits.InputTokens + cohereResp.Meta.BilledUnits.OutputTokens
 	}
+	helper.ApplyHiddenRatio(info, &usage)
 
 	var rerankResp dto.RerankResponse
 	rerankResp.Results = cohereResp.Results

@@ -202,6 +202,7 @@ func zhipuStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 				return true
 			}
 			response, zhipuUsage := streamMetaResponseZhipu2OpenAI(&zhipuResponse)
+			helper.ApplyHiddenRatio(info, zhipuUsage)
 			jsonResponse, err := json.Marshal(response)
 			if err != nil {
 				common.SysLog("error marshalling stream response: " + err.Error())
@@ -237,6 +238,7 @@ func zhipuHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respon
 		}, resp.StatusCode)
 	}
 	fullTextResponse := responseZhipu2OpenAI(&zhipuResponse)
+	helper.ApplyHiddenRatio(info, &fullTextResponse.Usage)
 	jsonResponse, err := json.Marshal(fullTextResponse)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)

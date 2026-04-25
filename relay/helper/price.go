@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -71,7 +72,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 
 	// Check if this model uses tiered_expr billing
 	if billing_setting.GetBillingMode(info.OriginModelName) == billing_setting.BillingModeTieredExpr {
-		priceData, err := modelPriceHelperTiered(c, info, promptTokens, meta, groupRatioInfo)
+		priceData, err := modelPriceHelperTiered(c, info, promptTokens, meta, groupRatioInfo, hiddenRatio)
 		if err != nil {
 			return types.PriceData{}, err
 		}
@@ -258,7 +259,7 @@ func ContainPriceOrRatio(modelName string) bool {
 	return false
 }
 
-func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta, groupRatioInfo types.GroupRatioInfo) (types.PriceData, error) {
+func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta, groupRatioInfo types.GroupRatioInfo, hiddenRatio float64) (types.PriceData, error) {
 	exprStr, ok := billing_setting.GetBillingExpr(info.OriginModelName)
 	if !ok {
 		return types.PriceData{}, fmt.Errorf("model %s is configured as tiered_expr but has no billing expression", info.OriginModelName)
@@ -268,6 +269,18 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 	if meta.MaxTokens != 0 {
 		estimatedCompletionTokens = meta.MaxTokens
 	}
+	estimatedPromptTokens := promptTokens
+	estimatedUsage := &dto.Usage{
+		PromptTokens:     estimatedPromptTokens,
+		CompletionTokens: estimatedCompletionTokens,
+		TotalTokens:      estimatedPromptTokens + estimatedCompletionTokens,
+	}
+	ApplyHiddenRatio(&relaycommon.RelayInfo{
+		OriginModelName: info.OriginModelName,
+		PriceData:       types.PriceData{HiddenRatio: hiddenRatio},
+	}, estimatedUsage)
+	estimatedPromptTokens = estimatedUsage.PromptTokens
+	estimatedCompletionTokens = estimatedUsage.CompletionTokens
 
 	requestInput, err := ResolveIncomingBillingExprRequestInput(c, info)
 	if err != nil {
@@ -275,7 +288,7 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 	}
 
 	rawCost, trace, err := billingexpr.RunExprWithRequest(exprStr, billingexpr.TokenParams{
-		P: float64(promptTokens),
+		P: float64(estimatedPromptTokens),
 		C: float64(estimatedCompletionTokens),
 	}, requestInput)
 	if err != nil {
@@ -301,7 +314,7 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 		ExprString:                exprStr,
 		ExprHash:                  exprHash,
 		GroupRatio:                groupRatioInfo.GroupRatio,
-		EstimatedPromptTokens:     promptTokens,
+		EstimatedPromptTokens:     estimatedPromptTokens,
 		EstimatedCompletionTokens: estimatedCompletionTokens,
 		EstimatedQuotaBeforeGroup: quotaBeforeGroup,
 		EstimatedQuotaAfterGroup:  preConsumedQuota,

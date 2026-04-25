@@ -141,6 +141,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			return newApiErr
 		}
 
+		helper.ApplyHiddenRatio(info, usage)
 		service.PostClaudeConsumeQuota(c, info, usage)
 		return nil
 	}
@@ -208,6 +209,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		return newAPIError
 	}
+	helper.ApplyHiddenRatio(info, usage.(*dto.Usage))
 
 	service.PostClaudeConsumeQuota(c, info, usage.(*dto.Usage))
 	return nil

@@ -68,6 +68,7 @@ func cozeChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Res
 	usage.PromptTokens = c.GetInt("coze_input_count")
 	usage.CompletionTokens = c.GetInt("coze_output_count")
 	usage.TotalTokens = c.GetInt("coze_token_count")
+	helper.ApplyHiddenRatio(info, &usage)
 	response.Usage = usage
 	response.Id = helper.GetResponseID(c)
 

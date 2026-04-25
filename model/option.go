@@ -161,6 +161,8 @@ func InitOptionMap() {
 	common.OptionMap["XianyuLink"] = common.XianyuLink
 	common.OptionMap["HiddenGroupRatio"] = ratio_setting.HiddenGroupRatio2JSONString()
 	common.OptionMap["HiddenRatioTargetModels"] = ratio_setting.HiddenRatioTargetModels2JSONString()
+	common.OptionMap["ModelContextLimit"] = ratio_setting.ModelContextLimit2JSONString()
+	common.OptionMap["ModelMaxOutput"] = ratio_setting.ModelMaxOutput2JSONString()
 	//common.OptionMap["ChatLink"] = common.ChatLink
 	//common.OptionMap["ChatLink2"] = common.ChatLink2
 	common.OptionMap["QuotaPerUnit"] = strconv.FormatFloat(common.QuotaPerUnit, 'f', -1, 64)
@@ -547,6 +549,10 @@ func updateOptionMap(key string, value string) (err error) {
 		err = ratio_setting.UpdateHiddenGroupRatioByJSONString(value)
 	case "HiddenRatioTargetModels":
 		err = ratio_setting.UpdateHiddenRatioTargetModelsByJSONString(value)
+	case "ModelContextLimit":
+		err = ratio_setting.UpdateModelContextLimitByJSONString(value)
+	case "ModelMaxOutput":
+		err = ratio_setting.UpdateModelMaxOutputByJSONString(value)
 	//case "ChatLink":
 	//	common.ChatLink = value
 	//case "ChatLink2":

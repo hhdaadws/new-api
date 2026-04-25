@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -15,6 +16,111 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGeminiChatHandlerAppliesHiddenRatioToUsageAndResponse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	info := &relaycommon.RelayInfo{
+		RelayFormat:     types.RelayFormatOpenAI,
+		OriginModelName: "hidden-ratio-gemini",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "hidden-ratio-gemini",
+		},
+		PriceData: types.PriceData{HiddenRatio: 1.5},
+	}
+
+	payload := dto.GeminiChatResponse{
+		Candidates: []dto.GeminiChatCandidate{
+			{
+				Content: dto.GeminiChatContent{
+					Role:  "model",
+					Parts: []dto.GeminiPart{{Text: "ok"}},
+				},
+			},
+		},
+		UsageMetadata: dto.GeminiUsageMetadata{
+			PromptTokenCount:     100,
+			CandidatesTokenCount: 40,
+			TotalTokenCount:      140,
+		},
+	}
+
+	body, err := common.Marshal(payload)
+	require.NoError(t, err)
+
+	resp := &http.Response{Body: io.NopCloser(bytes.NewReader(body))}
+	usage, newAPIError := GeminiChatHandler(c, info, resp)
+	require.Nil(t, newAPIError)
+	require.NotNil(t, usage)
+	require.Equal(t, 150, usage.PromptTokens)
+	require.Equal(t, 60, usage.CompletionTokens)
+	require.Equal(t, 210, usage.TotalTokens)
+
+	var openAIResp dto.OpenAITextResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &openAIResp))
+	require.Equal(t, 150, openAIResp.PromptTokens)
+	require.Equal(t, 60, openAIResp.CompletionTokens)
+	require.Equal(t, 210, openAIResp.TotalTokens)
+}
+
+func TestGeminiChatStreamHandlerAppliesHiddenRatioToFinalUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	oldStreamingTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 300
+	t.Cleanup(func() {
+		constant.StreamingTimeout = oldStreamingTimeout
+	})
+
+	info := &relaycommon.RelayInfo{
+		RelayFormat:        types.RelayFormatOpenAI,
+		OriginModelName:    "hidden-ratio-gemini",
+		ShouldIncludeUsage: true,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "hidden-ratio-gemini",
+		},
+		PriceData: types.PriceData{HiddenRatio: 1.5},
+	}
+
+	chunk := dto.GeminiChatResponse{
+		Candidates: []dto.GeminiChatCandidate{
+			{
+				Content: dto.GeminiChatContent{
+					Role:  "model",
+					Parts: []dto.GeminiPart{{Text: "partial"}},
+				},
+			},
+		},
+		UsageMetadata: dto.GeminiUsageMetadata{
+			PromptTokenCount:     100,
+			CandidatesTokenCount: 40,
+			TotalTokenCount:      140,
+		},
+	}
+
+	chunkData, err := common.Marshal(chunk)
+	require.NoError(t, err)
+	streamBody := []byte("data: " + string(chunkData) + "\n" + "data: [DONE]\n")
+
+	resp := &http.Response{Body: io.NopCloser(bytes.NewReader(streamBody))}
+	usage, newAPIError := GeminiChatStreamHandler(c, info, resp)
+	require.Nil(t, newAPIError)
+	require.NotNil(t, usage)
+	require.Equal(t, 150, usage.PromptTokens)
+	require.Equal(t, 60, usage.CompletionTokens)
+	require.Equal(t, 210, usage.TotalTokens)
+
+	written := recorder.Body.String()
+	require.True(t, strings.Contains(written, `"prompt_tokens":150`), written)
+	require.True(t, strings.Contains(written, `"completion_tokens":60`), written)
+	require.True(t, strings.Contains(written, `"total_tokens":210`), written)
+}
 
 func TestGeminiChatHandlerCompletionTokensExcludeToolUsePromptTokens(t *testing.T) {
 	t.Parallel()

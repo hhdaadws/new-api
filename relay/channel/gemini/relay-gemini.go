@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -1059,6 +1060,65 @@ func buildUsageFromGeminiMetadata(metadata dto.GeminiUsageMetadata, fallbackProm
 	return usage
 }
 
+func applyHiddenRatioToGeminiUsage(info *relaycommon.RelayInfo, usage *dto.Usage, metadata *dto.GeminiUsageMetadata) bool {
+	if usage == nil {
+		return false
+	}
+	before := *usage
+	if !helper.ApplyHiddenRatio(info, usage) {
+		return false
+	}
+	if metadata != nil {
+		scaleGeminiUsageMetadata(metadata, before, *usage)
+	}
+	return true
+}
+
+func scaleGeminiUsageMetadata(metadata *dto.GeminiUsageMetadata, before dto.Usage, after dto.Usage) {
+	promptRatio := hiddenScaleRatio(before.PromptTokens, after.PromptTokens)
+	completionRatio := hiddenScaleRatio(before.CompletionTokens, after.CompletionTokens)
+
+	if metadata.PromptTokenCount == 0 && metadata.ToolUsePromptTokenCount == 0 && before.PromptTokens > 0 {
+		metadata.PromptTokenCount = after.PromptTokens
+	} else {
+		metadata.PromptTokenCount = scaleHiddenTokenCount(metadata.PromptTokenCount, promptRatio)
+		metadata.ToolUsePromptTokenCount = scaleHiddenTokenCount(metadata.ToolUsePromptTokenCount, promptRatio)
+	}
+
+	if metadata.CandidatesTokenCount == 0 && metadata.ThoughtsTokenCount == 0 && before.CompletionTokens > 0 {
+		metadata.CandidatesTokenCount = after.CompletionTokens
+	} else {
+		metadata.CandidatesTokenCount = scaleHiddenTokenCount(metadata.CandidatesTokenCount, completionRatio)
+		metadata.ThoughtsTokenCount = scaleHiddenTokenCount(metadata.ThoughtsTokenCount, completionRatio)
+	}
+
+	metadata.CachedContentTokenCount = scaleHiddenTokenCount(metadata.CachedContentTokenCount, promptRatio)
+	for i := range metadata.PromptTokensDetails {
+		metadata.PromptTokensDetails[i].TokenCount = scaleHiddenTokenCount(metadata.PromptTokensDetails[i].TokenCount, promptRatio)
+	}
+	for i := range metadata.ToolUsePromptTokensDetails {
+		metadata.ToolUsePromptTokensDetails[i].TokenCount = scaleHiddenTokenCount(metadata.ToolUsePromptTokensDetails[i].TokenCount, promptRatio)
+	}
+	for i := range metadata.CandidatesTokensDetails {
+		metadata.CandidatesTokensDetails[i].TokenCount = scaleHiddenTokenCount(metadata.CandidatesTokensDetails[i].TokenCount, completionRatio)
+	}
+	metadata.TotalTokenCount = after.TotalTokens
+}
+
+func hiddenScaleRatio(before int, after int) float64 {
+	if before <= 0 {
+		return 1
+	}
+	return float64(after) / float64(before)
+}
+
+func scaleHiddenTokenCount(value int, ratio float64) int {
+	if value == 0 {
+		return 0
+	}
+	return int(math.Round(float64(value) * ratio))
+}
+
 func responseGeminiChat2OpenAI(c *gin.Context, response *dto.GeminiChatResponse) *dto.OpenAITextResponse {
 	fullTextResponse := dto.OpenAITextResponse{
 		Id:      helper.GetResponseID(c),
@@ -1300,6 +1360,11 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		// 更新使用量统计
 		if geminiResponse.UsageMetadata.TotalTokenCount != 0 {
 			mappedUsage := buildUsageFromGeminiMetadata(geminiResponse.UsageMetadata, info.GetEstimatePromptTokens())
+			if applyHiddenRatioToGeminiUsage(info, &mappedUsage, &geminiResponse.UsageMetadata) {
+				if newData, err := common.Marshal(geminiResponse); err == nil {
+					data = string(newData)
+				}
+			}
 			*usage = mappedUsage
 		}
 
@@ -1429,6 +1494,7 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	}
 	if len(geminiResponse.Candidates) == 0 {
 		usage := buildUsageFromGeminiMetadata(geminiResponse.UsageMetadata, info.GetEstimatePromptTokens())
+		applyHiddenRatioToGeminiUsage(info, &usage, &geminiResponse.UsageMetadata)
 
 		var newAPIError *types.NewAPIError
 		if geminiResponse.PromptFeedback != nil && geminiResponse.PromptFeedback.BlockReason != nil {
@@ -1465,6 +1531,7 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	fullTextResponse := responseGeminiChat2OpenAI(c, &geminiResponse)
 	fullTextResponse.Model = info.UpstreamModelName
 	usage := buildUsageFromGeminiMetadata(geminiResponse.UsageMetadata, info.GetEstimatePromptTokens())
+	hiddenRatioApplied := applyHiddenRatioToGeminiUsage(info, &usage, &geminiResponse.UsageMetadata)
 
 	fullTextResponse.Usage = usage
 
@@ -1482,7 +1549,12 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 		}
 		responseBody = claudeRespStr
 	case types.RelayFormatGemini:
-		break
+		if hiddenRatioApplied {
+			responseBody, err = common.Marshal(geminiResponse)
+			if err != nil {
+				return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+			}
+		}
 	}
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
