@@ -55,6 +55,7 @@ import {
 const { Text } = Typography;
 
 const pageSize = 12;
+const maxEditSourceImages = 16;
 
 const getErrorMessage = (error) =>
   error?.response?.data?.message ||
@@ -115,10 +116,8 @@ const ImageGeneration = () => {
   const [previewUrls, setPreviewUrls] = useState({});
   const previewUrlsRef = useRef({});
   const fileInputRef = useRef(null);
-  const editPreviewUrlRef = useRef('');
-  const [editImageFile, setEditImageFile] = useState(null);
-  const [editImagePreviewUrl, setEditImagePreviewUrl] = useState('');
-  const [editSourceName, setEditSourceName] = useState('');
+  const editPreviewUrlsRef = useRef([]);
+  const [editImageSources, setEditImageSources] = useState([]);
   const [form, setForm] = useState({
     model: '',
     group: '',
@@ -130,11 +129,13 @@ const ImageGeneration = () => {
   });
 
   const modelOptions = useMemo(
-    () => (config?.models || []).map((model) => ({ label: model, value: model })),
+    () =>
+      (config?.models || []).map((model) => ({ label: model, value: model })),
     [config?.models],
   );
   const groupOptions = useMemo(
-    () => (config?.groups || []).map((group) => ({ label: group, value: group })),
+    () =>
+      (config?.groups || []).map((group) => ({ label: group, value: group })),
     [config?.groups],
   );
   const sizeOptions = useMemo(
@@ -216,15 +217,23 @@ response.raise_for_status()
 payload = response.json()
 ${pythonSaveBlock}`,
       pythonEdit: `import base64
+import contextlib
 import pathlib
 import requests
 
 BASE_URL = "${apiBaseUrl}"
 API_KEY = "sk-xxxx"
-INPUT_FILE = pathlib.Path("input.png")
+INPUT_FILES = [
+    pathlib.Path("reference-1.png"),
+    pathlib.Path("reference-2.png"),
+]
 OUTPUT_FILE = pathlib.Path("edited.${outputFormat === 'jpeg' ? 'jpg' : outputFormat}")
 
-with INPUT_FILE.open("rb") as image_file:
+with contextlib.ExitStack() as stack:
+    image_files = [
+        stack.enter_context(input_file.open("rb"))
+        for input_file in INPUT_FILES
+    ]
     response = requests.post(
         BASE_URL + "/v1/images/edits",
         headers={"Authorization": "Bearer " + API_KEY},
@@ -236,7 +245,10 @@ with INPUT_FILE.open("rb") as image_file:
             "quality": "${quality}",
             "output_format": "${outputFormat}",
         },
-        files={"image": (INPUT_FILE.name, image_file, "image/png")},
+        files=[
+            ("image[]", (input_file.name, image_file, "image/png"))
+            for input_file, image_file in zip(INPUT_FILES, image_files)
+        ],
         timeout=120,
     )
 response.raise_for_status()
@@ -260,7 +272,8 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
   -F size="${size}" \\
   -F quality="${quality}" \\
   -F output_format="${outputFormat}" \\
-  -F image="@input.png"`,
+  -F "image[]=@reference-1.png" \\
+  -F "image[]=@reference-2.png"`,
     };
   }, [apiBaseUrl, config, form]);
 
@@ -268,28 +281,59 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const revokeEditPreview = () => {
-    if (editPreviewUrlRef.current) {
-      URL.revokeObjectURL(editPreviewUrlRef.current);
-      editPreviewUrlRef.current = '';
-    }
+  const revokeEditPreview = (previewUrl) => {
+    if (!previewUrl) return;
+    URL.revokeObjectURL(previewUrl);
+    editPreviewUrlsRef.current = editPreviewUrlsRef.current.filter(
+      (url) => url !== previewUrl,
+    );
   };
 
-  const setEditSource = (file, sourceName) => {
-    revokeEditPreview();
-    const objectUrl = URL.createObjectURL(file);
-    editPreviewUrlRef.current = objectUrl;
-    setEditImageFile(file);
-    setEditImagePreviewUrl(objectUrl);
-    setEditSourceName(sourceName || file.name);
+  const revokeAllEditPreviews = () => {
+    editPreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    editPreviewUrlsRef.current = [];
+  };
+
+  const addEditSources = (files, sourceNames = []) => {
+    const incomingFiles = Array.from(files || []);
+    if (incomingFiles.length === 0) return;
+    if (editImageSources.length + incomingFiles.length > maxEditSourceImages) {
+      showError(t('最多支持上传 16 张图片'));
+      return;
+    }
+    const unsupportedFile = incomingFiles.find(
+      (file) => !['image/png', 'image/jpeg', 'image/webp'].includes(file.type),
+    );
+    if (unsupportedFile) {
+      showError(t('仅支持 PNG、JPEG、WebP 图片'));
+      return;
+    }
+
+    const nextSources = incomingFiles.map((file, index) => {
+      const previewUrl = URL.createObjectURL(file);
+      editPreviewUrlsRef.current.push(previewUrl);
+      return {
+        id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`,
+        file,
+        previewUrl,
+        sourceName: sourceNames[index] || file.name,
+      };
+    });
+    setEditImageSources((prev) => [...prev, ...nextSources]);
     setActiveMode('edit');
   };
 
-  const clearEditSource = () => {
-    revokeEditPreview();
-    setEditImageFile(null);
-    setEditImagePreviewUrl('');
-    setEditSourceName('');
+  const removeEditSource = (id) => {
+    setEditImageSources((prev) => {
+      const target = prev.find((item) => item.id === id);
+      revokeEditPreview(target?.previewUrl);
+      return prev.filter((item) => item.id !== id);
+    });
+  };
+
+  const clearEditSources = () => {
+    revokeAllEditPreviews();
+    setEditImageSources([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -402,7 +446,7 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
       showError(t('请选择模型和分组'));
       return;
     }
-    if (activeMode === 'edit' && !editImageFile) {
+    if (activeMode === 'edit' && editImageSources.length === 0) {
       showError(t('请选择要修改的图片'));
       return;
     }
@@ -412,7 +456,9 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
       let res;
       if (activeMode === 'edit') {
         const formData = new FormData();
-        formData.append('image', editImageFile);
+        editImageSources.forEach((source) => {
+          formData.append('image[]', source.file, source.file.name);
+        });
         Object.entries(buildPayload()).forEach(([key, value]) => {
           formData.append(key, value);
         });
@@ -426,7 +472,9 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
       }
       const { success, message, data } = res.data;
       if (!success) {
-        showError(message || t(activeMode === 'edit' ? '改图失败' : '生成失败'));
+        showError(
+          message || t(activeMode === 'edit' ? '改图失败' : '生成失败'),
+        );
         return;
       }
       handleSuccessItems(data?.items || [], activeMode);
@@ -438,6 +486,10 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
   };
 
   const selectHistoryAsEditSource = async (item) => {
+    if (editImageSources.length >= maxEditSourceImages) {
+      showError(t('最多支持上传 16 张图片'));
+      return;
+    }
     try {
       const res = await API.get(item.url, {
         responseType: 'blob',
@@ -448,7 +500,7 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
       const file = new File([res.data], `history-${item.id}.${ext}`, {
         type: mimeType,
       });
-      setEditSource(file, item.filename || `image-${item.id}.${ext}`);
+      addEditSources([file], [item.filename || `image-${item.id}.${ext}`]);
       showSuccess(t('已选择历史图片'));
     } catch (error) {
       showError(error);
@@ -456,14 +508,8 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
   };
 
   const handleFileChange = (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-      showError(t('仅支持 PNG、JPEG、WebP 图片'));
-      event.target.value = '';
-      return;
-    }
-    setEditSource(file, file.name);
+    addEditSources(event.target.files);
+    event.target.value = '';
   };
 
   const downloadImage = async (item) => {
@@ -520,7 +566,7 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
         URL.revokeObjectURL(url),
       );
       previewUrlsRef.current = {};
-      revokeEditPreview();
+      revokeAllEditPreviews();
     };
   }, []);
 
@@ -648,6 +694,11 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
                             'Python 示例依赖 requests，可先执行 pip install requests。',
                           )}
                         </Text>
+                        <Text type='secondary'>
+                          {t(
+                            '改图上传多张参考图时重复传入 image[] 字段；只改一张图时传入一个 image[] 即可。',
+                          )}
+                        </Text>
                       </div>
                     </div>
 
@@ -676,7 +727,8 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
                           <code>output_format</code> - {t('格式')}
                         </Text>
                         <Text>
-                          <code>image</code> - {t('改图时上传的图片文件')}
+                          <code>image[]</code> -{' '}
+                          {t('改图时上传的图片文件，可重复传入多张')}
                         </Text>
                       </div>
                     </div>
@@ -719,266 +771,312 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
                   </div>
                 ) : (
                   <div className='flex flex-col gap-4'>
-                  {activeMode === 'edit' && (
-                    <div>
-                      <Text strong>{t('图像来源')}</Text>
-                      <div
-                        className='mt-2 flex aspect-square w-full items-center justify-center overflow-hidden rounded-md border border-dashed'
-                        style={{
-                          borderColor: 'var(--semi-color-border)',
-                          backgroundColor: 'var(--semi-color-fill-0)',
-                        }}
-                      >
-                        {editImagePreviewUrl ? (
-                          <img
-                            src={editImagePreviewUrl}
-                            alt={editSourceName}
-                            className='h-full w-full object-contain'
-                          />
-                        ) : (
-                          <ImageIcon size={40} color='var(--semi-color-text-2)' />
-                        )}
-                      </div>
-                      {editSourceName && (
-                        <Text
-                          type='secondary'
-                          size='small'
-                          ellipsis={{ showTooltip: true }}
-                          className='mt-2 block'
+                    {activeMode === 'edit' && (
+                      <div>
+                        <Text strong>{t('图像来源')}</Text>
+                        <div
+                          className='mt-2 flex min-h-[220px] w-full items-center justify-center overflow-hidden rounded-md border border-dashed p-2'
+                          style={{
+                            borderColor: 'var(--semi-color-border)',
+                            backgroundColor: 'var(--semi-color-fill-0)',
+                          }}
                         >
-                          {editSourceName}
-                        </Text>
-                      )}
-                      <div className='mt-3 flex gap-2'>
-                        <input
-                          ref={fileInputRef}
-                          type='file'
-                          accept='image/png,image/jpeg,image/webp'
-                          className='hidden'
-                          onChange={handleFileChange}
-                        />
-                        <Button
-                          icon={<Upload size={16} />}
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={disabled || generating}
-                        >
-                          {t('上传图片')}
-                        </Button>
-                        {editImageFile && (
-                          <Button
-                            icon={<X size={16} />}
-                            onClick={clearEditSource}
-                            disabled={generating}
+                          {editImageSources.length > 0 ? (
+                            <div className='grid w-full grid-cols-2 gap-2'>
+                              {editImageSources.map((source) => (
+                                <div
+                                  key={source.id}
+                                  className='group relative aspect-square overflow-hidden rounded-md border'
+                                  style={{
+                                    borderColor: 'var(--semi-color-border)',
+                                  }}
+                                >
+                                  <img
+                                    src={source.previewUrl}
+                                    alt={source.sourceName}
+                                    className='h-full w-full object-contain'
+                                  />
+                                  <Button
+                                    size='small'
+                                    type='danger'
+                                    theme='solid'
+                                    icon={<X size={12} />}
+                                    className='absolute right-1 top-1 opacity-95'
+                                    onClick={() => removeEditSource(source.id)}
+                                    disabled={generating}
+                                  />
+                                  <div
+                                    className='absolute bottom-0 left-0 right-0 truncate px-2 py-1 text-xs'
+                                    style={{
+                                      backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                                      color: '#fff',
+                                    }}
+                                  >
+                                    {source.sourceName}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <ImageIcon
+                              size={40}
+                              color='var(--semi-color-text-2)'
+                            />
+                          )}
+                        </div>
+                        {editImageSources.length > 0 && (
+                          <Text
+                            type='secondary'
+                            size='small'
+                            className='mt-2 block'
                           >
-                            {t('清除')}
-                          </Button>
+                            {t('已选择')} {editImageSources.length} /{' '}
+                            {maxEditSourceImages} {t('张图片')}
+                          </Text>
                         )}
+                        <div className='mt-3 flex gap-2'>
+                          <input
+                            ref={fileInputRef}
+                            type='file'
+                            multiple
+                            accept='image/png,image/jpeg,image/webp'
+                            className='hidden'
+                            onChange={handleFileChange}
+                          />
+                          <Button
+                            icon={<Upload size={16} />}
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={
+                              disabled ||
+                              generating ||
+                              editImageSources.length >= maxEditSourceImages
+                            }
+                          >
+                            {t('上传图片')}
+                          </Button>
+                          {editImageSources.length > 0 && (
+                            <Button
+                              icon={<X size={16} />}
+                              onClick={clearEditSources}
+                              disabled={generating}
+                            >
+                              {t('清除')}
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  <div>
-                    <Text strong>{t('提示词')}</Text>
-                    <TextArea
-                      autosize={{ minRows: 6, maxRows: 12 }}
-                      value={form.prompt}
-                      onChange={(value) => updateForm('prompt', value)}
-                      placeholder={
-                        activeMode === 'edit'
-                          ? t('描述你想如何修改这张图片')
-                          : t('描述你想生成的图片')
-                      }
-                      disabled={disabled || generating}
-                      style={{ marginTop: 8 }}
-                    />
-                  </div>
-
-                  <div className='grid grid-cols-1 gap-3'>
                     <div>
-                      <Text strong>{t('模型')}</Text>
-                      <Select
-                        value={form.model}
-                        optionList={modelOptions}
-                        onChange={(value) => updateForm('model', value)}
+                      <Text strong>{t('提示词')}</Text>
+                      <TextArea
+                        autosize={{ minRows: 6, maxRows: 12 }}
+                        value={form.prompt}
+                        onChange={(value) => updateForm('prompt', value)}
+                        placeholder={
+                          activeMode === 'edit'
+                            ? t('描述你想如何修改这张图片')
+                            : t('描述你想生成的图片')
+                        }
                         disabled={disabled || generating}
-                        style={{ width: '100%', marginTop: 8 }}
+                        style={{ marginTop: 8 }}
                       />
                     </div>
-                    <div>
-                      <Text strong>{t('分组')}</Text>
-                      <Select
-                        value={form.group}
-                        optionList={groupOptions}
-                        onChange={(value) => updateForm('group', value)}
-                        disabled={disabled || generating}
-                        style={{ width: '100%', marginTop: 8 }}
-                      />
-                    </div>
-                    <div className='grid grid-cols-2 gap-3'>
-                      <div>
-                        <Text strong>{t('尺寸')}</Text>
-                        <Select
-                          value={form.size}
-                          optionList={sizeOptions}
-                          onChange={(value) => updateForm('size', value)}
-                          disabled={disabled || generating}
-                          style={{ width: '100%', marginTop: 8 }}
-                        />
-                      </div>
-                      <div>
-                        <Text strong>{t('质量')}</Text>
-                        <Select
-                          value={form.quality}
-                          optionList={qualityOptions}
-                          onChange={(value) => updateForm('quality', value)}
-                          disabled={disabled || generating}
-                          style={{ width: '100%', marginTop: 8 }}
-                        />
-                      </div>
-                    </div>
-                    <div className='grid grid-cols-2 gap-3'>
-                      <div>
-                        <Text strong>{t('格式')}</Text>
-                        <Select
-                          value={form.output_format}
-                          optionList={outputFormatOptions}
-                          onChange={(value) => updateForm('output_format', value)}
-                          disabled={disabled || generating}
-                          style={{ width: '100%', marginTop: 8 }}
-                        />
-                      </div>
-                      <div>
-                        <Text strong>{t('数量')}</Text>
-                        <InputNumber
-                          min={1}
-                          max={config?.defaults?.max_n || 4}
-                          value={form.n}
-                          onChange={(value) => updateForm('n', value || 1)}
-                          disabled={disabled || generating}
-                          style={{ width: '100%', marginTop: 8 }}
-                        />
-                      </div>
-                    </div>
-                  </div>
 
-                  <Button
-                    type='primary'
-                    icon={<Send size={16} />}
-                    loading={generating}
-                    disabled={disabled}
-                    onClick={submitImageRequest}
-                    block
-                  >
-                    {activeMode === 'edit' ? t('提交改图') : t('生成图片')}
-                  </Button>
+                    <div className='grid grid-cols-1 gap-3'>
+                      <div>
+                        <Text strong>{t('模型')}</Text>
+                        <Select
+                          value={form.model}
+                          optionList={modelOptions}
+                          onChange={(value) => updateForm('model', value)}
+                          disabled={disabled || generating}
+                          style={{ width: '100%', marginTop: 8 }}
+                        />
+                      </div>
+                      <div>
+                        <Text strong>{t('分组')}</Text>
+                        <Select
+                          value={form.group}
+                          optionList={groupOptions}
+                          onChange={(value) => updateForm('group', value)}
+                          disabled={disabled || generating}
+                          style={{ width: '100%', marginTop: 8 }}
+                        />
+                      </div>
+                      <div className='grid grid-cols-2 gap-3'>
+                        <div>
+                          <Text strong>{t('尺寸')}</Text>
+                          <Select
+                            value={form.size}
+                            optionList={sizeOptions}
+                            onChange={(value) => updateForm('size', value)}
+                            disabled={disabled || generating}
+                            style={{ width: '100%', marginTop: 8 }}
+                          />
+                        </div>
+                        <div>
+                          <Text strong>{t('质量')}</Text>
+                          <Select
+                            value={form.quality}
+                            optionList={qualityOptions}
+                            onChange={(value) => updateForm('quality', value)}
+                            disabled={disabled || generating}
+                            style={{ width: '100%', marginTop: 8 }}
+                          />
+                        </div>
+                      </div>
+                      <div className='grid grid-cols-2 gap-3'>
+                        <div>
+                          <Text strong>{t('格式')}</Text>
+                          <Select
+                            value={form.output_format}
+                            optionList={outputFormatOptions}
+                            onChange={(value) =>
+                              updateForm('output_format', value)
+                            }
+                            disabled={disabled || generating}
+                            style={{ width: '100%', marginTop: 8 }}
+                          />
+                        </div>
+                        <div>
+                          <Text strong>{t('数量')}</Text>
+                          <InputNumber
+                            min={1}
+                            max={config?.defaults?.max_n || 4}
+                            value={form.n}
+                            onChange={(value) => updateForm('n', value || 1)}
+                            disabled={disabled || generating}
+                            style={{ width: '100%', marginTop: 8 }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <Button
+                      type='primary'
+                      icon={<Send size={16} />}
+                      loading={generating}
+                      disabled={disabled}
+                      onClick={submitImageRequest}
+                      block
+                    >
+                      {activeMode === 'edit' ? t('提交改图') : t('生成图片')}
+                    </Button>
                   </div>
                 )}
               </Card>
 
               {activeMode !== 'api' && (
                 <div className='flex min-w-0 flex-col gap-3'>
-                <Spin spinning={historyLoading || generating}>
-                  {history.length === 0 ? (
-                    <Card>
-                      <Empty
-                        image={<ImageIcon size={42} />}
-                        title={t('暂无图片')}
-                      />
-                    </Card>
-                  ) : (
-                    <div className='grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3'>
-                      {history.map((item) => (
-                        <Card
-                          key={item.id}
-                          bodyStyle={{ padding: 0 }}
-                          className='overflow-hidden'
-                        >
-                          <div className='aspect-square w-full bg-[var(--semi-color-fill-0)]'>
-                            {previewUrls[item.id] ? (
-                              <img
-                                src={previewUrls[item.id]}
-                                alt={item.prompt}
-                                className='h-full w-full object-contain'
-                              />
-                            ) : (
-                              <div className='flex h-full w-full items-center justify-center text-[var(--semi-color-text-2)]'>
-                                <ImageIcon size={32} />
+                  <Spin spinning={historyLoading || generating}>
+                    {history.length === 0 ? (
+                      <Card>
+                        <Empty
+                          image={<ImageIcon size={42} />}
+                          title={t('暂无图片')}
+                        />
+                      </Card>
+                    ) : (
+                      <div className='grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3'>
+                        {history.map((item) => (
+                          <Card
+                            key={item.id}
+                            bodyStyle={{ padding: 0 }}
+                            className='overflow-hidden'
+                          >
+                            <div className='aspect-square w-full bg-[var(--semi-color-fill-0)]'>
+                              {previewUrls[item.id] ? (
+                                <img
+                                  src={previewUrls[item.id]}
+                                  alt={item.prompt}
+                                  className='h-full w-full object-contain'
+                                />
+                              ) : (
+                                <div className='flex h-full w-full items-center justify-center text-[var(--semi-color-text-2)]'>
+                                  <ImageIcon size={32} />
+                                </div>
+                              )}
+                            </div>
+                            <div className='flex flex-col gap-3 p-3'>
+                              <div className='line-clamp-2 min-h-[40px] text-sm'>
+                                {item.prompt}
                               </div>
-                            )}
-                          </div>
-                          <div className='flex flex-col gap-3 p-3'>
-                            <div className='line-clamp-2 min-h-[40px] text-sm'>
-                              {item.prompt}
-                            </div>
-                            <div className='flex flex-wrap gap-2'>
-                              <Tag color={item.kind === 'edit' ? 'green' : 'blue'}>
-                                {item.kind === 'edit' ? t('改图') : t('生成')}
-                              </Tag>
-                              <Tag color='blue'>{item.model}</Tag>
-                              <Tag>{item.group}</Tag>
-                              <Tag>{item.size}</Tag>
-                            </div>
-                            {item.revised_prompt && (
-                              <Text
-                                type='secondary'
-                                size='small'
-                                ellipsis={{ showTooltip: true }}
-                              >
-                                {item.revised_prompt}
-                              </Text>
-                            )}
-                            <div className='flex items-center justify-between gap-2'>
-                              <Text type='secondary' size='small'>
-                                {timestamp2string(item.created_at)}
-                              </Text>
-                              <Space>
-                                <Button
-                                  size='small'
-                                  icon={<Edit size={14} />}
-                                  onClick={() => selectHistoryAsEditSource(item)}
+                              <div className='flex flex-wrap gap-2'>
+                                <Tag
+                                  color={
+                                    item.kind === 'edit' ? 'green' : 'blue'
+                                  }
                                 >
-                                  {t('改图')}
-                                </Button>
-                                <Button
+                                  {item.kind === 'edit' ? t('改图') : t('生成')}
+                                </Tag>
+                                <Tag color='blue'>{item.model}</Tag>
+                                <Tag>{item.group}</Tag>
+                                <Tag>{item.size}</Tag>
+                              </div>
+                              {item.revised_prompt && (
+                                <Text
+                                  type='secondary'
                                   size='small'
-                                  icon={<Download size={14} />}
-                                  onClick={() => downloadImage(item)}
-                                />
-                                <Button
-                                  size='small'
-                                  type='danger'
-                                  theme='borderless'
-                                  icon={<Trash2 size={14} />}
-                                  onClick={() => deleteImage(item)}
-                                />
-                              </Space>
+                                  ellipsis={{ showTooltip: true }}
+                                >
+                                  {item.revised_prompt}
+                                </Text>
+                              )}
+                              <div className='flex items-center justify-between gap-2'>
+                                <Text type='secondary' size='small'>
+                                  {timestamp2string(item.created_at)}
+                                </Text>
+                                <Space>
+                                  <Button
+                                    size='small'
+                                    icon={<Edit size={14} />}
+                                    onClick={() =>
+                                      selectHistoryAsEditSource(item)
+                                    }
+                                  >
+                                    {t('改图')}
+                                  </Button>
+                                  <Button
+                                    size='small'
+                                    icon={<Download size={14} />}
+                                    onClick={() => downloadImage(item)}
+                                  />
+                                  <Button
+                                    size='small'
+                                    type='danger'
+                                    theme='borderless'
+                                    icon={<Trash2 size={14} />}
+                                    onClick={() => deleteImage(item)}
+                                  />
+                                </Space>
+                              </div>
                             </div>
-                          </div>
-                        </Card>
-                      ))}
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </Spin>
+
+                  {total > pageSize && (
+                    <div className='flex items-center justify-end gap-2'>
+                      <Button
+                        disabled={page <= 1}
+                        onClick={() => loadHistory(page - 1)}
+                      >
+                        {t('上一页')}
+                      </Button>
+                      <Text type='secondary'>
+                        {page} / {maxPage}
+                      </Text>
+                      <Button
+                        disabled={page >= maxPage}
+                        onClick={() => loadHistory(page + 1)}
+                      >
+                        {t('下一页')}
+                      </Button>
                     </div>
                   )}
-                </Spin>
-
-                {total > pageSize && (
-                  <div className='flex items-center justify-end gap-2'>
-                    <Button
-                      disabled={page <= 1}
-                      onClick={() => loadHistory(page - 1)}
-                    >
-                      {t('上一页')}
-                    </Button>
-                    <Text type='secondary'>
-                      {page} / {maxPage}
-                    </Text>
-                    <Button
-                      disabled={page >= maxPage}
-                      onClick={() => loadHistory(page + 1)}
-                    >
-                      {t('下一页')}
-                    </Button>
-                  </div>
-                )}
                 </div>
               )}
             </div>

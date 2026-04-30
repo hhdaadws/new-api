@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -26,7 +27,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const maxStoredGeneratedImageBytes = 50 << 20
+const (
+	maxStoredGeneratedImageBytes = 50 << 20
+	maxImageEditReferenceImages  = 16
+)
 
 var (
 	imageGenerationSizes         = []string{"auto", "1024x1024", "1024x1536", "1536x1024"}
@@ -361,11 +365,19 @@ func fillImageEditRequestFromMultipart(c *gin.Context, req *imageGenerationPageR
 		req.N = common.GetPointer(uint(n))
 	}
 
-	imageFiles := form.File["image"]
-	if len(imageFiles) != 1 {
-		return errors.New("请上传一张图片")
+	imageFiles := collectImageEditFiles(form)
+	if len(imageFiles) == 0 {
+		return errors.New("请至少上传一张图片")
 	}
-	return validateImageEditFile(imageFiles[0])
+	if len(imageFiles) > maxImageEditReferenceImages {
+		return fmt.Errorf("最多支持上传 %d 张图片", maxImageEditReferenceImages)
+	}
+	for _, imageFile := range imageFiles {
+		if err := validateImageEditFile(imageFile); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func setupImageGenerationRelayContext(c *gin.Context, req *imageGenerationPageRequest) error {
@@ -562,9 +574,31 @@ func getMultipartValue(form *multipart.Form, key string) string {
 	return values[0]
 }
 
+func collectImageEditFiles(form *multipart.Form) []*multipart.FileHeader {
+	if form == nil || form.File == nil {
+		return nil
+	}
+
+	var files []*multipart.FileHeader
+	files = append(files, form.File["image"]...)
+	files = append(files, form.File["image[]"]...)
+
+	indexedKeys := make([]string, 0)
+	for key := range form.File {
+		if strings.HasPrefix(key, "image[") && key != "image[]" {
+			indexedKeys = append(indexedKeys, key)
+		}
+	}
+	sort.Strings(indexedKeys)
+	for _, key := range indexedKeys {
+		files = append(files, form.File[key]...)
+	}
+	return files
+}
+
 func validateImageEditFile(fileHeader *multipart.FileHeader) error {
 	if fileHeader == nil {
-		return errors.New("请上传一张图片")
+		return errors.New("请至少上传一张图片")
 	}
 	if fileHeader.Size <= 0 {
 		return errors.New("图片文件为空")
