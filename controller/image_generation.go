@@ -28,24 +28,27 @@ import (
 )
 
 const (
-	maxStoredGeneratedImageBytes = 50 << 20
-	maxImageEditReferenceImages  = 16
+	maxStoredGeneratedImageBytes  = 50 << 20
+	maxImageEditReferenceImages   = 16
+	maxImageGenerationSizeSide    = 3840
+	maxImageGenerationAspectRatio = 3
 )
 
 var (
-	imageGenerationSizes         = []string{"auto", "1024x1024", "1024x1536", "1536x1024"}
+	imageGenerationSizes         = []string{"auto", "1024x1024", "2048x2048", "2560x2560", "1792x1008", "2560x1440", "3072x1728", "3840x2160", "1008x1792", "1440x2560", "2160x3840", "1536x1024", "1024x1536", "3072x1024", "1280x3840"}
 	imageGenerationQualities     = []string{"auto", "low", "medium", "high"}
 	imageGenerationOutputFormats = []string{"png", "jpeg", "webp"}
 )
 
 type imageGenerationPageRequest struct {
-	Model        string `json:"model"`
-	Group        string `json:"group"`
-	Prompt       string `json:"prompt"`
-	N            *uint  `json:"n,omitempty"`
-	Size         string `json:"size,omitempty"`
-	Quality      string `json:"quality,omitempty"`
-	OutputFormat string `json:"output_format,omitempty"`
+	Model             string `json:"model"`
+	Group             string `json:"group"`
+	Prompt            string `json:"prompt"`
+	N                 *uint  `json:"n,omitempty"`
+	Size              string `json:"size,omitempty"`
+	Quality           string `json:"quality,omitempty"`
+	OutputFormat      string `json:"output_format,omitempty"`
+	OutputCompression *int   `json:"output_compression,omitempty"`
 }
 
 type imageGenerationItem struct {
@@ -123,11 +126,12 @@ func GetImageGenerationConfig(c *gin.Context) {
 		"qualities":      imageGenerationQualities,
 		"output_formats": imageGenerationOutputFormats,
 		"defaults": gin.H{
-			"size":          "1024x1024",
-			"quality":       "auto",
-			"output_format": "png",
-			"n":             1,
-			"max_n":         4,
+			"size":               "1024x1024",
+			"quality":            "auto",
+			"output_format":      "png",
+			"output_compression": 100,
+			"n":                  1,
+			"max_n":              4,
 		},
 	})
 }
@@ -305,8 +309,11 @@ func normalizeAndValidateImageGenerationRequest(req *imageGenerationPageRequest)
 	req.Group = strings.TrimSpace(req.Group)
 	req.Prompt = strings.TrimSpace(req.Prompt)
 	req.Size = strings.TrimSpace(req.Size)
-	req.Quality = strings.TrimSpace(req.Quality)
-	req.OutputFormat = strings.TrimSpace(req.OutputFormat)
+	req.Quality = strings.ToLower(strings.TrimSpace(req.Quality))
+	req.OutputFormat = strings.ToLower(strings.TrimSpace(req.OutputFormat))
+	if strings.EqualFold(req.Size, "auto") {
+		req.Size = "auto"
+	}
 
 	if req.Prompt == "" {
 		return errors.New("请输入提示词")
@@ -332,8 +339,13 @@ func normalizeAndValidateImageGenerationRequest(req *imageGenerationPageRequest)
 	if req.OutputFormat == "" {
 		req.OutputFormat = "png"
 	}
-	if !valueAllowed(req.Size, imageGenerationSizes) {
-		return fmt.Errorf("不支持的图片尺寸: %s", req.Size)
+	if err := validateImageGenerationSize(req.Size); err != nil {
+		return err
+	}
+	if req.OutputCompression != nil {
+		if *req.OutputCompression < 0 || *req.OutputCompression > 100 {
+			return errors.New("output_compression 必须在 0 到 100 之间")
+		}
 	}
 	if !valueAllowed(req.Quality, imageGenerationQualities) {
 		return fmt.Errorf("不支持的图片质量: %s", req.Quality)
@@ -342,6 +354,79 @@ func normalizeAndValidateImageGenerationRequest(req *imageGenerationPageRequest)
 		return fmt.Errorf("不支持的输出格式: %s", req.OutputFormat)
 	}
 	return nil
+}
+
+func validateImageGenerationSize(size string) error {
+	if size == "" {
+		return errors.New("请输入合法尺寸，例如 2048x1152")
+	}
+	if valueAllowed(size, imageGenerationSizes) {
+		return nil
+	}
+	width, height, err := parseStrictImageGenerationSize(size)
+	if err != nil {
+		return errors.New("请输入合法尺寸，例如 2048x1152")
+	}
+	if width > maxImageGenerationSizeSide || height > maxImageGenerationSizeSide {
+		return errors.New("尺寸最长边不能超过 3840，宽高比不能超过 3:1")
+	}
+	maxSide := width
+	minSide := height
+	if height > width {
+		maxSide = height
+		minSide = width
+	}
+	if maxSide > minSide*maxImageGenerationAspectRatio {
+		return errors.New("尺寸最长边不能超过 3840，宽高比不能超过 3:1")
+	}
+	return nil
+}
+
+func parseStrictImageGenerationSize(size string) (int, int, error) {
+	parts := strings.Split(size, "x")
+	if len(parts) != 2 {
+		return 0, 0, errors.New("invalid size")
+	}
+	width, err := parseStrictPositiveInt(parts[0])
+	if err != nil {
+		return 0, 0, err
+	}
+	height, err := parseStrictPositiveInt(parts[1])
+	if err != nil {
+		return 0, 0, err
+	}
+	return width, height, nil
+}
+
+func parseStrictPositiveInt(value string) (int, error) {
+	if value == "" {
+		return 0, errors.New("invalid int")
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return 0, errors.New("invalid int")
+		}
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return 0, errors.New("invalid int")
+	}
+	return parsed, nil
+}
+
+func shouldForwardOutputCompression(req *imageGenerationPageRequest) bool {
+	if req == nil || req.OutputCompression == nil {
+		return false
+	}
+	if *req.OutputCompression >= 100 {
+		return false
+	}
+	switch req.OutputFormat {
+	case "jpeg", "webp":
+		return true
+	default:
+		return false
+	}
 }
 
 func fillImageEditRequestFromMultipart(c *gin.Context, req *imageGenerationPageRequest) error {
@@ -357,6 +442,13 @@ func fillImageEditRequestFromMultipart(c *gin.Context, req *imageGenerationPageR
 	req.Size = getMultipartValue(form, "size")
 	req.Quality = getMultipartValue(form, "quality")
 	req.OutputFormat = getMultipartValue(form, "output_format")
+	if compressionValue := strings.TrimSpace(getMultipartValue(form, "output_compression")); compressionValue != "" {
+		compression, err := strconv.Atoi(compressionValue)
+		if err != nil {
+			return errors.New("output_compression 必须是数字")
+		}
+		req.OutputCompression = &compression
+	}
 	if nValue := strings.TrimSpace(getMultipartValue(form, "n")); nValue != "" {
 		n, err := strconv.ParseUint(nValue, 10, 32)
 		if err != nil {
@@ -402,6 +494,9 @@ func replaceImageGenerationRequestBody(c *gin.Context, req *imageGenerationPageR
 		"size":          req.Size,
 		"quality":       req.Quality,
 		"output_format": req.OutputFormat,
+	}
+	if shouldForwardOutputCompression(req) {
+		payload["output_compression"] = *req.OutputCompression
 	}
 	body, err := common.Marshal(payload)
 	if err != nil {

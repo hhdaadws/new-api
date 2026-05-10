@@ -39,48 +39,62 @@ func TestGetRequestURLForImageGeneration(t *testing.T) {
 func TestConvertImageRequest(t *testing.T) {
 	t.Parallel()
 
-	adaptor := &Adaptor{}
-	info := &relaycommon.RelayInfo{
-		RelayMode:       relayconstant.RelayModeImagesGenerations,
-		OriginModelName: "image-01",
-	}
-	request := dto.ImageRequest{
-		Model:          "image-01",
-		Prompt:         "a red fox in snowfall",
-		Size:           "1536x1024",
-		ResponseFormat: "url",
-		N:              uintPtr(2),
+	tests := []struct {
+		name       string
+		size       string
+		wantAspect string
+	}{
+		{name: "legacy 3:2", size: "1536x1024", wantAspect: "3:2"},
+		{name: "custom 3:1", size: "3072x1024", wantAspect: "3:1"},
+		{name: "custom 1:3", size: "1280x3840", wantAspect: "1:3"},
 	}
 
-	got, err := adaptor.ConvertImageRequest(gin.CreateTestContextOnly(httptest.NewRecorder(), gin.New()), info, request)
-	if err != nil {
-		t.Fatalf("ConvertImageRequest returned error: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adaptor := &Adaptor{}
+			info := &relaycommon.RelayInfo{
+				RelayMode:       relayconstant.RelayModeImagesGenerations,
+				OriginModelName: "image-01",
+			}
+			request := dto.ImageRequest{
+				Model:          "image-01",
+				Prompt:         "a red fox in snowfall",
+				Size:           tt.size,
+				ResponseFormat: "url",
+				N:              uintPtr(2),
+			}
 
-	body, err := json.Marshal(got)
-	if err != nil {
-		t.Fatalf("json.Marshal returned error: %v", err)
-	}
+			got, err := adaptor.ConvertImageRequest(gin.CreateTestContextOnly(httptest.NewRecorder(), gin.New()), info, request)
+			if err != nil {
+				t.Fatalf("ConvertImageRequest returned error: %v", err)
+			}
 
-	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		t.Fatalf("json.Unmarshal returned error: %v", err)
-	}
+			body, err := json.Marshal(got)
+			if err != nil {
+				t.Fatalf("json.Marshal returned error: %v", err)
+			}
 
-	if payload["model"] != "image-01" {
-		t.Fatalf("model = %#v, want %q", payload["model"], "image-01")
-	}
-	if payload["prompt"] != request.Prompt {
-		t.Fatalf("prompt = %#v, want %q", payload["prompt"], request.Prompt)
-	}
-	if payload["n"] != float64(2) {
-		t.Fatalf("n = %#v, want 2", payload["n"])
-	}
-	if payload["aspect_ratio"] != "3:2" {
-		t.Fatalf("aspect_ratio = %#v, want %q", payload["aspect_ratio"], "3:2")
-	}
-	if payload["response_format"] != "url" {
-		t.Fatalf("response_format = %#v, want %q", payload["response_format"], "url")
+			var payload map[string]any
+			if err := json.Unmarshal(body, &payload); err != nil {
+				t.Fatalf("json.Unmarshal returned error: %v", err)
+			}
+
+			if payload["model"] != "image-01" {
+				t.Fatalf("model = %#v, want %q", payload["model"], "image-01")
+			}
+			if payload["prompt"] != request.Prompt {
+				t.Fatalf("prompt = %#v, want %q", payload["prompt"], request.Prompt)
+			}
+			if payload["n"] != float64(2) {
+				t.Fatalf("n = %#v, want 2", payload["n"])
+			}
+			if payload["aspect_ratio"] != tt.wantAspect {
+				t.Fatalf("aspect_ratio = %#v, want %q", payload["aspect_ratio"], tt.wantAspect)
+			}
+			if payload["response_format"] != "url" {
+				t.Fatalf("response_format = %#v, want %q", payload["response_format"], "url")
+			}
+		})
 	}
 }
 

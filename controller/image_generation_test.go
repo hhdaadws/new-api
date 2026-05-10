@@ -8,9 +8,140 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestNormalizeAndValidateImageGenerationRequestAcceptsPresetSizes(t *testing.T) {
+	for _, size := range imageGenerationSizes {
+		t.Run(size, func(t *testing.T) {
+			req := newValidImageGenerationPageRequest()
+			req.Size = size
+
+			err := normalizeAndValidateImageGenerationRequest(req)
+
+			require.NoError(t, err)
+			require.Equal(t, size, req.Size)
+		})
+	}
+}
+
+func TestNormalizeAndValidateImageGenerationRequestAcceptsCustomSizes(t *testing.T) {
+	tests := []string{
+		"2048x1152",
+		"1152x2048",
+		"3000x1000",
+		"3840x1280",
+	}
+
+	for _, size := range tests {
+		t.Run(size, func(t *testing.T) {
+			req := newValidImageGenerationPageRequest()
+			req.Size = size
+
+			err := normalizeAndValidateImageGenerationRequest(req)
+
+			require.NoError(t, err)
+			require.Equal(t, size, req.Size)
+		})
+	}
+}
+
+func TestNormalizeAndValidateImageGenerationRequestRejectsInvalidSizes(t *testing.T) {
+	tests := []string{
+		"4096x1024",
+		"3840x1279",
+		"1024×1024",
+		"abc",
+		"0x1024",
+		"1024x0",
+		"1024X1024",
+	}
+
+	for _, size := range tests {
+		t.Run(size, func(t *testing.T) {
+			req := newValidImageGenerationPageRequest()
+			req.Size = size
+
+			err := normalizeAndValidateImageGenerationRequest(req)
+
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestReplaceImageGenerationRequestBodyForwardsCompressionOnlyWhenNeeded(t *testing.T) {
+	tests := []struct {
+		name            string
+		outputFormat    string
+		compression     int
+		wantCompression bool
+	}{
+		{
+			name:            "jpeg zero is preserved",
+			outputFormat:    "jpeg",
+			compression:     0,
+			wantCompression: true,
+		},
+		{
+			name:            "webp zero is preserved",
+			outputFormat:    "webp",
+			compression:     0,
+			wantCompression: true,
+		},
+		{
+			name:         "jpeg 100 is omitted",
+			outputFormat: "jpeg",
+			compression:  100,
+		},
+		{
+			name:         "png compression is omitted",
+			outputFormat: "png",
+			compression:  50,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/pg/images/generations", nil)
+			req := newValidImageGenerationPageRequest()
+			req.OutputFormat = tt.outputFormat
+			req.OutputCompression = &tt.compression
+
+			err := replaceImageGenerationRequestBody(ctx, req)
+
+			require.NoError(t, err)
+			var payload map[string]any
+			require.NoError(t, common.UnmarshalBodyReusable(ctx, &payload))
+			value, ok := payload["output_compression"]
+			require.Equal(t, tt.wantCompression, ok)
+			if tt.wantCompression {
+				require.Equal(t, float64(tt.compression), value)
+			}
+		})
+	}
+}
+
+func TestSetupImageGenerationRelayContextUsesSelectedGroup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", 123)
+	req := newValidImageGenerationPageRequest()
+	req.Group = "image-group"
+
+	err := setupImageGenerationRelayContext(ctx, req)
+
+	require.NoError(t, err)
+	require.Equal(t, "image-group", common.GetContextKeyString(ctx, constant.ContextKeyUsingGroup))
+	require.Equal(t, "image-group", common.GetContextKeyString(ctx, constant.ContextKeyTokenGroup))
+	require.Equal(t, "image-generation-image-group", ctx.GetString("token_name"))
+}
 
 func TestFillImageEditRequestFromMultipartAcceptsSupportedImageFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -140,4 +271,16 @@ func makeImageFilenames(count int) []string {
 		filenames = append(filenames, fmt.Sprintf("source-%02d.png", i))
 	}
 	return filenames
+}
+
+func newValidImageGenerationPageRequest() *imageGenerationPageRequest {
+	return &imageGenerationPageRequest{
+		Model:        "gpt-image-2",
+		Group:        "default",
+		Prompt:       "make it cinematic",
+		N:            common.GetPointer(uint(1)),
+		Size:         "1024x1024",
+		Quality:      "auto",
+		OutputFormat: "png",
+	}
 }

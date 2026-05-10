@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -457,13 +458,21 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		// 写入所有非文件字段
 		if mf != nil {
 			for key, values := range mf.Value {
-				if key == "model" {
+				if key == "model" || key == "output_compression" {
 					continue
 				}
 				for _, value := range values {
 					writer.WriteField(key, value)
 				}
 			}
+		}
+
+		if request.OutputCompression != nil {
+			var compression int
+			if err := common.Unmarshal(request.OutputCompression, &compression); err != nil {
+				return nil, err
+			}
+			writer.WriteField("output_compression", strconv.Itoa(compression))
 		}
 
 		if mf != nil && mf.File != nil {

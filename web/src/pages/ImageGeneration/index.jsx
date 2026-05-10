@@ -23,6 +23,7 @@ import {
   Button,
   Card,
   Empty,
+  Input,
   InputNumber,
   Select,
   Space,
@@ -56,6 +57,9 @@ const { Text } = Typography;
 
 const pageSize = 12;
 const maxEditSourceImages = 16;
+const maxImageGenerationSizeSide = 3840;
+const maxImageGenerationAspectRatio = 3;
+const imageGenerationSizePattern = /^([1-9]\d*)x([1-9]\d*)$/;
 
 const getErrorMessage = (error) =>
   error?.response?.data?.message ||
@@ -68,6 +72,94 @@ const getFileExtension = (filename, mimeType) => {
   if (mimeType === 'image/jpeg') return 'jpg';
   if (mimeType === 'image/webp') return 'webp';
   return 'png';
+};
+
+const normalizeImageSize = (size) => (size || '').trim();
+
+const isPresetImageSize = (size, presets) => (presets || []).includes(size);
+
+const parseImageSize = (size) => {
+  const match = normalizeImageSize(size).match(imageGenerationSizePattern);
+  if (!match) return null;
+  const width = Number.parseInt(match[1], 10);
+  const height = Number.parseInt(match[2], 10);
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+  if (width <= 0 || height <= 0) return null;
+  return { width, height };
+};
+
+const validateImageSize = (size, presets) => {
+  const normalizedSize = normalizeImageSize(size);
+  if (!normalizedSize) {
+    return { ok: false, message: '请输入合法尺寸，例如 2048x1152' };
+  }
+  if (normalizedSize === 'auto' || isPresetImageSize(normalizedSize, presets)) {
+    return { ok: true, value: normalizedSize };
+  }
+
+  const parsed = parseImageSize(normalizedSize);
+  if (!parsed) {
+    return { ok: false, message: '请输入合法尺寸，例如 2048x1152' };
+  }
+
+  const { width, height } = parsed;
+  if (
+    width > maxImageGenerationSizeSide ||
+    height > maxImageGenerationSizeSide
+  ) {
+    return {
+      ok: false,
+      message: '尺寸最长边不能超过 3840，宽高比不能超过 3:1',
+    };
+  }
+
+  const maxSide = Math.max(width, height);
+  const minSide = Math.min(width, height);
+  if (maxSide > minSide * maxImageGenerationAspectRatio) {
+    return {
+      ok: false,
+      message: '尺寸最长边不能超过 3840，宽高比不能超过 3:1',
+    };
+  }
+
+  return { ok: true, value: `${width}x${height}` };
+};
+
+const resolveImageGenerationSize = (form, presets) => {
+  const customSize = normalizeImageSize(form.custom_size);
+  if (customSize) {
+    return validateImageSize(customSize, presets);
+  }
+  return validateImageSize(form.size, presets);
+};
+
+const resolveOutputCompression = (outputFormat, value) => {
+  if (!['jpeg', 'webp'].includes((outputFormat || '').toLowerCase())) {
+    return { ok: true, value: null };
+  }
+
+  if (value === '' || value === null || value === undefined) {
+    return { ok: true, value: null };
+  }
+
+  const compression = Number.parseInt(value, 10);
+  if (!Number.isFinite(compression) || compression < 0 || compression > 100) {
+    return {
+      ok: false,
+      message: '压缩必须在 0 到 100 之间',
+    };
+  }
+
+  if (compression >= 100) {
+    return { ok: true, value: null };
+  }
+
+  return { ok: true, value: compression };
+};
+
+const getForwardableOutputCompression = (outputFormat, value) => {
+  const resolved = resolveOutputCompression(outputFormat, value);
+  return resolved.ok ? resolved.value : null;
 };
 
 const CodeBlock = ({ title, language, code, copyLabel, onCopy }) => (
@@ -123,8 +215,10 @@ const ImageGeneration = () => {
     group: '',
     prompt: '',
     size: '1024x1024',
+    custom_size: '',
     quality: 'auto',
     output_format: 'png',
+    output_compression: 100,
     n: 1,
   });
 
@@ -168,10 +262,18 @@ const ImageGeneration = () => {
 
   const apiExample = useMemo(() => {
     const model = form.model || config?.models?.[0] || 'gpt-image-2';
-    const size = form.size || config?.defaults?.size || '1024x1024';
-    const quality = form.quality || config?.defaults?.quality || 'auto';
+    const sizeResolution = resolveImageGenerationSize(form, config?.sizes);
+    const size = sizeResolution.ok
+      ? sizeResolution.value
+      : form.size || config?.defaults?.size || '1024x1024';
+    const quality =
+      (form.quality || config?.defaults?.quality || 'auto').toLowerCase();
     const outputFormat =
-      form.output_format || config?.defaults?.output_format || 'png';
+      (form.output_format || config?.defaults?.output_format || 'png').toLowerCase();
+    const outputCompression = getForwardableOutputCompression(
+      outputFormat,
+      form.output_compression,
+    );
 
     const generationPayload = {
       model,
@@ -181,6 +283,9 @@ const ImageGeneration = () => {
       quality,
       output_format: outputFormat,
     };
+    if (outputCompression !== null) {
+      generationPayload.output_compression = outputCompression;
+    }
 
     const pythonSaveBlock = `image = payload["data"][0]
 
@@ -194,6 +299,14 @@ else:
     raise RuntimeError("No image data returned")
 
 print("saved to", OUTPUT_FILE)`;
+    const pythonEditCompressionLine =
+      outputCompression !== null
+        ? `            "output_compression": "${outputCompression}",\n`
+        : '';
+    const curlEditCompressionLine =
+      outputCompression !== null
+        ? `  -F output_compression="${outputCompression}" \\\n`
+        : '';
 
     return {
       installRequests: 'pip install requests',
@@ -244,7 +357,7 @@ with contextlib.ExitStack() as stack:
             "size": "${size}",
             "quality": "${quality}",
             "output_format": "${outputFormat}",
-        },
+${pythonEditCompressionLine}        },
         files=[
             ("image[]", (input_file.name, image_file, "image/png"))
             for input_file, image_file in zip(INPUT_FILES, image_files)
@@ -272,7 +385,7 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
   -F size="${size}" \\
   -F quality="${quality}" \\
   -F output_format="${outputFormat}" \\
-  -F "image[]=@reference-1.png" \\
+${curlEditCompressionLine}  -F "image[]=@reference-1.png" \\
   -F "image[]=@reference-2.png"`,
     };
   }, [apiBaseUrl, config, form]);
@@ -354,9 +467,12 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
         model: prev.model || data.models?.[0] || '',
         group: prev.group || data.groups?.[0] || '',
         size: prev.size || data.defaults?.size || '1024x1024',
+        custom_size: prev.custom_size || '',
         quality: prev.quality || data.defaults?.quality || 'auto',
         output_format:
           prev.output_format || data.defaults?.output_format || 'png',
+        output_compression:
+          prev.output_compression ?? data.defaults?.output_compression ?? 100,
         n: prev.n || data.defaults?.n || 1,
       }));
     } catch (error) {
@@ -418,16 +534,36 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
   };
 
   const buildPayload = () => {
+    const sizeResolution = resolveImageGenerationSize(form, config?.sizes);
+    if (!sizeResolution.ok) {
+      return { error: t(sizeResolution.message) };
+    }
+
+    const outputFormat = (
+      form.output_format || config?.defaults?.output_format || 'png'
+    ).toLowerCase();
+    const outputCompressionResolution = resolveOutputCompression(
+      outputFormat,
+      form.output_compression,
+    );
+    if (!outputCompressionResolution.ok) {
+      return { error: t(outputCompressionResolution.message) };
+    }
+
     const count = Number.parseInt(form.n, 10);
-    return {
+    const payload = {
       model: form.model,
       group: form.group,
       prompt: form.prompt.trim(),
-      size: form.size,
-      quality: form.quality,
-      output_format: form.output_format,
+      size: sizeResolution.value,
+      quality: (form.quality || config?.defaults?.quality || 'auto').toLowerCase(),
+      output_format: outputFormat,
       n: Number.isFinite(count) && count > 0 ? count : 1,
     };
+    if (outputCompressionResolution.value !== null) {
+      payload.output_compression = outputCompressionResolution.value;
+    }
+    return { payload };
   };
 
   const handleSuccessItems = (items, mode) => {
@@ -451,6 +587,12 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
       return;
     }
 
+    const built = buildPayload();
+    if (built.error) {
+      showError(built.error);
+      return;
+    }
+
     setGenerating(true);
     try {
       let res;
@@ -459,14 +601,14 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
         editImageSources.forEach((source) => {
           formData.append('image[]', source.file, source.file.name);
         });
-        Object.entries(buildPayload()).forEach(([key, value]) => {
+        Object.entries(built.payload).forEach(([key, value]) => {
           formData.append(key, value);
         });
         res = await API.post('/pg/images/edits', formData, {
           skipErrorHandler: true,
         });
       } else {
-        res = await API.post('/pg/images/generations', buildPayload(), {
+        res = await API.post('/pg/images/generations', built.payload, {
           skipErrorHandler: true,
         });
       }
@@ -649,7 +791,7 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
                       >
                         <Text strong>{t('生图接口')}</Text>
                         <div className='mt-2 break-all font-mono text-xs'>
-                          POST /v1/images/generations
+                          {t('POST /v1/images/generations')}
                         </div>
                       </div>
                       <div
@@ -658,7 +800,7 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
                       >
                         <Text strong>{t('改图接口')}</Text>
                         <div className='mt-2 break-all font-mono text-xs'>
-                          POST /v1/images/edits
+                          {t('POST /v1/images/edits')}
                         </div>
                       </div>
                     </div>
@@ -699,6 +841,11 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
                             '改图上传多张参考图时重复传入 image[] 字段；只改一张图时传入一个 image[] 即可。',
                           )}
                         </Text>
+                        <Text type='secondary'>
+                          {t(
+                            '页面内 /pg/images/* 会携带 group；/v1/images/* 走 API Key 的令牌分组。',
+                          )}
+                        </Text>
                       </div>
                     </div>
 
@@ -718,13 +865,24 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
                           <code>n</code> - {t('数量')}
                         </Text>
                         <Text>
-                          <code>size</code> - {t('尺寸')}
+                          <code>size</code> -{' '}
+                          {t(
+                            '预设尺寸或自定义 WxH，最长边不超过 3840，宽高比不超过 3:1',
+                          )}
                         </Text>
                         <Text>
-                          <code>quality</code> - {t('质量')}
+                          <code>quality</code> - {t('auto | low | medium | high')}
                         </Text>
                         <Text>
-                          <code>output_format</code> - {t('格式')}
+                          <code>output_format</code> - {t('png | jpeg | webp')}
+                        </Text>
+                        <Text>
+                          <code>output_compression</code> -{' '}
+                          {t('仅 jpeg/webp 可用，0 到 100，100 通常省略')}
+                        </Text>
+                        <Text>
+                          <code>group</code> -{' '}
+                          {t('页面请求会携带分组，后端按该分组路由到对应渠道')}
                         </Text>
                         <Text>
                           <code>image[]</code> -{' '}
@@ -735,35 +893,35 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
 
                     <CodeBlock
                       title={t('安装 Python 依赖')}
-                      language='bash'
+                      language={t('bash')}
                       code={apiExample.installRequests}
                       copyLabel={t('复制')}
                       onCopy={copyCode}
                     />
                     <CodeBlock
                       title={t('Python 生图并保存')}
-                      language='python'
+                      language={t('python')}
                       code={apiExample.pythonGeneration}
                       copyLabel={t('复制')}
                       onCopy={copyCode}
                     />
                     <CodeBlock
                       title={t('Python 改图并保存')}
-                      language='python'
+                      language={t('python')}
                       code={apiExample.pythonEdit}
                       copyLabel={t('复制')}
                       onCopy={copyCode}
                     />
                     <CodeBlock
                       title={t('cURL 生图')}
-                      language='bash'
+                      language={t('bash')}
                       code={apiExample.curlGeneration}
                       copyLabel={t('复制')}
                       onCopy={copyCode}
                     />
                     <CodeBlock
                       title={t('cURL 改图')}
-                      language='bash'
+                      language={t('bash')}
                       code={apiExample.curlEdit}
                       copyLabel={t('复制')}
                       onCopy={copyCode}
@@ -904,7 +1062,7 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
                           style={{ width: '100%', marginTop: 8 }}
                         />
                       </div>
-                      <div className='grid grid-cols-2 gap-3'>
+                      <div className='grid grid-cols-1 gap-3 md:grid-cols-2'>
                         <div>
                           <Text strong>{t('尺寸')}</Text>
                           <Select
@@ -914,6 +1072,22 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
                             disabled={disabled || generating}
                             style={{ width: '100%', marginTop: 8 }}
                           />
+                          <Input
+                            value={form.custom_size}
+                            onChange={(value) =>
+                              updateForm('custom_size', value)
+                            }
+                            placeholder={t('留空使用预设尺寸')}
+                            disabled={disabled || generating}
+                            style={{ width: '100%', marginTop: 8 }}
+                          />
+                          <Text
+                            type='secondary'
+                            size='small'
+                            className='mt-1 block'
+                          >
+                            {t('请输入合法尺寸，例如 2048x1152')}
+                          </Text>
                         </div>
                         <div>
                           <Text strong>{t('质量')}</Text>
@@ -926,7 +1100,7 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
                           />
                         </div>
                       </div>
-                      <div className='grid grid-cols-2 gap-3'>
+                      <div className='grid grid-cols-1 gap-3 md:grid-cols-3'>
                         <div>
                           <Text strong>{t('格式')}</Text>
                           <Select
@@ -938,6 +1112,31 @@ curl -X POST "$BASE_URL/v1/images/edits" \\
                             disabled={disabled || generating}
                             style={{ width: '100%', marginTop: 8 }}
                           />
+                        </div>
+                        <div>
+                          <Text strong>{t('压缩')}</Text>
+                          <InputNumber
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={form.output_compression}
+                            onChange={(value) =>
+                              updateForm('output_compression', value ?? 100)
+                            }
+                            disabled={
+                              disabled ||
+                              generating ||
+                              form.output_format === 'png'
+                            }
+                            style={{ width: '100%', marginTop: 8 }}
+                          />
+                          <Text
+                            type='secondary'
+                            size='small'
+                            className='mt-1 block'
+                          >
+                            {t('仅 jpeg/webp 且小于 100 时发送')}
+                          </Text>
                         </div>
                         <div>
                           <Text strong>{t('数量')}</Text>
