@@ -15,6 +15,8 @@ import (
 )
 
 func SetRouter(router *gin.Engine, buildFS embed.FS, indexPage []byte) {
+	// 中国大陆访问拦截:需在所有业务路由之前注册,覆盖前端页面与 API
+	router.Use(middleware.ChinaMainlandBlock())
 	router.GET("/setup.sh", controller.GetSetupSh)
 	router.GET("/setup.ps1", controller.GetSetupPs1)
 	SetApiRouter(router)
