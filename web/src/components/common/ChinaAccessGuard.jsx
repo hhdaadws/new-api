@@ -22,14 +22,13 @@ import { Modal, Button, Typography } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
 import { StatusContext } from '../../context/Status';
 
-const CONSENT_KEY = 'china_access_consent';
-
 /**
  * ChinaAccessGuard 中国大陆访问限制守卫。
  *
  * 根据 /api/status 返回的 china_block_mode 与 is_china_mainland_ip:
  *   - off   : 不做任何处理
  *   - popup : 命中大陆 IP 时弹窗提示,用户必须点击"同意"后方可继续使用前端
+ *             同意状态仅保存在内存中,每次进入页面/刷新都会重新弹窗
  *   - block : 命中大陆 IP 时全屏拦截(服务端通常已拦截,这里作为前端兜底)
  *
  * 仅作用于前端页面,不影响任何 API 请求。
@@ -39,9 +38,8 @@ const ChinaAccessGuard = () => {
   const [statusState] = useContext(StatusContext);
   const status = statusState?.status;
 
-  const [consented, setConsented] = useState(
-    () => localStorage.getItem(CONSENT_KEY) === 'true',
-  );
+  // 同意状态仅保存在内存中,刷新即重置 => 每次进入都重新弹窗
+  const [consented, setConsented] = useState(false);
 
   const mode = status?.china_block_mode;
   const isCN = status?.is_china_mainland_ip;
@@ -54,7 +52,6 @@ const ChinaAccessGuard = () => {
   }
 
   const handleAgree = () => {
-    localStorage.setItem(CONSENT_KEY, 'true');
     setConsented(true);
   };
 
