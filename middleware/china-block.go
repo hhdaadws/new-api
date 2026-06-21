@@ -5,111 +5,92 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 )
 
-// 中国大陆访问拦截相关环境变量:
-//   BLOCK_CHINA_MAINLAND        是否启用(默认 true,设为 false 可关闭)
-//   CHINA_BLOCK_IP_WHITELIST    放行的 IP / CIDR 列表(逗号分隔),即使命中大陆也放行
-const (
-	envBlockChinaMainland = "BLOCK_CHINA_MAINLAND"
-	envChinaBlockWhitelist = "CHINA_BLOCK_IP_WHITELIST"
-)
+// ChinaMainlandBlock 根据系统设置(china_block.mode)拦截来自中国大陆的前端页面访问。
+//
+//   - off   : 不做任何限制
+//   - popup : 由前端弹窗提示并要求同意,中间件直接放行(弹窗逻辑在前端实现)
+//   - block : 对来自中国大陆的浏览器页面请求返回拦截页
+//
+// 任何模式下都不会拦截 API / relay 请求(/v1、/api、/dashboard、/mj、/pg 等),
+// 即"其他 api 的请求不拦截"。
+func ChinaMainlandBlock() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		s := system_setting.GetChinaBlockSettings()
 
-const chinaBlockMessage = "本服务不向中国大陆地区提供服务。This service is not available in mainland China."
+		// 仅 block 模式在服务端拦截;off / popup 一律放行
+		if s.Mode != system_setting.ChinaBlockModeBlock {
+			c.Next()
+			return
+		}
 
-// chinaBlockHTML 是面向浏览器(前端页面)访问时返回的提示页。
-const chinaBlockHTML = `<!DOCTYPE html>
+		// API / relay 等接口请求一律放行,只拦截浏览器前端页面
+		if wantsJSON(c) {
+			c.Next()
+			return
+		}
+
+		ip := net.ParseIP(c.ClientIP())
+		if ip == nil || !s.IsRestrictedIP(ip) {
+			c.Next()
+			return
+		}
+
+		logger.LogInfo(c.Request.Context(), "china mainland IP blocked (frontend): "+c.ClientIP())
+		c.Data(http.StatusForbidden, "text/html; charset=utf-8", []byte(buildChinaBlockHTML(s)))
+		c.Abort()
+	}
+}
+
+// buildChinaBlockHTML 根据设置生成拦截提示页。
+func buildChinaBlockHTML(s *system_setting.ChinaBlockSettings) string {
+	title := s.Title
+	if strings.TrimSpace(title) == "" {
+		title = "访问地区提示"
+	}
+	content := s.Content
+	if strings.TrimSpace(content) == "" {
+		content = "本服务暂不向您所在的地区提供服务。"
+	}
+	return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Service Unavailable</title>
+<title>` + htmlEscape(title) + `</title>
 <style>
 body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#0f172a;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif}
-.box{max-width:520px;padding:40px;text-align:center;line-height:1.7}
+.box{max-width:560px;padding:40px;text-align:center;line-height:1.8}
 h1{font-size:22px;margin:0 0 16px}
 p{font-size:15px;color:#94a3b8;margin:6px 0}
 </style>
 </head>
 <body>
 <div class="box">
-<h1>服务不可用 / Service Unavailable</h1>
-<p>本服务不向中国大陆地区提供服务。</p>
-<p>This service is not available in mainland China.</p>
+<h1>` + htmlEscape(title) + `</h1>
+<p>` + htmlEscape(content) + `</p>
 </div>
 </body>
 </html>`
-
-// ChinaMainlandBlock 拦截来自中国大陆的 IP(前端页面与 API 均覆盖)。
-// 未启用时返回一个轻量的 pass-through 中间件。
-func ChinaMainlandBlock() gin.HandlerFunc {
-	enabled := common.GetEnvOrDefaultBool(envBlockChinaMainland, true)
-	if !enabled {
-		return func(c *gin.Context) { c.Next() }
-	}
-
-	var whitelist []string
-	if raw := common.GetEnvOrDefaultString(envChinaBlockWhitelist, ""); raw != "" {
-		for _, item := range strings.Split(raw, ",") {
-			if item = strings.TrimSpace(item); item != "" {
-				whitelist = append(whitelist, item)
-			}
-		}
-	}
-
-	common.SysLog("china mainland IP block is enabled")
-
-	return func(c *gin.Context) {
-		clientIP := c.ClientIP()
-		ip := net.ParseIP(clientIP)
-		if ip == nil {
-			// 无法解析的 IP 放行,避免误伤
-			c.Next()
-			return
-		}
-
-		// 内网 / 回环地址放行,保证本机与内网管理可用
-		if common.IsPrivateIP(ip) {
-			c.Next()
-			return
-		}
-
-		// 白名单放行
-		if len(whitelist) > 0 && common.IsIpInCIDRList(ip, whitelist) {
-			c.Next()
-			return
-		}
-
-		if !common.IsChinaMainlandIP(ip) {
-			c.Next()
-			return
-		}
-
-		logger.LogInfo(c.Request.Context(), "china mainland IP blocked: "+clientIP)
-		abortChinaBlocked(c)
-	}
 }
 
-// abortChinaBlocked 根据请求类型返回拦截响应:
-// API / relay 请求返回 JSON,浏览器页面请求返回 HTML。
-func abortChinaBlocked(c *gin.Context) {
-	if wantsJSON(c) {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": gin.H{
-				"message": chinaBlockMessage,
-				"type":    "new_api_error",
-				"code":    "region_not_supported",
-			},
-		})
-	} else {
-		c.Data(http.StatusForbidden, "text/html; charset=utf-8", []byte(chinaBlockHTML))
-	}
-	c.Abort()
+// htmlEscape 对用户可配置文本做最小化的 HTML 转义,避免注入。
+func htmlEscape(s string) string {
+	replacer := strings.NewReplacer(
+		"&", "&amp;",
+		"<", "&lt;",
+		">", "&gt;",
+		`"`, "&quot;",
+		"'", "&#39;",
+	)
+	return replacer.Replace(s)
 }
 
+// wantsJSON 判断请求是否为 API / relay 类接口请求(返回 true 表示不应拦截前端页面)。
 func wantsJSON(c *gin.Context) bool {
 	path := c.Request.URL.Path
 	if strings.HasPrefix(path, "/v1") ||
