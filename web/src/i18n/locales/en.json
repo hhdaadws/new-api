@@ -3689,6 +3689,16 @@
     "请输入有效的数值": "Please enter a valid number",
     "选择 premium 创建的令牌，调用 API 时费用为 standard 的 50%。": "Tokens created with premium cost 50% of standard when calling APIs.",
     "选择使用分组": "Select using group",
-    "高级套餐，半价优惠": "Premium plan, 50% off"
+    "高级套餐，半价优惠": "Premium plan, 50% off",
+    "图像分辨率阶梯定价": "Image Resolution Tiered Pricing",
+    "为图像生成模型按分辨率设置独立价格，优先级高于模型固定价格": "Set independent prices per resolution for image generation models, takes priority over fixed model price",
+    "嵌套 JSON，外层键为模型名，内层键为分辨率，值为价格（美元），例如：{\"dall-e-3\": {\"256x256\": 0.016, \"1024x1024\": 0.04, \"1792x1024\": 0.08}}": "Nested JSON: outer key is model name, inner key is resolution, value is price (USD). Example: {\"dall-e-3\": {\"256x256\": 0.016, \"1024x1024\": 0.04, \"1792x1024\": 0.08}}",
+    "分辨率阶梯定价": "Resolution Tiered Pricing",
+    "为图像生成模型的不同分辨率设置独立价格，优先级高于固定价格。": "Set independent prices for different resolutions of image generation models, takes priority over fixed price.",
+    "分辨率，如 1024x1024": "Resolution, e.g. 1024x1024",
+    "价格（美元）": "Price (USD)",
+    "添加分辨率": "Add resolution",
+    "个分辨率": "resolution(s)",
+    "当启用分辨率定价时，此价格作为未匹配分辨率时的默认价格。": "When resolution pricing is enabled, this serves as the default price for unmatched resolutions."
   }
 }

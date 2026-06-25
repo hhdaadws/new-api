@@ -123,6 +123,9 @@ export default function ModelPricingEditor({
     handleOptionalFieldToggle,
     handleNumericFieldChange,
     handleBillingModeChange,
+    handleAddSizePrice,
+    handleRemoveSizePrice,
+    handleUpdateSizePrice,
     handleSubmit,
     addModel,
     deleteModel,
@@ -407,14 +410,82 @@ export default function ModelPricingEditor({
                 ) : null}
 
                 {selectedModel.billingMode === 'per-request' ? (
-                  <PriceInput
-                    label={t('固定价格')}
-                    value={selectedModel.fixedPrice}
-                    placeholder={t('输入每次调用价格')}
-                    suffix={t('$/次')}
-                    onChange={(value) => handleNumericFieldChange('fixedPrice', value)}
-                    extraText={t('适合 MJ / 任务类等按次收费模型。')}
-                  />
+                  <>
+                    <PriceInput
+                      label={t('固定价格')}
+                      value={selectedModel.fixedPrice}
+                      placeholder={t('输入每次调用价格')}
+                      suffix={t('$/次')}
+                      onChange={(value) => handleNumericFieldChange('fixedPrice', value)}
+                      extraText={
+                        selectedModel.imageSizePrices.length > 0
+                          ? t('当启用分辨率定价时，此价格作为未匹配分辨率时的默认价格。')
+                          : t('适合 MJ / 任务类等按次收费模型。')
+                      }
+                    />
+                    <Card
+                      bodyStyle={{ padding: 16 }}
+                      style={{
+                        marginBottom: 16,
+                        background: 'var(--semi-color-fill-0)',
+                      }}
+                    >
+                      <div className='flex items-center justify-between mb-3'>
+                        <div>
+                          <div className='font-medium'>
+                            {t('分辨率阶梯定价')}
+                          </div>
+                          <div className='text-xs text-gray-500 mt-1'>
+                            {t('为图像生成模型的不同分辨率设置独立价格，优先级高于固定价格。')}
+                          </div>
+                        </div>
+                      </div>
+                      {selectedModel.imageSizePrices.map((item, index) => (
+                        <div
+                          key={index}
+                          style={{
+                            display: 'flex',
+                            gap: 8,
+                            marginBottom: 8,
+                            alignItems: 'center',
+                          }}
+                        >
+                          <Input
+                            value={item.size}
+                            placeholder={t('分辨率，如 1024x1024')}
+                            onChange={(value) =>
+                              handleUpdateSizePrice(index, 'size', value)
+                            }
+                            style={{ flex: 1 }}
+                          />
+                          <Input
+                            value={item.price}
+                            placeholder={t('价格（美元）')}
+                            suffix='$'
+                            onChange={(value) =>
+                              handleUpdateSizePrice(index, 'price', value)
+                            }
+                            style={{ flex: 1 }}
+                          />
+                          <Button
+                            size='small'
+                            type='danger'
+                            theme='borderless'
+                            icon={<IconDelete />}
+                            onClick={() => handleRemoveSizePrice(index)}
+                          />
+                        </div>
+                      ))}
+                      <Button
+                        size='small'
+                        icon={<IconPlus />}
+                        onClick={handleAddSizePrice}
+                        style={{ marginTop: 4 }}
+                      >
+                        {t('添加分辨率')}
+                      </Button>
+                    </Card>
+                  </>
                 ) : (
                   <>
                     <Card

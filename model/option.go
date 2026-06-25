@@ -460,6 +460,8 @@ func updateOptionMap(key string, value string) (err error) {
 		err = ratio_setting.UpdateAudioRatioByJSONString(value)
 	case "AudioCompletionRatio":
 		err = ratio_setting.UpdateAudioCompletionRatioByJSONString(value)
+	case "ImageSizePrice":
+		err = ratio_setting.UpdateImageSizePriceByJSONString(value)
 	case "TopUpLink":
 		common.TopUpLink = value
 	case "XianyuLink":

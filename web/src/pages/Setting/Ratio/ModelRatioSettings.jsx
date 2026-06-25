@@ -48,6 +48,7 @@ export default function ModelRatioSettings(props) {
     ImageRatio: '',
     AudioRatio: '',
     AudioCompletionRatio: '',
+    ImageSizePrice: '',
     ExposeRatioEnabled: false,
   });
   const refForm = useRef();
@@ -315,6 +316,32 @@ export default function ModelRatioSettings(props) {
               ]}
               onChange={(value) =>
                 setInputs({ ...inputs, AudioCompletionRatio: value })
+              }
+            />
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col xs={24} sm={16}>
+            <Form.TextArea
+              label={t('图像分辨率阶梯定价')}
+              extraText={t(
+                '为图像生成模型按分辨率设置独立价格，优先级高于模型固定价格',
+              )}
+              placeholder={t(
+                '嵌套 JSON，外层键为模型名，内层键为分辨率，值为价格（美元），例如：{"dall-e-3": {"256x256": 0.016, "1024x1024": 0.04, "1792x1024": 0.08}}',
+              )}
+              field={'ImageSizePrice'}
+              autosize={{ minRows: 6, maxRows: 12 }}
+              trigger='blur'
+              stopValidateWithError
+              rules={[
+                {
+                  validator: (rule, value) => verifyJSON(value),
+                  message: '不是合法的 JSON 字符串',
+                },
+              ]}
+              onChange={(value) =>
+                setInputs({ ...inputs, ImageSizePrice: value })
               }
             />
           </Col>

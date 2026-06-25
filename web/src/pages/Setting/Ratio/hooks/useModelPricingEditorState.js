@@ -18,6 +18,7 @@ const EMPTY_MODEL = {
   imagePrice: '',
   audioInputPrice: '',
   audioOutputPrice: '',
+  imageSizePrices: [],
   rawRatios: {
     modelRatio: '',
     completionRatio: '',
@@ -118,6 +119,15 @@ const buildModelState = (name, sourceMaps) => {
       ? formatNumber(inputPriceNumber * Number(audioRatio))
       : '';
 
+  const rawSizePrices = sourceMaps.ImageSizePrice?.[name];
+  const imageSizePrices =
+    rawSizePrices && typeof rawSizePrices === 'object'
+      ? Object.entries(rawSizePrices).map(([size, price]) => ({
+          size,
+          price: toNumericString(price),
+        }))
+      : [];
+
   return {
     ...EMPTY_MODEL,
     name,
@@ -159,6 +169,7 @@ const buildModelState = (name, sourceMaps) => {
       toNumberOrNull(audioInputPrice) !== null && hasValue(audioCompletionRatio)
         ? formatNumber(Number(audioInputPrice) * Number(audioCompletionRatio))
         : '',
+    imageSizePrices,
     rawRatios: {
       modelRatio,
       completionRatio,
@@ -245,7 +256,11 @@ export const getModelWarnings = (model, t) => {
 
 export const buildSummaryText = (model, t) => {
   if (model.billingMode === 'per-request' && hasValue(model.fixedPrice)) {
-    return `${t('按次')} $${model.fixedPrice} / ${t('次')}`;
+    const sizePriceSuffix =
+      model.imageSizePrices.length > 0
+        ? `，${model.imageSizePrices.length} ${t('个分辨率')}`
+        : '';
+    return `${t('按次')} $${model.fixedPrice} / ${t('次')}${sizePriceSuffix}`;
   }
 
   if (hasValue(model.inputPrice)) {
@@ -285,7 +300,19 @@ const serializeModel = (model, t) => {
     ImageRatio: null,
     AudioRatio: null,
     AudioCompletionRatio: null,
+    ImageSizePrice: null,
   };
+
+  const validSizePrices = (model.imageSizePrices || []).filter(
+    (item) => item.size.trim() !== '' && hasValue(item.price),
+  );
+  if (validSizePrices.length > 0) {
+    const sizePriceMap = {};
+    for (const item of validSizePrices) {
+      sizePriceMap[item.size.trim()] = toNormalizedNumber(item.price);
+    }
+    result.ImageSizePrice = sizePriceMap;
+  }
 
   if (model.billingMode === 'per-request') {
     if (hasValue(model.fixedPrice)) {
@@ -396,6 +423,18 @@ const serializeModel = (model, t) => {
 export const buildPreviewRows = (model, t) => {
   if (!model) return [];
 
+  const sizePriceRow = {
+    key: 'ImageSizePrice',
+    label: 'ImageSizePrice',
+    value:
+      model.imageSizePrices.length > 0
+        ? model.imageSizePrices
+            .filter((item) => item.size.trim() !== '' && hasValue(item.price))
+            .map((item) => `${item.size}: $${item.price}`)
+            .join(', ') || t('空')
+        : t('空'),
+  };
+
   if (model.billingMode === 'per-request') {
     return [
       {
@@ -403,6 +442,7 @@ export const buildPreviewRows = (model, t) => {
         label: 'ModelPrice',
         value: hasValue(model.fixedPrice) ? model.fixedPrice : t('空'),
       },
+      sizePriceRow,
     ];
   }
 
@@ -552,6 +592,7 @@ export function useModelPricingEditorState({
       ImageRatio: parseOptionJSON(options.ImageRatio),
       AudioRatio: parseOptionJSON(options.AudioRatio),
       AudioCompletionRatio: parseOptionJSON(options.AudioCompletionRatio),
+      ImageSizePrice: parseOptionJSON(options.ImageSizePrice),
     };
 
     const names = new Set([
@@ -565,6 +606,7 @@ export function useModelPricingEditorState({
       ...Object.keys(sourceMaps.ImageRatio),
       ...Object.keys(sourceMaps.AudioRatio),
       ...Object.keys(sourceMaps.AudioCompletionRatio),
+      ...Object.keys(sourceMaps.ImageSizePrice),
     ]);
 
     const nextModels = Array.from(names)
@@ -782,6 +824,33 @@ export function useModelPricingEditorState({
     }));
   };
 
+  const handleAddSizePrice = () => {
+    if (!selectedModel) return;
+    upsertModel(selectedModel.name, (model) => ({
+      ...model,
+      imageSizePrices: [...model.imageSizePrices, { size: '', price: '' }],
+    }));
+  };
+
+  const handleRemoveSizePrice = (index) => {
+    if (!selectedModel) return;
+    upsertModel(selectedModel.name, (model) => ({
+      ...model,
+      imageSizePrices: model.imageSizePrices.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleUpdateSizePrice = (index, field, value) => {
+    if (!selectedModel) return;
+    if (field === 'price' && !NUMERIC_INPUT_REGEX.test(value)) return;
+    upsertModel(selectedModel.name, (model) => ({
+      ...model,
+      imageSizePrices: model.imageSizePrices.map((item, i) =>
+        i === index ? { ...item, [field]: value } : item,
+      ),
+    }));
+  };
+
   const addModel = (modelName) => {
     const trimmedName = modelName.trim();
     if (!trimmedName) {
@@ -913,6 +982,7 @@ export function useModelPricingEditorState({
         ImageRatio: {},
         AudioRatio: {},
         AudioCompletionRatio: {},
+        ImageSizePrice: {},
       };
 
       for (const model of models) {
@@ -970,6 +1040,9 @@ export function useModelPricingEditorState({
     handleOptionalFieldToggle,
     handleNumericFieldChange,
     handleBillingModeChange,
+    handleAddSizePrice,
+    handleRemoveSizePrice,
+    handleUpdateSizePrice,
     handleSubmit,
     addModel,
     deleteModel,

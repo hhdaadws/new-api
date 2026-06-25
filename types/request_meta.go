@@ -27,6 +27,8 @@ type TokenCountMeta struct {
 	MaxTokens     int         `json:"max_tokens,omitempty"`     // Maximum tokens allowed in the request
 
 	ImagePriceRatio float64 `json:"image_ratio,omitempty"` // Ratio for image size, if applicable
+	ImageSize       string  `json:"image_size,omitempty"`  // Image resolution (e.g. "1024x1024")
+	ImageCount      int     `json:"image_count,omitempty"` // Number of images requested
 	//IsStreaming   bool        `json:"is_streaming,omitempty"`   // Indicates if the request is streaming
 }
 

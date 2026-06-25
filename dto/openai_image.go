@@ -157,6 +157,8 @@ func (i *ImageRequest) GetTokenCountMeta() *types.TokenCountMeta {
 		CombineText:     i.Prompt,
 		MaxTokens:       1584,
 		ImagePriceRatio: sizeRatio * qualityRatio * float64(n),
+		ImageSize:       i.Size,
+		ImageCount:      int(n),
 	}
 }
 
