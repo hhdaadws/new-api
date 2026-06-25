@@ -1,0 +1,1289 @@
+/*
+Copyright (C) 2025 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import {
+  Button,
+  Card,
+  Empty,
+  Input,
+  InputNumber,
+  Select,
+  Space,
+  Spin,
+  TabPane,
+  Tabs,
+  Tag,
+  TextArea,
+  Typography,
+} from '@douyinfe/semi-ui';
+import {
+  Copy as CopyIcon,
+  Download,
+  Edit,
+  Image as ImageIcon,
+  RefreshCw,
+  Send,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
+import {
+  API,
+  copy,
+  showError,
+  showSuccess,
+  timestamp2string,
+} from '../../helpers';
+
+const { Text } = Typography;
+
+const pageSize = 12;
+const maxEditSourceImages = 16;
+const maxImageGenerationSizeSide = 3840;
+const maxImageGenerationAspectRatio = 3;
+const imageGenerationSizePattern = /^([1-9]\d*)x([1-9]\d*)$/;
+
+const getErrorMessage = (error) =>
+  error?.response?.data?.message ||
+  error?.response?.data?.error?.message ||
+  error;
+
+const getFileExtension = (filename, mimeType) => {
+  const ext = filename?.split('.').pop();
+  if (ext && ext !== filename) return ext;
+  if (mimeType === 'image/jpeg') return 'jpg';
+  if (mimeType === 'image/webp') return 'webp';
+  return 'png';
+};
+
+const normalizeImageSize = (size) => (size || '').trim();
+
+const isPresetImageSize = (size, presets) => (presets || []).includes(size);
+
+const parseImageSize = (size) => {
+  const match = normalizeImageSize(size).match(imageGenerationSizePattern);
+  if (!match) return null;
+  const width = Number.parseInt(match[1], 10);
+  const height = Number.parseInt(match[2], 10);
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+  if (width <= 0 || height <= 0) return null;
+  return { width, height };
+};
+
+const validateImageSize = (size, presets) => {
+  const normalizedSize = normalizeImageSize(size);
+  if (!normalizedSize) {
+    return { ok: false, message: '请输入合法尺寸，例如 2048x1152' };
+  }
+  if (normalizedSize === 'auto' || isPresetImageSize(normalizedSize, presets)) {
+    return { ok: true, value: normalizedSize };
+  }
+
+  const parsed = parseImageSize(normalizedSize);
+  if (!parsed) {
+    return { ok: false, message: '请输入合法尺寸，例如 2048x1152' };
+  }
+
+  const { width, height } = parsed;
+  if (
+    width > maxImageGenerationSizeSide ||
+    height > maxImageGenerationSizeSide
+  ) {
+    return {
+      ok: false,
+      message: '尺寸最长边不能超过 3840，宽高比不能超过 3:1',
+    };
+  }
+
+  const maxSide = Math.max(width, height);
+  const minSide = Math.min(width, height);
+  if (maxSide > minSide * maxImageGenerationAspectRatio) {
+    return {
+      ok: false,
+      message: '尺寸最长边不能超过 3840，宽高比不能超过 3:1',
+    };
+  }
+
+  return { ok: true, value: `${width}x${height}` };
+};
+
+const resolveImageGenerationSize = (form, presets) => {
+  const customSize = normalizeImageSize(form.custom_size);
+  if (customSize) {
+    return validateImageSize(customSize, presets);
+  }
+  return validateImageSize(form.size, presets);
+};
+
+const resolveOutputCompression = (outputFormat, value) => {
+  if (!['jpeg', 'webp'].includes((outputFormat || '').toLowerCase())) {
+    return { ok: true, value: null };
+  }
+
+  if (value === '' || value === null || value === undefined) {
+    return { ok: true, value: null };
+  }
+
+  const compression = Number.parseInt(value, 10);
+  if (!Number.isFinite(compression) || compression < 0 || compression > 100) {
+    return {
+      ok: false,
+      message: '压缩必须在 0 到 100 之间',
+    };
+  }
+
+  if (compression >= 100) {
+    return { ok: true, value: null };
+  }
+
+  return { ok: true, value: compression };
+};
+
+const getForwardableOutputCompression = (outputFormat, value) => {
+  const resolved = resolveOutputCompression(outputFormat, value);
+  return resolved.ok ? resolved.value : null;
+};
+
+const CodeBlock = ({ title, language, code, copyLabel, onCopy }) => (
+  <div
+    className='overflow-hidden rounded-md border'
+    style={{ borderColor: 'var(--semi-color-border)' }}
+  >
+    <div
+      className='flex items-center justify-between gap-2 px-3 py-2'
+      style={{ backgroundColor: 'var(--semi-color-fill-0)' }}
+    >
+      <div className='min-w-0'>
+        <Text strong>{title}</Text>
+        <Text type='secondary' size='small' className='ml-2'>
+          {language}
+        </Text>
+      </div>
+      <Button
+        size='small'
+        type='tertiary'
+        icon={<CopyIcon size={14} />}
+        onClick={() => onCopy(code)}
+      >
+        {copyLabel}
+      </Button>
+    </div>
+    <pre
+      className='m-0 max-h-[520px] overflow-auto p-4 text-xs leading-5'
+      style={{ backgroundColor: '#101828', color: '#f8fafc' }}
+    >
+      <code style={{ color: 'inherit' }}>{code}</code>
+    </pre>
+  </div>
+);
+
+const ImageGeneration = () => {
+  const { t } = useTranslation();
+  const [config, setConfig] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [activeMode, setActiveMode] = useState('generation');
+  const [previewUrls, setPreviewUrls] = useState({});
+  const previewUrlsRef = useRef({});
+  const fileInputRef = useRef(null);
+  const editPreviewUrlsRef = useRef([]);
+  const [editImageSources, setEditImageSources] = useState([]);
+  const [form, setForm] = useState({
+    model: '',
+    group: '',
+    prompt: '',
+    size: '1024x1024',
+    custom_size: '',
+    quality: 'auto',
+    output_format: 'png',
+    output_compression: 100,
+    n: 1,
+  });
+
+  const modelOptions = useMemo(
+    () =>
+      (config?.models || []).map((model) => ({ label: model, value: model })),
+    [config?.models],
+  );
+  const groupOptions = useMemo(
+    () =>
+      (config?.groups || []).map((group) => ({ label: group, value: group })),
+    [config?.groups],
+  );
+  const sizeOptions = useMemo(
+    () => (config?.sizes || []).map((size) => ({ label: size, value: size })),
+    [config?.sizes],
+  );
+  const qualityOptions = useMemo(
+    () =>
+      (config?.qualities || []).map((quality) => ({
+        label: quality,
+        value: quality,
+      })),
+    [config?.qualities],
+  );
+  const outputFormatOptions = useMemo(
+    () =>
+      (config?.output_formats || []).map((format) => ({
+        label: format,
+        value: format,
+      })),
+    [config?.output_formats],
+  );
+
+  const apiBaseUrl = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return 'https://your-domain.example';
+    }
+    return window.location.origin;
+  }, []);
+
+  const apiExample = useMemo(() => {
+    const model = form.model || config?.models?.[0] || 'gpt-image-2';
+    const sizeResolution = resolveImageGenerationSize(form, config?.sizes);
+    const size = sizeResolution.ok
+      ? sizeResolution.value
+      : form.size || config?.defaults?.size || '1024x1024';
+    const quality =
+      (form.quality || config?.defaults?.quality || 'auto').toLowerCase();
+    const outputFormat =
+      (form.output_format || config?.defaults?.output_format || 'png').toLowerCase();
+    const outputCompression = getForwardableOutputCompression(
+      outputFormat,
+      form.output_compression,
+    );
+
+    const generationPayload = {
+      model,
+      prompt: '一只白色小猫坐在窗边，柔和自然光，照片风格',
+      n: 1,
+      size,
+      quality,
+      output_format: outputFormat,
+    };
+    if (outputCompression !== null) {
+      generationPayload.output_compression = outputCompression;
+    }
+
+    const pythonSaveBlock = `image = payload["data"][0]
+
+if image.get("b64_json"):
+    OUTPUT_FILE.write_bytes(base64.b64decode(image["b64_json"]))
+elif image.get("url"):
+    image_response = requests.get(image["url"], timeout=120)
+    image_response.raise_for_status()
+    OUTPUT_FILE.write_bytes(image_response.content)
+else:
+    raise RuntimeError("No image data returned")
+
+print("saved to", OUTPUT_FILE)`;
+    const pythonEditCompressionLine =
+      outputCompression !== null
+        ? `            "output_compression": "${outputCompression}",\n`
+        : '';
+    const curlEditCompressionLine =
+      outputCompression !== null
+        ? `  -F output_compression="${outputCompression}" \\\n`
+        : '';
+
+    return {
+      installRequests: 'pip install requests',
+      pythonGeneration: `import base64
+import pathlib
+import requests
+
+BASE_URL = "${apiBaseUrl}"
+API_KEY = "sk-xxxx"
+OUTPUT_FILE = pathlib.Path("image.${outputFormat === 'jpeg' ? 'jpg' : outputFormat}")
+
+response = requests.post(
+    BASE_URL + "/v1/images/generations",
+    headers={"Authorization": "Bearer " + API_KEY},
+    json=${JSON.stringify(generationPayload, null, 8)
+      .replace(/^{/, '{')
+      .replace(/\n/g, '\n    ')},
+    timeout=120,
+)
+response.raise_for_status()
+payload = response.json()
+${pythonSaveBlock}`,
+      pythonEdit: `import base64
+import contextlib
+import pathlib
+import requests
+
+BASE_URL = "${apiBaseUrl}"
+API_KEY = "sk-xxxx"
+INPUT_FILES = [
+    pathlib.Path("reference-1.png"),
+    pathlib.Path("reference-2.png"),
+]
+OUTPUT_FILE = pathlib.Path("edited.${outputFormat === 'jpeg' ? 'jpg' : outputFormat}")
+
+with contextlib.ExitStack() as stack:
+    image_files = [
+        stack.enter_context(input_file.open("rb"))
+        for input_file in INPUT_FILES
+    ]
+    response = requests.post(
+        BASE_URL + "/v1/images/edits",
+        headers={"Authorization": "Bearer " + API_KEY},
+        data={
+            "model": "${model}",
+            "prompt": "保留主体构图，改成黄昏电影感光线",
+            "n": "1",
+            "size": "${size}",
+            "quality": "${quality}",
+            "output_format": "${outputFormat}",
+${pythonEditCompressionLine}        },
+        files=[
+            ("image[]", (input_file.name, image_file, "image/png"))
+            for input_file, image_file in zip(INPUT_FILES, image_files)
+        ],
+        timeout=120,
+    )
+response.raise_for_status()
+payload = response.json()
+${pythonSaveBlock}`,
+      curlGeneration: `BASE_URL="${apiBaseUrl}"
+API_KEY="sk-xxxx"
+
+curl -X POST "$BASE_URL/v1/images/generations" \\
+  -H "Authorization: Bearer $API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '${JSON.stringify(generationPayload, null, 2)}'`,
+      curlEdit: `BASE_URL="${apiBaseUrl}"
+API_KEY="sk-xxxx"
+
+curl -X POST "$BASE_URL/v1/images/edits" \\
+  -H "Authorization: Bearer $API_KEY" \\
+  -F model="${model}" \\
+  -F prompt="保留主体构图，改成黄昏电影感光线" \\
+  -F n="1" \\
+  -F size="${size}" \\
+  -F quality="${quality}" \\
+  -F output_format="${outputFormat}" \\
+${curlEditCompressionLine}  -F "image[]=@reference-1.png" \\
+  -F "image[]=@reference-2.png"`,
+    };
+  }, [apiBaseUrl, config, form]);
+
+  const updateForm = (key, value) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const revokeEditPreview = (previewUrl) => {
+    if (!previewUrl) return;
+    URL.revokeObjectURL(previewUrl);
+    editPreviewUrlsRef.current = editPreviewUrlsRef.current.filter(
+      (url) => url !== previewUrl,
+    );
+  };
+
+  const revokeAllEditPreviews = () => {
+    editPreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    editPreviewUrlsRef.current = [];
+  };
+
+  const addEditSources = (files, sourceNames = []) => {
+    const incomingFiles = Array.from(files || []);
+    if (incomingFiles.length === 0) return;
+    if (editImageSources.length + incomingFiles.length > maxEditSourceImages) {
+      showError(t('最多支持上传 16 张图片'));
+      return;
+    }
+    const unsupportedFile = incomingFiles.find(
+      (file) => !['image/png', 'image/jpeg', 'image/webp'].includes(file.type),
+    );
+    if (unsupportedFile) {
+      showError(t('仅支持 PNG、JPEG、WebP 图片'));
+      return;
+    }
+
+    const nextSources = incomingFiles.map((file, index) => {
+      const previewUrl = URL.createObjectURL(file);
+      editPreviewUrlsRef.current.push(previewUrl);
+      return {
+        id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`,
+        file,
+        previewUrl,
+        sourceName: sourceNames[index] || file.name,
+      };
+    });
+    setEditImageSources((prev) => [...prev, ...nextSources]);
+    setActiveMode('edit');
+  };
+
+  const removeEditSource = (id) => {
+    setEditImageSources((prev) => {
+      const target = prev.find((item) => item.id === id);
+      revokeEditPreview(target?.previewUrl);
+      return prev.filter((item) => item.id !== id);
+    });
+  };
+
+  const clearEditSources = () => {
+    revokeAllEditPreviews();
+    setEditImageSources([]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const loadConfig = async () => {
+    setLoading(true);
+    try {
+      const res = await API.get('/api/image_generation/config');
+      const { success, message, data } = res.data;
+      if (!success) {
+        showError(message);
+        return;
+      }
+      setConfig(data);
+      setForm((prev) => ({
+        ...prev,
+        model: prev.model || data.models?.[0] || '',
+        group: prev.group || data.groups?.[0] || '',
+        size: prev.size || data.defaults?.size || '1024x1024',
+        custom_size: prev.custom_size || '',
+        quality: prev.quality || data.defaults?.quality || 'auto',
+        output_format:
+          prev.output_format || data.defaults?.output_format || 'png',
+        output_compression:
+          prev.output_compression ?? data.defaults?.output_compression ?? 100,
+        n: prev.n || data.defaults?.n || 1,
+      }));
+    } catch (error) {
+      showError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const revokePreview = (id) => {
+    const url = previewUrlsRef.current[id];
+    if (url) {
+      URL.revokeObjectURL(url);
+      delete previewUrlsRef.current[id];
+      setPreviewUrls((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
+  };
+
+  const loadPreview = async (item) => {
+    if (!item?.id || previewUrlsRef.current[item.id]) return;
+    try {
+      const res = await API.get(item.url, {
+        responseType: 'blob',
+        disableDuplicate: true,
+      });
+      const objectUrl = URL.createObjectURL(res.data);
+      previewUrlsRef.current[item.id] = objectUrl;
+      setPreviewUrls((prev) => ({ ...prev, [item.id]: objectUrl }));
+    } catch (error) {
+      showError(error);
+    }
+  };
+
+  const loadHistory = async (targetPage = page) => {
+    setHistoryLoading(true);
+    try {
+      const res = await API.get('/api/image_generation/history', {
+        params: { p: targetPage, page_size: pageSize },
+        disableDuplicate: true,
+      });
+      const { success, message, data } = res.data;
+      if (!success) {
+        showError(message);
+        return;
+      }
+      setHistory(data.items || []);
+      setTotal(data.total || 0);
+      setPage(data.page || targetPage);
+      (data.items || []).forEach(loadPreview);
+    } catch (error) {
+      showError(error);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const buildPayload = () => {
+    const sizeResolution = resolveImageGenerationSize(form, config?.sizes);
+    if (!sizeResolution.ok) {
+      return { error: t(sizeResolution.message) };
+    }
+
+    const outputFormat = (
+      form.output_format || config?.defaults?.output_format || 'png'
+    ).toLowerCase();
+    const outputCompressionResolution = resolveOutputCompression(
+      outputFormat,
+      form.output_compression,
+    );
+    if (!outputCompressionResolution.ok) {
+      return { error: t(outputCompressionResolution.message) };
+    }
+
+    const count = Number.parseInt(form.n, 10);
+    const payload = {
+      model: form.model,
+      group: form.group,
+      prompt: form.prompt.trim(),
+      size: sizeResolution.value,
+      quality: (form.quality || config?.defaults?.quality || 'auto').toLowerCase(),
+      output_format: outputFormat,
+      n: Number.isFinite(count) && count > 0 ? count : 1,
+    };
+    if (outputCompressionResolution.value !== null) {
+      payload.output_compression = outputCompressionResolution.value;
+    }
+    return { payload };
+  };
+
+  const handleSuccessItems = (items, mode) => {
+    setHistory((prev) => [...items, ...prev].slice(0, pageSize));
+    setTotal((prev) => prev + items.length);
+    items.forEach(loadPreview);
+    showSuccess(mode === 'edit' ? t('改图成功') : t('生成成功'));
+  };
+
+  const submitImageRequest = async () => {
+    if (!form.prompt.trim()) {
+      showError(t('请输入提示词'));
+      return;
+    }
+    if (!form.model || !form.group) {
+      showError(t('请选择模型和分组'));
+      return;
+    }
+    if (activeMode === 'edit' && editImageSources.length === 0) {
+      showError(t('请选择要修改的图片'));
+      return;
+    }
+
+    const built = buildPayload();
+    if (built.error) {
+      showError(built.error);
+      return;
+    }
+
+    setGenerating(true);
+    try {
+      let res;
+      if (activeMode === 'edit') {
+        const formData = new FormData();
+        editImageSources.forEach((source) => {
+          formData.append('image[]', source.file, source.file.name);
+        });
+        Object.entries(built.payload).forEach(([key, value]) => {
+          formData.append(key, value);
+        });
+        res = await API.post('/pg/images/edits', formData, {
+          skipErrorHandler: true,
+        });
+      } else {
+        res = await API.post('/pg/images/generations', built.payload, {
+          skipErrorHandler: true,
+        });
+      }
+      const { success, message, data } = res.data;
+      if (!success) {
+        showError(
+          message || t(activeMode === 'edit' ? '改图失败' : '生成失败'),
+        );
+        return;
+      }
+      handleSuccessItems(data?.items || [], activeMode);
+    } catch (error) {
+      showError(getErrorMessage(error));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const selectHistoryAsEditSource = async (item) => {
+    if (editImageSources.length >= maxEditSourceImages) {
+      showError(t('最多支持上传 16 张图片'));
+      return;
+    }
+    try {
+      const res = await API.get(item.url, {
+        responseType: 'blob',
+        disableDuplicate: true,
+      });
+      const mimeType = res.data.type || item.mime_type || 'image/png';
+      const ext = getFileExtension(item.filename, mimeType);
+      const file = new File([res.data], `history-${item.id}.${ext}`, {
+        type: mimeType,
+      });
+      addEditSources([file], [item.filename || `image-${item.id}.${ext}`]);
+      showSuccess(t('已选择历史图片'));
+    } catch (error) {
+      showError(error);
+    }
+  };
+
+  const handleFileChange = (event) => {
+    addEditSources(event.target.files);
+    event.target.value = '';
+  };
+
+  const downloadImage = async (item) => {
+    try {
+      const res = await API.get(item.url, {
+        responseType: 'blob',
+        disableDuplicate: true,
+      });
+      const objectUrl = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = item.filename || `image-${item.id}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      showError(error);
+    }
+  };
+
+  const deleteImage = async (item) => {
+    try {
+      const res = await API.delete(`/api/image_generation/${item.id}`);
+      const { success, message } = res.data;
+      if (!success) {
+        showError(message);
+        return;
+      }
+      revokePreview(item.id);
+      setHistory((prev) =>
+        prev.filter((historyItem) => historyItem.id !== item.id),
+      );
+      setTotal((prev) => Math.max(0, prev - 1));
+      showSuccess(t('删除成功'));
+    } catch (error) {
+      showError(error);
+    }
+  };
+
+  const copyCode = async (code) => {
+    if (await copy(code)) {
+      showSuccess(t('代码已复制到剪贴板'));
+    } else {
+      showError(t('复制失败，请手动复制'));
+    }
+  };
+
+  useEffect(() => {
+    loadConfig();
+    loadHistory(1);
+    return () => {
+      Object.values(previewUrlsRef.current).forEach((url) =>
+        URL.revokeObjectURL(url),
+      );
+      previewUrlsRef.current = {};
+      revokeAllEditPreviews();
+    };
+  }, []);
+
+  const disabled =
+    !config?.enabled || !modelOptions.length || !groupOptions.length;
+  const maxPage = Math.max(1, Math.ceil(total / pageSize));
+
+  return (
+    <div className='mt-[60px] px-2 pb-6'>
+      <Spin spinning={loading}>
+        <div className='mx-auto flex w-full max-w-[1280px] flex-col gap-4'>
+          <div className='flex flex-col gap-2 md:flex-row md:items-end md:justify-between'>
+            <div>
+              <Typography.Title heading={4} style={{ margin: 0 }}>
+                {t('图像生成')}
+              </Typography.Title>
+            </div>
+            {activeMode !== 'api' && (
+              <Button
+                icon={<RefreshCw size={16} />}
+                onClick={() => loadHistory(page)}
+                loading={historyLoading}
+              >
+                {t('刷新')}
+              </Button>
+            )}
+          </div>
+
+          {!config?.enabled && (
+            <Card>
+              <Empty title={t('图像生成页面未启用')} />
+            </Card>
+          )}
+
+          {config?.enabled && (
+            <div
+              className={
+                activeMode === 'api'
+                  ? 'grid grid-cols-1 gap-4'
+                  : 'grid grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]'
+              }
+            >
+              <Card bodyStyle={{ padding: 16 }}>
+                <Tabs
+                  type='button'
+                  activeKey={activeMode}
+                  onChange={setActiveMode}
+                  style={{ marginBottom: 16 }}
+                >
+                  <TabPane tab={t('生成图片')} itemKey='generation' />
+                  <TabPane tab={t('上传改图')} itemKey='edit' />
+                  <TabPane tab={t('API 接入')} itemKey='api' />
+                </Tabs>
+                {activeMode === 'api' ? (
+                  <div className='flex flex-col gap-5'>
+                    <div>
+                      <Typography.Title heading={5} style={{ marginTop: 0 }}>
+                        {t('第三方 API 接入')}
+                      </Typography.Title>
+                      <Text type='secondary'>
+                        {t(
+                          '使用 API Key 调用开放接口，适合 Python 脚本、自动化任务和外部系统。',
+                        )}
+                      </Text>
+                    </div>
+
+                    <div className='grid grid-cols-1 gap-3 md:grid-cols-3'>
+                      <div
+                        className='rounded-md border p-3'
+                        style={{ borderColor: 'var(--semi-color-border)' }}
+                      >
+                        <Text strong>{t('基础地址')}</Text>
+                        <div className='mt-2 break-all font-mono text-xs'>
+                          {apiBaseUrl}
+                        </div>
+                      </div>
+                      <div
+                        className='rounded-md border p-3'
+                        style={{ borderColor: 'var(--semi-color-border)' }}
+                      >
+                        <Text strong>{t('生图接口')}</Text>
+                        <div className='mt-2 break-all font-mono text-xs'>
+                          {t('POST /v1/images/generations')}
+                        </div>
+                      </div>
+                      <div
+                        className='rounded-md border p-3'
+                        style={{ borderColor: 'var(--semi-color-border)' }}
+                      >
+                        <Text strong>{t('改图接口')}</Text>
+                        <div className='mt-2 break-all font-mono text-xs'>
+                          {t('POST /v1/images/edits')}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      className='rounded-md border p-3'
+                      style={{ borderColor: 'var(--semi-color-border)' }}
+                    >
+                      <div className='flex flex-col gap-2'>
+                        <Text>
+                          <Text strong>{t('鉴权')}</Text>
+                          {t('：请求头使用 Authorization: Bearer <API Key>。')}
+                        </Text>
+                        <Text>
+                          <Text strong>{t('令牌分组')}</Text>
+                          {t(
+                            '：在令牌页面创建 API Key，令牌分组决定可用渠道、模型权限和计费。',
+                          )}
+                        </Text>
+                        <Text>
+                          <Text strong>{t('响应')}</Text>
+                          {t(
+                            '：兼容 OpenAI Images 响应，可能返回 b64_json 或 url；脚本需要自行解码或下载保存。',
+                          )}
+                        </Text>
+                        <Text type='secondary'>
+                          {t(
+                            '官网内部 /pg/images/* 依赖网页登录态，不建议第三方接入。',
+                          )}
+                        </Text>
+                        <Text type='secondary'>
+                          {t(
+                            'Python 示例依赖 requests，可先执行 pip install requests。',
+                          )}
+                        </Text>
+                        <Text type='secondary'>
+                          {t(
+                            '改图上传多张参考图时重复传入 image[] 字段；只改一张图时传入一个 image[] 即可。',
+                          )}
+                        </Text>
+                        <Text type='secondary'>
+                          {t(
+                            '页面内 /pg/images/* 会携带 group；/v1/images/* 走 API Key 的令牌分组。',
+                          )}
+                        </Text>
+                      </div>
+                    </div>
+
+                    <div
+                      className='rounded-md border p-3'
+                      style={{ borderColor: 'var(--semi-color-border)' }}
+                    >
+                      <Text strong>{t('常用参数')}</Text>
+                      <div className='mt-3 grid grid-cols-1 gap-2 text-sm md:grid-cols-2'>
+                        <Text>
+                          <code>model</code> - {t('模型名称')}
+                        </Text>
+                        <Text>
+                          <code>prompt</code> - {t('提示词')}
+                        </Text>
+                        <Text>
+                          <code>n</code> - {t('数量')}
+                        </Text>
+                        <Text>
+                          <code>size</code> -{' '}
+                          {t(
+                            '预设尺寸或自定义 WxH，最长边不超过 3840，宽高比不超过 3:1',
+                          )}
+                        </Text>
+                        <Text>
+                          <code>quality</code> - {t('auto | low | medium | high')}
+                        </Text>
+                        <Text>
+                          <code>output_format</code> - {t('png | jpeg | webp')}
+                        </Text>
+                        <Text>
+                          <code>output_compression</code> -{' '}
+                          {t('仅 jpeg/webp 可用，0 到 100，100 通常省略')}
+                        </Text>
+                        <Text>
+                          <code>group</code> -{' '}
+                          {t('页面请求会携带分组，后端按该分组路由到对应渠道')}
+                        </Text>
+                        <Text>
+                          <code>image[]</code> -{' '}
+                          {t('改图时上传的图片文件，可重复传入多张')}
+                        </Text>
+                      </div>
+                    </div>
+
+                    <CodeBlock
+                      title={t('安装 Python 依赖')}
+                      language={t('bash')}
+                      code={apiExample.installRequests}
+                      copyLabel={t('复制')}
+                      onCopy={copyCode}
+                    />
+                    <CodeBlock
+                      title={t('Python 生图并保存')}
+                      language={t('python')}
+                      code={apiExample.pythonGeneration}
+                      copyLabel={t('复制')}
+                      onCopy={copyCode}
+                    />
+                    <CodeBlock
+                      title={t('Python 改图并保存')}
+                      language={t('python')}
+                      code={apiExample.pythonEdit}
+                      copyLabel={t('复制')}
+                      onCopy={copyCode}
+                    />
+                    <CodeBlock
+                      title={t('cURL 生图')}
+                      language={t('bash')}
+                      code={apiExample.curlGeneration}
+                      copyLabel={t('复制')}
+                      onCopy={copyCode}
+                    />
+                    <CodeBlock
+                      title={t('cURL 改图')}
+                      language={t('bash')}
+                      code={apiExample.curlEdit}
+                      copyLabel={t('复制')}
+                      onCopy={copyCode}
+                    />
+                  </div>
+                ) : (
+                  <div className='flex flex-col gap-4'>
+                    {activeMode === 'edit' && (
+                      <div>
+                        <Text strong>{t('图像来源')}</Text>
+                        <div
+                          className='mt-2 flex min-h-[220px] w-full items-center justify-center overflow-hidden rounded-md border border-dashed p-2'
+                          style={{
+                            borderColor: 'var(--semi-color-border)',
+                            backgroundColor: 'var(--semi-color-fill-0)',
+                          }}
+                        >
+                          {editImageSources.length > 0 ? (
+                            <div className='grid w-full grid-cols-2 gap-2'>
+                              {editImageSources.map((source) => (
+                                <div
+                                  key={source.id}
+                                  className='group relative aspect-square overflow-hidden rounded-md border'
+                                  style={{
+                                    borderColor: 'var(--semi-color-border)',
+                                  }}
+                                >
+                                  <img
+                                    src={source.previewUrl}
+                                    alt={source.sourceName}
+                                    className='h-full w-full object-contain'
+                                  />
+                                  <Button
+                                    size='small'
+                                    type='danger'
+                                    theme='solid'
+                                    icon={<X size={12} />}
+                                    className='absolute right-1 top-1 opacity-95'
+                                    onClick={() => removeEditSource(source.id)}
+                                    disabled={generating}
+                                  />
+                                  <div
+                                    className='absolute bottom-0 left-0 right-0 truncate px-2 py-1 text-xs'
+                                    style={{
+                                      backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                                      color: '#fff',
+                                    }}
+                                  >
+                                    {source.sourceName}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <ImageIcon
+                              size={40}
+                              color='var(--semi-color-text-2)'
+                            />
+                          )}
+                        </div>
+                        {editImageSources.length > 0 && (
+                          <Text
+                            type='secondary'
+                            size='small'
+                            className='mt-2 block'
+                          >
+                            {t('已选择')} {editImageSources.length} /{' '}
+                            {maxEditSourceImages} {t('张图片')}
+                          </Text>
+                        )}
+                        <div className='mt-3 flex gap-2'>
+                          <input
+                            ref={fileInputRef}
+                            type='file'
+                            multiple
+                            accept='image/png,image/jpeg,image/webp'
+                            className='hidden'
+                            onChange={handleFileChange}
+                          />
+                          <Button
+                            icon={<Upload size={16} />}
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={
+                              disabled ||
+                              generating ||
+                              editImageSources.length >= maxEditSourceImages
+                            }
+                          >
+                            {t('上传图片')}
+                          </Button>
+                          {editImageSources.length > 0 && (
+                            <Button
+                              icon={<X size={16} />}
+                              onClick={clearEditSources}
+                              disabled={generating}
+                            >
+                              {t('清除')}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <Text strong>{t('提示词')}</Text>
+                      <TextArea
+                        autosize={{ minRows: 6, maxRows: 12 }}
+                        value={form.prompt}
+                        onChange={(value) => updateForm('prompt', value)}
+                        placeholder={
+                          activeMode === 'edit'
+                            ? t('描述你想如何修改这张图片')
+                            : t('描述你想生成的图片')
+                        }
+                        disabled={disabled || generating}
+                        style={{ marginTop: 8 }}
+                      />
+                    </div>
+
+                    <div className='grid grid-cols-1 gap-3'>
+                      <div>
+                        <Text strong>{t('模型')}</Text>
+                        <Select
+                          value={form.model}
+                          optionList={modelOptions}
+                          onChange={(value) => updateForm('model', value)}
+                          disabled={disabled || generating}
+                          style={{ width: '100%', marginTop: 8 }}
+                        />
+                      </div>
+                      <div>
+                        <Text strong>{t('分组')}</Text>
+                        <Select
+                          value={form.group}
+                          optionList={groupOptions}
+                          onChange={(value) => updateForm('group', value)}
+                          disabled={disabled || generating}
+                          style={{ width: '100%', marginTop: 8 }}
+                        />
+                      </div>
+                      <div className='grid grid-cols-1 gap-3 md:grid-cols-2'>
+                        <div>
+                          <Text strong>{t('尺寸')}</Text>
+                          <Select
+                            value={form.size}
+                            optionList={sizeOptions}
+                            onChange={(value) => updateForm('size', value)}
+                            disabled={disabled || generating}
+                            style={{ width: '100%', marginTop: 8 }}
+                          />
+                          <Input
+                            value={form.custom_size}
+                            onChange={(value) =>
+                              updateForm('custom_size', value)
+                            }
+                            placeholder={t('留空使用预设尺寸')}
+                            disabled={disabled || generating}
+                            style={{ width: '100%', marginTop: 8 }}
+                          />
+                          <Text
+                            type='secondary'
+                            size='small'
+                            className='mt-1 block'
+                          >
+                            {t('请输入合法尺寸，例如 2048x1152')}
+                          </Text>
+                        </div>
+                        <div>
+                          <Text strong>{t('质量')}</Text>
+                          <Select
+                            value={form.quality}
+                            optionList={qualityOptions}
+                            onChange={(value) => updateForm('quality', value)}
+                            disabled={disabled || generating}
+                            style={{ width: '100%', marginTop: 8 }}
+                          />
+                        </div>
+                      </div>
+                      <div className='grid grid-cols-1 gap-3 md:grid-cols-3'>
+                        <div>
+                          <Text strong>{t('格式')}</Text>
+                          <Select
+                            value={form.output_format}
+                            optionList={outputFormatOptions}
+                            onChange={(value) =>
+                              updateForm('output_format', value)
+                            }
+                            disabled={disabled || generating}
+                            style={{ width: '100%', marginTop: 8 }}
+                          />
+                        </div>
+                        <div>
+                          <Text strong>{t('压缩')}</Text>
+                          <InputNumber
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={form.output_compression}
+                            onChange={(value) =>
+                              updateForm('output_compression', value ?? 100)
+                            }
+                            disabled={
+                              disabled ||
+                              generating ||
+                              form.output_format === 'png'
+                            }
+                            style={{ width: '100%', marginTop: 8 }}
+                          />
+                          <Text
+                            type='secondary'
+                            size='small'
+                            className='mt-1 block'
+                          >
+                            {t('仅 jpeg/webp 且小于 100 时发送')}
+                          </Text>
+                        </div>
+                        <div>
+                          <Text strong>{t('数量')}</Text>
+                          <InputNumber
+                            min={1}
+                            max={config?.defaults?.max_n || 4}
+                            value={form.n}
+                            onChange={(value) => updateForm('n', value || 1)}
+                            disabled={disabled || generating}
+                            style={{ width: '100%', marginTop: 8 }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <Button
+                      type='primary'
+                      icon={<Send size={16} />}
+                      loading={generating}
+                      disabled={disabled}
+                      onClick={submitImageRequest}
+                      block
+                    >
+                      {activeMode === 'edit' ? t('提交改图') : t('生成图片')}
+                    </Button>
+                  </div>
+                )}
+              </Card>
+
+              {activeMode !== 'api' && (
+                <div className='flex min-w-0 flex-col gap-3'>
+                  <Spin spinning={historyLoading || generating}>
+                    {history.length === 0 ? (
+                      <Card>
+                        <Empty
+                          image={<ImageIcon size={42} />}
+                          title={t('暂无图片')}
+                        />
+                      </Card>
+                    ) : (
+                      <div className='grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3'>
+                        {history.map((item) => (
+                          <Card
+                            key={item.id}
+                            bodyStyle={{ padding: 0 }}
+                            className='overflow-hidden'
+                          >
+                            <div className='aspect-square w-full bg-[var(--semi-color-fill-0)]'>
+                              {previewUrls[item.id] ? (
+                                <img
+                                  src={previewUrls[item.id]}
+                                  alt={item.prompt}
+                                  className='h-full w-full object-contain'
+                                />
+                              ) : (
+                                <div className='flex h-full w-full items-center justify-center text-[var(--semi-color-text-2)]'>
+                                  <ImageIcon size={32} />
+                                </div>
+                              )}
+                            </div>
+                            <div className='flex flex-col gap-3 p-3'>
+                              <div className='line-clamp-2 min-h-[40px] text-sm'>
+                                {item.prompt}
+                              </div>
+                              <div className='flex flex-wrap gap-2'>
+                                <Tag
+                                  color={
+                                    item.kind === 'edit' ? 'green' : 'blue'
+                                  }
+                                >
+                                  {item.kind === 'edit' ? t('改图') : t('生成')}
+                                </Tag>
+                                <Tag color='blue'>{item.model}</Tag>
+                                <Tag>{item.group}</Tag>
+                                <Tag>{item.size}</Tag>
+                              </div>
+                              {item.revised_prompt && (
+                                <Text
+                                  type='secondary'
+                                  size='small'
+                                  ellipsis={{ showTooltip: true }}
+                                >
+                                  {item.revised_prompt}
+                                </Text>
+                              )}
+                              <div className='flex items-center justify-between gap-2'>
+                                <Text type='secondary' size='small'>
+                                  {timestamp2string(item.created_at)}
+                                </Text>
+                                <Space>
+                                  <Button
+                                    size='small'
+                                    icon={<Edit size={14} />}
+                                    onClick={() =>
+                                      selectHistoryAsEditSource(item)
+                                    }
+                                  >
+                                    {t('改图')}
+                                  </Button>
+                                  <Button
+                                    size='small'
+                                    icon={<Download size={14} />}
+                                    onClick={() => downloadImage(item)}
+                                  />
+                                  <Button
+                                    size='small'
+                                    type='danger'
+                                    theme='borderless'
+                                    icon={<Trash2 size={14} />}
+                                    onClick={() => deleteImage(item)}
+                                  />
+                                </Space>
+                              </div>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </Spin>
+
+                  {total > pageSize && (
+                    <div className='flex items-center justify-end gap-2'>
+                      <Button
+                        disabled={page <= 1}
+                        onClick={() => loadHistory(page - 1)}
+                      >
+                        {t('上一页')}
+                      </Button>
+                      <Text type='secondary'>
+                        {page} / {maxPage}
+                      </Text>
+                      <Button
+                        disabled={page >= maxPage}
+                        onClick={() => loadHistory(page + 1)}
+                      >
+                        {t('下一页')}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </Spin>
+    </div>
+  );
+};
+
+export default ImageGeneration;

@@ -87,6 +87,10 @@ func aspectRatioFromImageRequest(request dto.ImageRequest) string {
 		return "3:2"
 	case "1024x1536", "832x1248":
 		return "2:3"
+	case "3072x1024":
+		return "3:1"
+	case "1280x3840":
+		return "1:3"
 	case "1152x864":
 		return "4:3"
 	case "864x1152":
@@ -101,7 +105,7 @@ func aspectRatioFromImageRequest(request dto.ImageRequest) string {
 	}
 	ratio := reduceAspectRatio(width, height)
 	switch ratio {
-	case "1:1", "16:9", "4:3", "3:2", "2:3", "3:4", "9:16", "21:9":
+	case "1:1", "16:9", "4:3", "3:2", "2:3", "3:1", "1:3", "3:4", "9:16", "21:9":
 		return ratio
 	default:
 		return ""

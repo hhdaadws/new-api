@@ -5,12 +5,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 )
 
@@ -65,6 +68,34 @@ func TestCalculateTextQuotaSummaryUnifiedForClaudeSemantic(t *testing.T) {
 	require.Equal(t, messageSummary.CacheCreationTokens1h, chatSummary.CacheCreationTokens1h)
 	require.True(t, chatSummary.IsClaudeUsageSemantic)
 	require.Equal(t, 1488, chatSummary.Quota)
+}
+
+func TestCalculateTextQuotaSummaryUsePriceIgnoresHiddenRatioForFinalQuota(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "fixed-price-model",
+		PriceData: types.PriceData{
+			UsePrice:    true,
+			ModelPrice:  0.01,
+			HiddenRatio: 2,
+			GroupRatioInfo: types.GroupRatioInfo{
+				GroupRatio: 3,
+			},
+		},
+	}
+
+	usage := &dto.Usage{
+		PromptTokens:       200,
+		CompletionTokens:   100,
+		TotalTokens:        300,
+		HiddenRatioApplied: true,
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+	require.Equal(t, int(decimal.NewFromFloat(0.01).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).Mul(decimal.NewFromInt(3)).Round(0).IntPart()), summary.Quota)
 }
 
 func TestCalculateTextQuotaSummaryUsesSplitClaudeCacheCreationRatios(t *testing.T) {
@@ -315,4 +346,196 @@ func TestCalculateTextQuotaSummaryKeepsPrePRClaudeOpenRouterBilling(t *testing.T
 	require.True(t, summary.IsClaudeUsageSemantic)
 	require.Equal(t, 172, summary.PromptTokens)
 	require.Equal(t, 798, summary.Quota)
+}
+
+func TestComposeTieredTextQuotaKeepsToolCallSurcharges(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Set("image_generation_call", true)
+	ctx.Set("image_generation_call_quality", "low")
+	ctx.Set("image_generation_call_size", "1024x1024")
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "o1",
+		PriceData: types.PriceData{
+			ModelRatio:      1,
+			CompletionRatio: 1,
+			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+		},
+		ResponsesUsageInfo: &relaycommon.ResponsesUsageInfo{
+			BuiltInTools: map[string]*relaycommon.BuildInToolInfo{
+				dto.BuildInToolWebSearchPreview: &relaycommon.BuildInToolInfo{
+					CallCount: 1,
+				},
+				dto.BuildInToolFileSearch: &relaycommon.BuildInToolInfo{
+					CallCount: 2,
+				},
+			},
+		},
+		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
+			BillingMode:               "tiered_expr",
+			GroupRatio:                1,
+			EstimatedQuotaBeforeGroup: 1000,
+		},
+		StartTime: time.Now(),
+	}
+
+	usage := &dto.Usage{
+		PromptTokens:     100,
+		CompletionTokens: 50,
+		TotalTokens:      150,
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+	quota := composeTieredTextQuota(relayInfo, summary, 1000, &billingexpr.TieredResult{
+		ActualQuotaBeforeGroup: 1000,
+		ActualQuotaAfterGroup:  1000,
+	})
+
+	require.Equal(t, int64(13000), summary.ToolCallSurchargeQuota.Round(0).IntPart())
+	require.Equal(t, 14000, quota)
+}
+
+func TestComposeTieredTextQuotaFallbackKeepsToolCallSurcharges(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Set("claude_web_search_requests", 2)
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "claude-3-7-sonnet",
+		PriceData: types.PriceData{
+			ModelRatio:      1,
+			CompletionRatio: 1,
+			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1.25},
+		},
+		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
+			BillingMode:               "tiered_expr",
+			GroupRatio:                1.25,
+			EstimatedQuotaBeforeGroup: 1000,
+		},
+		StartTime: time.Now(),
+	}
+
+	usage := &dto.Usage{
+		PromptTokens:     100,
+		CompletionTokens: 50,
+		TotalTokens:      150,
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+	quota := composeTieredTextQuota(relayInfo, summary, 1250, nil)
+
+	require.Equal(t, int64(12500), summary.ToolCallSurchargeQuota.Round(0).IntPart())
+	require.Equal(t, 13750, quota)
+}
+
+func TestComposeTieredTextQuotaErrorFallbackUsesPreConsumedQuota(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Set("claude_web_search_requests", 2)
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "claude-3-7-sonnet",
+		PriceData: types.PriceData{
+			ModelRatio:      1,
+			CompletionRatio: 1,
+			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1.25},
+		},
+		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
+			BillingMode:               "tiered_expr",
+			GroupRatio:                1.25,
+			EstimatedQuotaBeforeGroup: 1000,
+		},
+		StartTime: time.Now(),
+	}
+
+	usage := &dto.Usage{
+		PromptTokens:     100,
+		CompletionTokens: 50,
+		TotalTokens:      150,
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+	// tieredResult=nil simulates a settlement error where TryTieredSettle
+	// falls back to FinalPreConsumedQuota (2000), which differs from
+	// EstimatedQuotaBeforeGroup * GroupRatio (1250).
+	preConsumedFallback := 2000
+	quota := composeTieredTextQuota(relayInfo, summary, preConsumedFallback, nil)
+
+	require.Equal(t, int64(12500), summary.ToolCallSurchargeQuota.Round(0).IntPart())
+	require.Equal(t, 14500, quota)
+}
+
+func TestComposeTieredTextQuotaAppliesOtherRatios(t *testing.T) {
+	relayInfo := &relaycommon.RelayInfo{
+		PriceData: types.PriceData{
+			OtherRatios: map[string]float64{
+				"request_multiplier": 2.5,
+			},
+		},
+		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
+			GroupRatio: 1,
+		},
+	}
+	summary := textQuotaSummary{
+		ToolCallSurchargeQuota: decimal.NewFromInt(100),
+	}
+
+	quota := composeTieredTextQuota(relayInfo, summary, 1000, &billingexpr.TieredResult{
+		ActualQuotaBeforeGroup: 1000,
+		ActualQuotaAfterGroup:  1000,
+	})
+
+	require.Equal(t, 2750, quota)
+}
+
+func TestTieredTextQuotaUsesExpressionWhenLegacyRatiosUnset(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+
+	expr := `(p <= 272000 ? tier("standard", p * 2.5 + c * 15 + cr * 0.25) : tier("long_context", p * 5 + c * 22.5 + cr * 0.5)) * (param("service_tier") == "priority" ? 2 : 1)`
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "gpt-5.4",
+		PriceData: types.PriceData{
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 0.35},
+		},
+		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
+			BillingMode:  "tiered_expr",
+			ModelName:    "gpt-5.4",
+			ExprString:   expr,
+			ExprHash:     billingexpr.ExprHashString(expr),
+			GroupRatio:   0.35,
+			QuotaPerUnit: common.QuotaPerUnit,
+			ExprVersion:  billingexpr.DefaultExprVersion,
+		},
+		BillingRequestInput: &billingexpr.RequestInput{
+			Body: []byte(`{"service_tier":"standard"}`),
+		},
+		StartTime: time.Now(),
+	}
+
+	usage := &dto.Usage{
+		PromptTokens:     30988,
+		CompletionTokens: 288,
+		TotalTokens:      31276,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens: 29568,
+		},
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+	require.Equal(t, 0, summary.Quota, "legacy ratio billing would incorrectly settle this request as free")
+
+	usedVars := billingexpr.UsedVars(expr)
+	ok, tieredQuota, tieredResult := TryTieredSettle(relayInfo, BuildTieredTokenParams(usage, summary.IsClaudeUsageSemantic, usedVars))
+	require.True(t, ok)
+	require.NotNil(t, tieredResult)
+	require.Equal(t, "standard", tieredResult.MatchedTier)
+	require.Equal(t, 2671, tieredQuota)
+	require.Equal(t, 2671, composeTieredTextQuota(relayInfo, summary, tieredQuota, tieredResult))
 }

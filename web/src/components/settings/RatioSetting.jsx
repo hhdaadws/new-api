@@ -25,7 +25,7 @@ import ModelPricingCombined from '../../pages/Setting/Ratio/ModelPricingCombined
 import GroupRatioSettings from '../../pages/Setting/Ratio/GroupRatioSettings';
 import ModelRatioNotSetEditor from '../../pages/Setting/Ratio/ModelRationNotSetEditor';
 import UpstreamRatioSync from '../../pages/Setting/Ratio/UpstreamRatioSync';
-import ServiceTierSettings from '../../pages/Setting/Ratio/ServiceTierSettings';
+import ToolPriceSettings from '../../pages/Setting/Ratio/ToolPriceSettings';
 
 import { API, showError, toBoolean } from '../../helpers';
 
@@ -109,8 +109,8 @@ const RatioSetting = () => {
           <Tabs.TabPane tab={t('上游倍率同步')} itemKey='upstream_sync'>
             <UpstreamRatioSync options={inputs} refresh={onRefresh} />
           </Tabs.TabPane>
-          <Tabs.TabPane tab={t('Service Tier')} itemKey='service_tier'>
-            <ServiceTierSettings options={inputs} refresh={onRefresh} />
+          <Tabs.TabPane tab={t('工具调用定价')} itemKey='tool_price'>
+            <ToolPriceSettings options={inputs} />
           </Tabs.TabPane>
         </Tabs>
       </Card>

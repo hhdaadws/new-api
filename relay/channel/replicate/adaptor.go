@@ -2,7 +2,6 @@ package replicate
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -111,7 +110,7 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 
 	if len(request.OutputFormat) > 0 {
 		var outputFormat string
-		if err := json.Unmarshal(request.OutputFormat, &outputFormat); err == nil && strings.TrimSpace(outputFormat) != "" {
+		if err := common.Unmarshal(request.OutputFormat, &outputFormat); err == nil && strings.TrimSpace(outputFormat) != "" {
 			inputPayload["output_format"] = outputFormat
 		}
 	}
@@ -341,7 +340,7 @@ func mapOpenAISizeToFlux(size string) (aspect string, width int, height int, ok 
 	rw, rh := reduceRatio(w, h)
 	ratioStr := fmt.Sprintf("%d:%d", rw, rh)
 	switch ratioStr {
-	case "1:1", "16:9", "9:16", "3:2", "2:3", "4:5", "5:4", "3:4", "4:3":
+	case "1:1", "16:9", "9:16", "3:2", "2:3", "3:1", "1:3", "4:5", "5:4", "3:4", "4:3":
 		return ratioStr, 0, 0, true
 	}
 

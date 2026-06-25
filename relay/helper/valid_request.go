@@ -1,10 +1,10 @@
 package helper
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -155,8 +155,31 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			imageRequest.N = common.GetPointer(uint(common.String2Int(formData.Get("n"))))
 			imageRequest.Quality = formData.Get("quality")
 			imageRequest.Size = formData.Get("size")
+			if outputFormat := strings.TrimSpace(formData.Get("output_format")); outputFormat != "" {
+				outputFormatValue, err := common.Marshal(outputFormat)
+				if err != nil {
+					return nil, err
+				}
+				imageRequest.OutputFormat = outputFormatValue
+			}
+			if compressionValue := strings.TrimSpace(formData.Get("output_compression")); compressionValue != "" {
+				compression, err := strconv.Atoi(compressionValue)
+				if err != nil {
+					return nil, errors.New("output_compression must be a number")
+				}
+				if compression < 0 || compression > 100 {
+					return nil, errors.New("output_compression must be between 0 and 100")
+				}
+				if compression < 100 && outputFormatSupportsCompression(formData.Get("output_format")) {
+					compressionValue, err := common.Marshal(compression)
+					if err != nil {
+						return nil, err
+					}
+					imageRequest.OutputCompression = compressionValue
+				}
+			}
 			if imageValue := formData.Get("image"); imageValue != "" {
-				imageRequest.Image, _ = json.Marshal(imageValue)
+				imageRequest.Image, _ = common.Marshal(imageValue)
 			}
 
 			if imageRequest.Model == "gpt-image-1" {
@@ -185,6 +208,10 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		if imageRequest.Model == "" {
 			//imageRequest.Model = "dall-e-3"
 			return nil, errors.New("model is required")
+		}
+
+		if err := normalizeOpenAIImageOutputCompression(imageRequest); err != nil {
+			return nil, err
 		}
 
 		if strings.Contains(imageRequest.Size, "×") {
@@ -225,6 +252,51 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 	}
 
 	return imageRequest, nil
+}
+
+func normalizeOpenAIImageOutputCompression(imageRequest *dto.ImageRequest) error {
+	if imageRequest == nil || imageRequest.OutputCompression == nil {
+		return nil
+	}
+
+	var compression int
+	if err := common.Unmarshal(imageRequest.OutputCompression, &compression); err != nil {
+		return errors.New("output_compression must be a number")
+	}
+	if compression < 0 || compression > 100 {
+		return errors.New("output_compression must be between 0 and 100")
+	}
+	if compression >= 100 || !rawOutputFormatSupportsCompression(imageRequest.OutputFormat) {
+		imageRequest.OutputCompression = nil
+		return nil
+	}
+
+	normalizedCompression, err := common.Marshal(compression)
+	if err != nil {
+		return err
+	}
+	imageRequest.OutputCompression = normalizedCompression
+	return nil
+}
+
+func rawOutputFormatSupportsCompression(outputFormat []byte) bool {
+	if len(outputFormat) == 0 {
+		return false
+	}
+	var outputFormatValue string
+	if err := common.Unmarshal(outputFormat, &outputFormatValue); err != nil {
+		return false
+	}
+	return outputFormatSupportsCompression(outputFormatValue)
+}
+
+func outputFormatSupportsCompression(outputFormat string) bool {
+	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
+	case "jpeg", "webp":
+		return true
+	default:
+		return false
+	}
 }
 
 func GetAndValidateClaudeRequest(c *gin.Context) (textRequest *dto.ClaudeRequest, err error) {

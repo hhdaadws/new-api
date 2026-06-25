@@ -3,6 +3,7 @@ package dto
 import (
 	"encoding/json"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -45,11 +46,18 @@ func (i *ImageRequest) UnmarshalJSON(data []byte) error {
 
 	// 用 struct tag 获取所有已定义字段名
 	knownFields := GetJSONFieldNames(reflect.TypeOf(*i))
+	if err := normalizeImageRequestN(rawMap); err != nil {
+		return err
+	}
 
 	// 再正常解析已定义字段
 	type Alias ImageRequest
 	var known Alias
-	if err := common.Unmarshal(data, &known); err != nil {
+	knownData, err := common.Marshal(rawMap)
+	if err != nil {
+		return err
+	}
+	if err := common.Unmarshal(knownData, &known); err != nil {
 		return err
 	}
 	*i = ImageRequest(known)
@@ -61,6 +69,33 @@ func (i *ImageRequest) UnmarshalJSON(data []byte) error {
 			i.Extra[k] = v
 		}
 	}
+	return nil
+}
+
+func normalizeImageRequestN(rawMap map[string]json.RawMessage) error {
+	rawN, ok := rawMap["n"]
+	if !ok {
+		return nil
+	}
+
+	var stringN string
+	if err := common.Unmarshal(rawN, &stringN); err != nil {
+		return nil
+	}
+	stringN = strings.TrimSpace(stringN)
+	if stringN == "" {
+		delete(rawMap, "n")
+		return nil
+	}
+	parsedN, err := strconv.ParseUint(stringN, 10, 32)
+	if err != nil {
+		return err
+	}
+	normalizedN, err := common.Marshal(parsedN)
+	if err != nil {
+		return err
+	}
+	rawMap["n"] = normalizedN
 	return nil
 }
 

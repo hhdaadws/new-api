@@ -345,6 +345,7 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 			TotalTokens:      novaResp.Usage.TotalTokens,
 		},
 	}
+	helper.ApplyHiddenRatio(info, &response.Usage)
 
 	c.JSON(http.StatusOK, response)
 	return nil, &response.Usage

@@ -28,6 +28,7 @@ import SettingsMonitoring from '../../pages/Setting/Operation/SettingsMonitoring
 import SettingsCreditLimit from '../../pages/Setting/Operation/SettingsCreditLimit';
 import SettingsCheckin from '../../pages/Setting/Operation/SettingsCheckin';
 import SettingsGroupSharding from '../../pages/Setting/Operation/SettingsGroupSharding';
+import SettingsChinaBlock from '../../pages/Setting/Operation/SettingsChinaBlock';
 import { API, showError, toBoolean } from '../../helpers';
 
 const OperationSetting = () => {
@@ -85,6 +86,12 @@ const OperationSetting = () => {
 
     /* 令牌设置 */
     'token_setting.max_user_tokens': 1000,
+
+    /* 访问地区限制设置 */
+    'china_block.mode': 'off',
+    'china_block.title': '',
+    'china_block.content': '',
+    'china_block.whitelist': '',
   });
 
   let [loading, setLoading] = useState(false);
@@ -161,6 +168,10 @@ const OperationSetting = () => {
         {/* 分组分片设置 */}
         <Card style={{ marginTop: '10px' }}>
           <SettingsGroupSharding />
+        </Card>
+        {/* 访问地区限制设置 */}
+        <Card style={{ marginTop: '10px' }}>
+          <SettingsChinaBlock options={inputs} refresh={onRefresh} />
         </Card>
       </Spin>
     </>

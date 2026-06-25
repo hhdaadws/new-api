@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/dto"
@@ -62,26 +63,9 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		return nil, errors.New("not supported model for image generation, only imagen models are supported")
 	}
 
-	// convert size to aspect ratio but allow user to specify aspect ratio
-	aspectRatio := "1:1" // default aspect ratio
-	size := strings.TrimSpace(request.Size)
-	if size != "" {
-		if strings.Contains(size, ":") {
-			aspectRatio = size
-		} else {
-			switch size {
-			case "256x256", "512x512", "1024x1024":
-				aspectRatio = "1:1"
-			case "1536x1024":
-				aspectRatio = "3:2"
-			case "1024x1536":
-				aspectRatio = "2:3"
-			case "1024x1792":
-				aspectRatio = "9:16"
-			case "1792x1024":
-				aspectRatio = "16:9"
-			}
-		}
+	aspectRatio, err := geminiImageAspectRatioFromSize(request.Size)
+	if err != nil {
+		return nil, err
 	}
 
 	// build gemini imagen request
@@ -121,6 +105,84 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 	}
 
 	return geminiRequest, nil
+}
+
+func geminiImageAspectRatioFromSize(size string) (string, error) {
+	size = strings.TrimSpace(size)
+	if size == "" || strings.EqualFold(size, "auto") {
+		return "1:1", nil
+	}
+	if geminiImageAspectRatioSupported(size) {
+		return size, nil
+	}
+	if strings.Contains(size, ":") {
+		return "", fmt.Errorf("gemini adaptor: unsupported image aspect ratio %s", size)
+	}
+
+	switch size {
+	case "256x256", "512x512", "1024x1024", "2048x2048", "2560x2560":
+		return "1:1", nil
+	case "1792x1024":
+		return "16:9", nil
+	case "1024x1792":
+		return "9:16", nil
+	}
+
+	width, height, ok := parseGeminiImageSize(size)
+	if !ok {
+		return "", fmt.Errorf("gemini adaptor: invalid image size %s", size)
+	}
+	aspectRatio := reduceGeminiAspectRatio(width, height)
+	if !geminiImageAspectRatioSupported(aspectRatio) {
+		return "", fmt.Errorf("gemini adaptor: unsupported image aspect ratio %s derived from size %s", aspectRatio, size)
+	}
+	return aspectRatio, nil
+}
+
+func geminiImageAspectRatioSupported(aspectRatio string) bool {
+	switch aspectRatio {
+	case "1:1", "16:9", "9:16", "3:2", "2:3", "3:1", "1:3":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseGeminiImageSize(size string) (int, int, bool) {
+	parts := strings.Split(size, "x")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	width, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, false
+	}
+	height, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, false
+	}
+	if width <= 0 || height <= 0 {
+		return 0, 0, false
+	}
+	return width, height, true
+}
+
+func reduceGeminiAspectRatio(width, height int) string {
+	divisor := geminiGCD(width, height)
+	return fmt.Sprintf("%d:%d", width/divisor, height/divisor)
+}
+
+func geminiGCD(a, b int) int {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	if a < 0 {
+		return -a
+	}
+	if a == 0 {
+		return 1
+	}
+	return a
 }
 
 func (a *Adaptor) Init(info *relaycommon.RelayInfo) {

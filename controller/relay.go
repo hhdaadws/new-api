@@ -21,6 +21,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 
@@ -121,6 +122,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
+	relayInfo.InitChannelMeta(c)
 
 	// 提取 service_tier 用于计费调整
 	extractServiceTier(relayInfo, request)
@@ -257,8 +259,25 @@ func addUsedChannel(c *gin.Context, channelId int) {
 	c.Set("use_channel", useChannel)
 }
 
+func serviceTierPassThroughAllowed(relayInfo *relaycommon.RelayInfo) bool {
+	if relayInfo == nil {
+		return false
+	}
+	if model_setting.GetGlobalSettings().PassThroughRequestEnabled {
+		return true
+	}
+	if relayInfo.ChannelMeta == nil {
+		return false
+	}
+	return relayInfo.ChannelSetting.PassThroughBodyEnabled ||
+		relayInfo.ChannelOtherSettings.AllowServiceTier
+}
+
 // extractServiceTier 从请求中提取 service_tier 并存入 relayInfo，用于后续计费调整。
 func extractServiceTier(relayInfo *relaycommon.RelayInfo, request dto.Request) {
+	if !serviceTierPassThroughAllowed(relayInfo) {
+		return
+	}
 	switch req := request.(type) {
 	case *dto.GeneralOpenAIRequest:
 		if req.ServiceTier != nil {
@@ -375,7 +394,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, err.Error()))
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
-	if service.ShouldDisableChannel(channelError.ChannelType, err) && channelError.AutoBan {
+	if service.ShouldDisableChannel(err) && channelError.AutoBan {
 		gopool.Go(func() {
 			service.DisableChannel(channelError, err.ErrorWithStatusCode())
 		})

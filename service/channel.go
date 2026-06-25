@@ -42,7 +42,7 @@ func EnableChannel(channelId int, usingKey string, channelName string) {
 	}
 }
 
-func ShouldDisableChannel(channelType int, err *types.NewAPIError) bool {
+func ShouldDisableChannel(err *types.NewAPIError) bool {
 	if !common.AutomaticDisableChannelEnabled {
 		return false
 	}
@@ -58,15 +58,6 @@ func ShouldDisableChannel(channelType int, err *types.NewAPIError) bool {
 	if operation_setting.ShouldDisableByStatusCode(err.StatusCode) {
 		return true
 	}
-	//if err.StatusCode == http.StatusUnauthorized {
-	//	return true
-	//}
-	//if err.StatusCode == http.StatusForbidden {
-	//	switch channelType {
-	//	case constant.ChannelTypeGemini:
-	//		return true
-	//	}
-	//}
 	oaiErr := err.ToOpenAIError()
 	if operation_setting.ShouldDisableByErrorCode(fmt.Sprintf("%v", oaiErr.Code)) {
 		return true

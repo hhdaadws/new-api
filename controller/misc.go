@@ -3,6 +3,7 @@ package controller
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 
@@ -46,6 +47,7 @@ func GetStatus(c *gin.Context) {
 
 	passkeySetting := system_setting.GetPasskeySettings()
 	legalSetting := system_setting.GetLegalSettings()
+	chinaBlockSetting := system_setting.GetChinaBlockSettings()
 
 	data := gin.H{
 		"version":                     common.Version,
@@ -81,6 +83,7 @@ func GetStatus(c *gin.Context) {
 		"enable_drawing":                common.DrawingEnabled,
 		"enable_task":                   common.TaskEnabled,
 		"enable_data_export":            common.DataExportEnabled,
+		"enable_image_generation":       common.ImageGenerationPageEnabled,
 		"data_export_default_time":      common.DataExportDefaultTime,
 		"default_collapse_sidebar":      common.DefaultCollapseSidebar,
 		"mj_notify_enabled":             setting.MjNotifyEnabled,
@@ -117,7 +120,12 @@ func GetStatus(c *gin.Context) {
 		"user_agreement_enabled":      legalSetting.UserAgreement != "",
 		"privacy_policy_enabled":      legalSetting.PrivacyPolicy != "",
 		"checkin_enabled":             operation_setting.GetCheckinSetting().Enabled,
-		"_qn":                         "new-api",
+		// 中国大陆访问限制(仅作用于前端页面,API 请求不受影响)
+		"china_block_mode":     chinaBlockSetting.Mode,
+		"china_block_title":    chinaBlockSetting.Title,
+		"china_block_content":  chinaBlockSetting.Content,
+		"is_china_mainland_ip": chinaBlockSetting.IsRestrictedIP(net.ParseIP(c.ClientIP())),
+		"_qn":                  "new-api",
 	}
 
 	// 根据启用状态注入可选内容

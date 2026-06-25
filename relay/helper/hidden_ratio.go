@@ -11,6 +11,9 @@ import (
 // ApplyHiddenRatio multiplies all token counts in usage by the hidden ratio.
 // Returns true if the usage was modified.
 func ApplyHiddenRatio(info *relaycommon.RelayInfo, usage *dto.Usage) bool {
+	if info == nil || usage == nil || usage.HiddenRatioApplied {
+		return false
+	}
 	hr := info.PriceData.HiddenRatio
 	if hr == 0 || hr == 1.0 {
 		return false
@@ -76,6 +79,7 @@ func ApplyHiddenRatio(info *relaycommon.RelayInfo, usage *dto.Usage) bool {
 	usage.PromptCacheHitTokens = int(math.Round(float64(usage.PromptCacheHitTokens) * hr))
 	usage.ClaudeCacheCreation5mTokens = int(math.Round(float64(usage.ClaudeCacheCreation5mTokens) * hr))
 	usage.ClaudeCacheCreation1hTokens = int(math.Round(float64(usage.ClaudeCacheCreation1hTokens) * hr))
+	usage.HiddenRatioApplied = true
 
 	return true
 }

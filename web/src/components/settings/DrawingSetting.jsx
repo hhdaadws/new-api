@@ -31,6 +31,9 @@ const DrawingSetting = () => {
     MjForwardUrlEnabled: false,
     MjModeClearEnabled: false,
     MjActionCheckSuccessEnabled: false,
+    ImageGenerationPageEnabled: false,
+    ImageGenerationPageGroups: '["default"]',
+    ImageGenerationPageModels: '["gpt-image-2"]',
   });
 
   let [loading, setLoading] = useState(false);

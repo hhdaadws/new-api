@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Banner,
   Button,
@@ -49,6 +49,7 @@ import {
   useModelPricingEditorState,
 } from '../hooks/useModelPricingEditorState';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
+import TieredPricingEditor from './TieredPricingEditor';
 
 const { Text } = Typography;
 const EMPTY_CANDIDATE_MODEL_NAMES = [];
@@ -126,6 +127,8 @@ export default function ModelPricingEditor({
     handleAddSizePrice,
     handleRemoveSizePrice,
     handleUpdateSizePrice,
+    handleBillingExprChange,
+    handleRequestRuleExprChange,
     handleSubmit,
     addModel,
     deleteModel,
@@ -137,6 +140,15 @@ export default function ModelPricingEditor({
     candidateModelNames,
     filterMode,
   });
+
+  const getExprModeLabel = useCallback((model) => {
+    if (model?.billingMode !== 'tiered_expr') {
+      return '';
+    }
+    return (model.billingExpr || '').includes('tier(')
+      ? t('阶梯计费')
+      : t('表达式计费');
+  }, [t]);
 
   const columns = useMemo(
     () => [
@@ -178,10 +190,20 @@ export default function ModelPricingEditor({
         dataIndex: 'billingMode',
         key: 'billingMode',
         render: (_, record) => (
-          <Tag color={record.billingMode === 'per-request' ? 'teal' : 'violet'}>
+          <Tag
+            color={
+              record.billingMode === 'per-request'
+                ? 'teal'
+                : record.billingMode === 'tiered_expr'
+                  ? 'amber'
+                  : 'violet'
+            }
+          >
             {record.billingMode === 'per-request'
               ? t('按次计费')
-              : t('按量计费')}
+              : record.billingMode === 'tiered_expr'
+                ? getExprModeLabel(record)
+                : t('按量计费')}
           </Tag>
         ),
       },
@@ -211,6 +233,7 @@ export default function ModelPricingEditor({
     [
       allowDeleteModel,
       deleteModel,
+      getExprModeLabel,
       selectedModelName,
       selectedModelNames,
       setSelectedModelName,
@@ -304,7 +327,7 @@ export default function ModelPricingEditor({
             gap: 16,
             gridTemplateColumns: isMobile
               ? 'minmax(0, 1fr)'
-              : 'minmax(360px, 1.1fr) minmax(420px, 1fr)',
+              : 'minmax(300px, 0.8fr) minmax(480px, 1.2fr)',
           }}
         >
           <Card
@@ -356,10 +379,20 @@ export default function ModelPricingEditor({
             title={selectedModel ? selectedModel.name : t('模型计费编辑器')}
             headerExtraContent={
               selectedModel ? (
-                <Tag color='blue'>
+                <Tag
+                  color={
+                    selectedModel.billingMode === 'per-request'
+                      ? 'teal'
+                      : selectedModel.billingMode === 'tiered_expr'
+                        ? 'amber'
+                        : 'blue'
+                  }
+                >
                   {selectedModel.billingMode === 'per-request'
                     ? t('按次计费')
-                    : t('按量计费')}
+                    : selectedModel.billingMode === 'tiered_expr'
+                      ? getExprModeLabel(selectedModel)
+                      : t('按量计费')}
                 </Tag>
               ) : null
             }
@@ -384,10 +417,11 @@ export default function ModelPricingEditor({
                   >
                     <Radio value='per-token'>{t('按量计费')}</Radio>
                     <Radio value='per-request'>{t('按次计费')}</Radio>
+                    <Radio value='tiered_expr'>{t('表达式/阶梯计费')}</Radio>
                   </RadioGroup>
                   <div className='mt-2 text-xs text-gray-500'>
                     {t(
-                      '这个界面默认按价格填写，保存时会自动换算回后端需要的倍率 JSON。',
+                      '普通按量/按次直接填价格就行；如果价格要跟请求参数或请求头联动，请切到表达式/阶梯计费。',
                     )}
                   </div>
                 </div>
@@ -486,6 +520,14 @@ export default function ModelPricingEditor({
                       </Button>
                     </Card>
                   </>
+                ) : selectedModel.billingMode === 'tiered_expr' ? (
+                  <TieredPricingEditor
+                    model={selectedModel}
+                    onExprChange={handleBillingExprChange}
+                    requestRuleExpr={selectedModel.requestRuleExpr}
+                    onRequestRuleExprChange={handleRequestRuleExprChange}
+                    t={t}
+                  />
                 ) : (
                   <>
                     <Card

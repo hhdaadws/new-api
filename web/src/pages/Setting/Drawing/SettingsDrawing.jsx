@@ -38,6 +38,9 @@ export default function SettingsDrawing(props) {
     MjForwardUrlEnabled: false,
     MjModeClearEnabled: false,
     MjActionCheckSuccessEnabled: false,
+    ImageGenerationPageEnabled: false,
+    ImageGenerationPageGroups: '["default"]',
+    ImageGenerationPageModels: '["gpt-image-2"]',
   });
   const refForm = useRef();
   const [inputsRow, setInputsRow] = useState(inputs);
@@ -78,7 +81,7 @@ export default function SettingsDrawing(props) {
   }
 
   useEffect(() => {
-    const currentInputs = {};
+    const currentInputs = { ...inputs };
     for (let key in props.options) {
       if (Object.keys(inputs).includes(key)) {
         currentInputs[key] = props.options[key];
@@ -200,6 +203,58 @@ export default function SettingsDrawing(props) {
             <Row>
               <Button size='default' onClick={onSubmit}>
                 {t('保存绘图设置')}
+              </Button>
+            </Row>
+          </Form.Section>
+          <Form.Section text={t('图像生成页面设置')}>
+            <Row gutter={16}>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  field={'ImageGenerationPageEnabled'}
+                  label={t('启用官网图像生成页面')}
+                  size='default'
+                  checkedText='｜'
+                  uncheckedText='〇'
+                  onChange={(value) => {
+                    setInputs({
+                      ...inputs,
+                      ImageGenerationPageEnabled: value,
+                    });
+                  }}
+                />
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.TextArea
+                  field={'ImageGenerationPageGroups'}
+                  label={t('允许使用的分组')}
+                  autosize={{ minRows: 3, maxRows: 8 }}
+                  extraText={t('填写 JSON 数组，例如 ["image"]。这里配置的分组可独立于用户可选分组。')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      ImageGenerationPageGroups: value,
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.TextArea
+                  field={'ImageGenerationPageModels'}
+                  label={t('允许使用的模型')}
+                  autosize={{ minRows: 3, maxRows: 8 }}
+                  extraText={t('填写 JSON 数组，例如 ["gpt-image-2"]。')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      ImageGenerationPageModels: value,
+                    })
+                  }
+                />
+              </Col>
+            </Row>
+            <Row>
+              <Button size='default' onClick={onSubmit}>
+                {t('保存图像生成页面设置')}
               </Button>
             </Row>
           </Form.Section>

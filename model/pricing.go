@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 )
@@ -33,6 +34,8 @@ type Pricing struct {
 	ImageSizePrice         map[string]float64      `json:"image_size_price,omitempty"`
 	EnableGroup            []string                `json:"enable_groups"`
 	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
+	BillingMode            string                  `json:"billing_mode,omitempty"`
+	BillingExpr            string                  `json:"billing_expr,omitempty"`
 	PricingVersion         string                  `json:"pricing_version,omitempty"`
 }
 
@@ -322,6 +325,12 @@ func updatePricing() {
 		}
 		if sizePrices, ok := ratio_setting.GetImageSizePriceForModel(model); ok {
 			pricing.ImageSizePrice = sizePrices
+		}
+		if billingMode := billing_setting.GetBillingMode(model); billingMode == "tiered_expr" {
+			if expr, ok := billing_setting.GetBillingExpr(model); ok && expr != "" {
+				pricing.BillingMode = billingMode
+				pricing.BillingExpr = expr
+			}
 		}
 		pricingMap = append(pricingMap, pricing)
 	}
