@@ -120,6 +120,14 @@ export interface LogOtherData {
     is_multi_key?: boolean
     multi_key_index?: number
     use_channel?: number[]
+    // The upstream error as received, kept for admins when upstream error
+    // interception replaced what the client and the user's log show.
+    upstream_error?: {
+      error_type?: string
+      error_code?: string
+      status_code?: number
+      message?: string
+    }
     local_count_tokens?: boolean
     usage_billing_path?: UsageBillingPath | string
     channel_affinity?: ChannelAffinityInfo

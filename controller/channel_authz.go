@@ -1,6 +1,17 @@
 package controller
 
-import "github.com/QuantumNous/new-api/model"
+import (
+	"cmp"
+	"slices"
+	"strings"
+
+	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service/authz"
+
+	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
+)
 
 func channelHasSensitiveChanges(channel *PatchChannel, origin *model.Channel, requestData map[string]any) bool {
 	if _, ok := requestData["type"]; ok && channel.Type != origin.Type {
@@ -49,6 +60,9 @@ func channelHasSensitiveChanges(channel *PatchChannel, origin *model.Channel, re
 			continue
 		}
 		if _, ok := channelReadOnlyFields[field]; ok {
+			continue
+		}
+		if _, ok := channelRootOnlyFields[field]; ok {
 			continue
 		}
 		return true
@@ -133,4 +147,120 @@ var channelNonSensitiveFields = map[string]struct{}{
 	"remark":              {},
 	"channel_info":        {},
 	"multi_key_mode":      {},
+}
+
+// channelRootOnlyFields lists channel fields only root may change. They are
+// enforced separately in UpdateChannel, so the fail-closed scan skips them.
+var channelRootOnlyFields = map[string]struct{}{
+	"alias": {},
+}
+
+// channelViewPolicy describes which channel identity fields the current
+// administrator may see. Root always sees everything.
+type channelViewPolicy struct {
+	RealName bool
+	BaseURL  bool
+}
+
+func channelViewPolicyOf(c *gin.Context) channelViewPolicy {
+	userID, role := c.GetInt("id"), c.GetInt("role")
+	return channelViewPolicy{
+		RealName: authz.Can(userID, role, authz.ChannelNameView),
+		BaseURL:  authz.Can(userID, role, authz.ChannelBaseURLView),
+	}
+}
+
+func (p channelViewPolicy) hiddenFields() model.ChannelHiddenFields {
+	return model.ChannelHiddenFields{Name: !p.RealName, BaseURL: !p.BaseURL}
+}
+
+// sortBy drops a requested sort column whose order would reveal hidden values.
+func (p channelViewPolicy) sortBy(requested string) string {
+	if !p.RealName && strings.EqualFold(strings.TrimSpace(requested), "name") {
+		return ""
+	}
+	return requested
+}
+
+// channelDisplayName is the name shown in place of a hidden real channel name:
+// the alias set by root, or a localized "Channel #id" when there is none.
+func channelDisplayName(c *gin.Context, id int, alias string) string {
+	if alias != "" {
+		return alias
+	}
+	return i18n.T(c, i18n.MsgChannelAliasFallback, map[string]any{"Id": id})
+}
+
+// nameOf is the channel name the administrator may see, without changing the
+// channel itself.
+func (p channelViewPolicy) nameOf(c *gin.Context, channel *model.Channel) string {
+	if p.RealName {
+		return channel.Name
+	}
+	return channelDisplayName(c, channel.Id, lo.FromPtr(channel.Alias))
+}
+
+// redact removes the fields the administrator may not see from a channel that
+// is about to be returned.
+func (p channelViewPolicy) redact(c *gin.Context, channel *model.Channel) {
+	if channel == nil {
+		return
+	}
+	if !p.RealName {
+		channel.Name = p.nameOf(c, channel)
+		channel.Alias = nil
+	}
+	if !p.BaseURL {
+		channel.BaseURL = nil
+	}
+}
+
+// displayNames maps channel ids to the names the administrator may see, or
+// returns nil when real names are visible and nothing needs replacing.
+func (p channelViewPolicy) displayNames(c *gin.Context, ids []int) (map[int]string, error) {
+	if p.RealName {
+		return nil, nil
+	}
+	aliases, err := model.GetChannelAliases(ids)
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[int]string, len(ids))
+	for _, id := range ids {
+		names[id] = channelDisplayName(c, id, aliases[id])
+	}
+	return names, nil
+}
+
+// redactBoundChannels replaces the channel names listed on model metadata when
+// the administrator may not see real channel names.
+func (p channelViewPolicy) redactBoundChannels(c *gin.Context, models []*model.Model) error {
+	if p.RealName {
+		return nil
+	}
+	var ids []int
+	for _, metadata := range models {
+		if metadata == nil {
+			continue
+		}
+		for _, channel := range metadata.BoundChannels {
+			ids = append(ids, channel.Id)
+		}
+	}
+	names, err := p.displayNames(c, ids)
+	if err != nil {
+		return err
+	}
+	for _, metadata := range models {
+		if metadata == nil {
+			continue
+		}
+		for i := range metadata.BoundChannels {
+			metadata.BoundChannels[i].Name = names[metadata.BoundChannels[i].Id]
+		}
+		slices.SortFunc(metadata.BoundChannels, func(a, b model.BoundChannel) int {
+			return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.Type, b.Type))
+		})
+	}
+	return nil
 }

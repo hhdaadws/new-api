@@ -16,9 +16,11 @@ const (
 	EffectDeny  = "deny"
 )
 
+const userSubjectPrefix = "user:"
+
 // UserSubject is the casbin subject string for a single user.
 func UserSubject(userID int) string {
-	return "user:" + strconv.Itoa(userID)
+	return userSubjectPrefix + strconv.Itoa(userID)
 }
 
 // RoleSubject is the casbin subject string for a role.

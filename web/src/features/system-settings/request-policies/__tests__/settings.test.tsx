@@ -36,11 +36,13 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
+import { ROLE } from '@/lib/roles'
 import { Route as ModelsRoute } from '@/routes/_authenticated/system-settings/models/$section'
 import { Route as OperationsRoute } from '@/routes/_authenticated/system-settings/operations/$section'
 import { Route as PoliciesRoute } from '@/routes/_authenticated/system-settings/request-policies/$section'
 import { Route as PolicyIndexRoute } from '@/routes/_authenticated/system-settings/request-policies/index'
 import { Route as SecurityRoute } from '@/routes/_authenticated/system-settings/security/$section'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { RequestPolicies } from '..'
 import {
@@ -113,6 +115,9 @@ async function renderPolicies(path: string) {
 
 beforeEach(() => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
+  useAuthStore
+    .getState()
+    .auth.setUser({ id: 1, username: 'root', role: ROLE.SUPER_ADMIN })
   queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -184,6 +189,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   queryClient.clear()
+  useAuthStore.getState().auth.reset()
 })
 
 describe('request policy settings', () => {
@@ -346,6 +352,39 @@ describe('request policy settings', () => {
         name: 'Default session lifetime (seconds)',
       })
     ).toHaveValue(3600)
+    expect(api.put).not.toHaveBeenCalled()
+  })
+
+  it('saving edited interception keywords writes only the normalized JSON array', async () => {
+    settings['upstream_error_interception.keywords'] = '["quota exceeded"]'
+    await renderPolicies('/system-settings/request-policies/error-interception')
+    const keywords = await screen.findByRole('textbox', {
+      name: 'Error keywords',
+    })
+    expect(keywords).toHaveValue('quota exceeded')
+    fireEvent.change(keywords, {
+      target: { value: '  quota exceeded \n\nQUOTA EXCEEDED\nrate limit' },
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledExactlyOnceWith('/api/option/', {
+        key: 'upstream_error_interception.keywords',
+        value: '["quota exceeded","rate limit"]',
+      })
+    )
+  })
+
+  it('an interception status code outside 400-599 shows validation and does not write options', async () => {
+    await renderPolicies('/system-settings/request-policies/error-interception')
+    const statusCode = await screen.findByRole('spinbutton', {
+      name: 'Response status code',
+    })
+    expect(statusCode).toHaveValue(502)
+    fireEvent.change(statusCode, { target: { value: '600' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() =>
+      expect(statusCode).toHaveAttribute('aria-invalid', 'true')
+    )
     expect(api.put).not.toHaveBeenCalled()
   })
 

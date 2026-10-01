@@ -43,6 +43,7 @@ const (
 var channelUpstreamModelUpdateSelectFields = []string{
 	"id",
 	"name",
+	"alias",
 	"type",
 	"key",
 	"status",
@@ -946,7 +947,7 @@ func DetectChannelUpstreamModelUpdates(c *gin.Context) {
 		"message": "",
 		"data": detectChannelUpstreamModelUpdatesResult{
 			ChannelID:       channel.Id,
-			ChannelName:     channel.Name,
+			ChannelName:     channelViewPolicyOf(c).nameOf(c, channel),
 			AddModels:       normalizeModelNames(settings.UpstreamModelUpdateLastDetectedModels),
 			RemoveModels:    normalizeModelNames(settings.UpstreamModelUpdateLastRemovedModels),
 			LastCheckTime:   settings.UpstreamModelUpdateLastCheckTime,
@@ -1023,6 +1024,7 @@ func findEnabledChannelsAfterID(lastID int, batchSize int) ([]*model.Channel, er
 }
 
 func ApplyAllChannelUpstreamModelUpdates(c *gin.Context) {
+	viewPolicy := channelViewPolicyOf(c)
 	results := make([]applyAllChannelUpstreamModelUpdatesResult, 0)
 	failed := make([]int, 0)
 	refreshNeeded := false
@@ -1073,7 +1075,7 @@ func ApplyAllChannelUpstreamModelUpdates(c *gin.Context) {
 			removedModelCount += len(removedModels)
 			results = append(results, applyAllChannelUpstreamModelUpdatesResult{
 				ChannelID:             channel.Id,
-				ChannelName:           channel.Name,
+				ChannelName:           viewPolicy.nameOf(c, channel),
 				AddedModels:           addedModels,
 				RemovedModels:         removedModels,
 				RemainingModels:       remainingModels,

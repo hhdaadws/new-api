@@ -77,6 +77,11 @@ export function InferenceStatusDialog(props: InferenceStatusDialogProps) {
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
     ADMIN_PERMISSION_ACTIONS.OPERATE
   )
+  const canTest = hasPermission(
+    user,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.TEST
+  )
   const canSync =
     canOperate &&
     hasPermission(
@@ -388,7 +393,7 @@ export function InferenceStatusDialog(props: InferenceStatusDialogProps) {
         </Button>
         <Button
           variant='outline'
-          disabled={!canOperate}
+          disabled={!canTest}
           onClick={props.onTestChannel}
         >
           {t('Test Connection')}
@@ -532,7 +537,7 @@ export function InferenceStatusDialog(props: InferenceStatusDialogProps) {
                         {value}
                       </dd>
                       {row.details && (
-                        <dd className='text-muted-foreground col-span-2 break-all text-xs'>
+                        <dd className='text-muted-foreground col-span-2 text-xs break-all'>
                           {row.details}
                         </dd>
                       )}

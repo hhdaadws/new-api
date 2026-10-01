@@ -36,8 +36,9 @@ import { getOperationsSectionNavItems } from '@/features/system-settings/operati
 import { getPolicySectionNavItems } from '@/features/system-settings/request-policies/section-registry'
 import { getSecuritySectionNavItems } from '@/features/system-settings/security/section-registry.tsx'
 import { getSiteSectionNavItems } from '@/features/system-settings/site/section-registry.tsx'
+import { useAuthStore } from '@/stores/auth-store'
 
-import type { NavGroup, SidebarView } from '../types'
+import type { NavCollapsible, NavGroup, SidebarView } from '../types'
 
 /**
  * Sidebar nav groups for the System Settings nested view.
@@ -45,54 +46,59 @@ import type { NavGroup, SidebarView } from '../types'
  * Kept as a single group because the workspace title in the sidebar
  * header already provides top-level context — the inner group label
  * scopes the items as "administration" actions.
+ *
+ * Root-only sections are filtered per user; categories left without any
+ * section (e.g. Authentication for non-root admins) are dropped.
  */
 function getSystemSettingsNavGroups(t: TFunction): NavGroup[] {
+  const user = useAuthStore.getState().auth.user
+  const categories: NavCollapsible[] = [
+    {
+      title: t('Site & Branding'),
+      icon: Settings,
+      items: getSiteSectionNavItems(t, user),
+    },
+    {
+      title: t('Authentication'),
+      icon: Shield,
+      items: getAuthSectionNavItems(t, user),
+    },
+    {
+      title: t('Billing & Payment'),
+      icon: CreditCard,
+      items: getBillingSectionNavItems(t, user),
+    },
+    {
+      title: t('Models'),
+      icon: Box,
+      items: getModelsSectionNavItems(t, user),
+    },
+    {
+      title: t('Request policies'),
+      icon: Route,
+      items: getPolicySectionNavItems(t, user),
+    },
+    {
+      title: t('Security & Limits'),
+      icon: ShieldAlert,
+      items: getSecuritySectionNavItems(t, user),
+    },
+    {
+      title: t('Console Content'),
+      icon: Layout,
+      items: getContentSectionNavItems(t, user),
+    },
+    {
+      title: t('Operations'),
+      icon: Wrench,
+      items: getOperationsSectionNavItems(t, user),
+    },
+  ]
   return [
     {
       id: 'system-administration',
       title: t('System Administration'),
-      items: [
-        {
-          title: t('Site & Branding'),
-          icon: Settings,
-          items: getSiteSectionNavItems(t),
-        },
-        {
-          title: t('Authentication'),
-          icon: Shield,
-          items: getAuthSectionNavItems(t),
-        },
-        {
-          title: t('Billing & Payment'),
-          icon: CreditCard,
-          items: getBillingSectionNavItems(t),
-        },
-        {
-          title: t('Models'),
-          icon: Box,
-          items: getModelsSectionNavItems(t),
-        },
-        {
-          title: t('Request policies'),
-          icon: Route,
-          items: getPolicySectionNavItems(t),
-        },
-        {
-          title: t('Security & Limits'),
-          icon: ShieldAlert,
-          items: getSecuritySectionNavItems(t),
-        },
-        {
-          title: t('Console Content'),
-          icon: Layout,
-          items: getContentSectionNavItems(t),
-        },
-        {
-          title: t('Operations'),
-          icon: Wrench,
-          items: getOperationsSectionNavItems(t),
-        },
-      ],
+      items: categories.filter((category) => category.items.length > 0),
     },
   ]
 }

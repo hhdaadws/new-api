@@ -22,7 +22,10 @@ import { OperationsSettings } from '@/features/system-settings/operations'
 import {
   OPERATIONS_DEFAULT_SECTION,
   OPERATIONS_SECTION_IDS,
+  getOperationsSectionMeta,
 } from '@/features/system-settings/operations/section-registry.tsx'
+import { isSettingsSectionAvailable } from '@/features/system-settings/utils/section-registry'
+import { useAuthStore } from '@/stores/auth-store'
 
 export const Route = createFileRoute(
   '/_authenticated/system-settings/operations/$section'
@@ -36,8 +39,15 @@ export const Route = createFileRoute(
       })
     }
 
-    const validSections = OPERATIONS_SECTION_IDS as unknown as string[]
-    if (!validSections.includes(params.section)) {
+    const user = useAuthStore.getState().auth.user
+    if (
+      !isSettingsSectionAvailable(
+        OPERATIONS_SECTION_IDS,
+        getOperationsSectionMeta,
+        params.section,
+        user
+      )
+    ) {
       throw redirect({
         to: '/system-settings/operations/$section',
         params: { section: OPERATIONS_DEFAULT_SECTION },

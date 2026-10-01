@@ -189,6 +189,7 @@ const (
 	MsgChannelNoValidUpstream    = "channel.no_valid_upstream"
 	MsgChannelUpstreamSaturated  = "channel.upstream_saturated"
 	MsgChannelGetAvailableFailed = "channel.get_available_failed"
+	MsgChannelAliasFallback      = "channel.alias_fallback"
 )
 
 // Model related messages

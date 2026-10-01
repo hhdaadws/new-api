@@ -36,7 +36,7 @@ func TestInitSeedsBuiltInRolesAndPoliciesOnce(t *testing.T) {
 	// root is a superuser role and is granted everything implicitly, so only the
 	// admin baseline is written as explicit policy rows.
 	var count int64
-	require.NoError(t, db.Model(&model.CasbinRule{}).Count(&count).Error)
+	require.NoError(t, db.Model(&model.CasbinRule{}).Where("ptype = ?", "p").Count(&count).Error)
 	assert.Equal(t, int64(len(PermissionsForRole(BuiltInRoleAdmin))), count)
 
 	var roles []model.AuthzRole
@@ -116,6 +116,9 @@ func TestLegacyScopedPoliciesDoNotExpandPermissions(t *testing.T) {
 					assert.False(t, Can(userID, common.RoleAdminUser, ChannelRead))
 				}
 				assert.False(t, Can(51, common.RoleAdminUser, ChannelOperate), "reseed must not erase a scoped role restriction")
+				if master {
+					assert.False(t, Can(51, common.RoleAdminUser, ChannelTest), "a restricted operate grant must not turn into an open test grant")
+				}
 				assert.True(t, Can(50, common.RoleAdminUser, ChannelSensitiveWrite))
 				assert.False(t, Can(99, common.RoleCommonUser, ChannelRead))
 				var stored []model.CasbinRule
@@ -153,11 +156,16 @@ func TestSetUserPermissionsStoresOnlyOverrides(t *testing.T) {
 			ActionWrite:          false,
 			ActionSensitiveWrite: true,
 			ActionSecretView:     false,
+			ActionTest:           true,
+			ActionNameView:       true,
+			ActionBaseURLView:    true,
 		},
 		ResourceTaskPlugin: {
 			ActionBind: false,
 		},
-		ResourceAudit: {ActionRead: false},
+		ResourceAudit:          {ActionRead: false},
+		ResourceUserManagement: {ActionRead: true, ActionWrite: true},
+		ResourceSystemSetting:  {ActionRead: false, ActionWrite: false},
 	}, ExplicitUserPermissions(42))
 	assert.Equal(t, PermissionsMap{
 		ResourceChannel: {
@@ -185,11 +193,16 @@ func TestSetUserPermissionsStoresOnlyOverrides(t *testing.T) {
 			ActionWrite:          true,
 			ActionSensitiveWrite: false,
 			ActionSecretView:     false,
+			ActionTest:           true,
+			ActionNameView:       true,
+			ActionBaseURLView:    true,
 		},
 		ResourceTaskPlugin: {
 			ActionBind: false,
 		},
-		ResourceAudit: {ActionRead: false},
+		ResourceAudit:          {ActionRead: false},
+		ResourceUserManagement: {ActionRead: true, ActionWrite: true},
+		ResourceSystemSetting:  {ActionRead: false, ActionWrite: false},
 	}, ExplicitUserPermissions(42))
 	assert.Empty(t, ExplicitUserOverrides(42))
 }
@@ -319,4 +332,23 @@ func TestTaskPluginBindIsRootOnlyUntilGranted(t *testing.T) {
 	_, err = enforcer.RemovePolicy(RoleSubject(BuiltInRoleAdmin), ResourceTaskPlugin, ActionBind, EffectAllow)
 	require.NoError(t, err)
 	assert.False(t, Can(2, common.RoleAdminUser, TaskPluginBind))
+}
+
+func TestChannelTestInheritsOperateDenialOnce(t *testing.T) {
+	db := newAuthzTestDB(t)
+	// An upgraded database: operate was denied before channel tests became a
+	// separate action.
+	require.NoError(t, db.Create(&model.CasbinRule{Ptype: "p", V0: UserSubject(42), V1: ResourceChannel, V2: ActionOperate, V3: EffectDeny}).Error)
+
+	for range 2 {
+		require.NoError(t, Init(db))
+		assert.False(t, Can(42, common.RoleAdminUser, ChannelTest))
+		assert.True(t, Can(43, common.RoleAdminUser, ChannelTest), "admins keep channel tests by default")
+	}
+	// Allowing tests again matches the admin baseline, so no test rule is
+	// stored; the next start must not deny it a second time.
+	require.NoError(t, SetUserPermissions(42, PermissionsMap{ResourceChannel: {ActionOperate: false, ActionTest: true}}))
+	require.NoError(t, Init(db))
+	assert.True(t, Can(42, common.RoleAdminUser, ChannelTest))
+	assert.False(t, Can(42, common.RoleAdminUser, ChannelOperate))
 }

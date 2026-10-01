@@ -22,14 +22,24 @@ import { BillingSettings } from '@/features/system-settings/billing'
 import {
   BILLING_DEFAULT_SECTION,
   BILLING_SECTION_IDS,
+  getBillingSectionMeta,
 } from '@/features/system-settings/billing/section-registry.tsx'
+import { isSettingsSectionAvailable } from '@/features/system-settings/utils/section-registry'
+import { useAuthStore } from '@/stores/auth-store'
 
 export const Route = createFileRoute(
   '/_authenticated/system-settings/billing/$section'
 )({
   beforeLoad: ({ params }) => {
-    const validSections = BILLING_SECTION_IDS as unknown as string[]
-    if (!validSections.includes(params.section)) {
+    const user = useAuthStore.getState().auth.user
+    if (
+      !isSettingsSectionAvailable(
+        BILLING_SECTION_IDS,
+        getBillingSectionMeta,
+        params.section,
+        user
+      )
+    ) {
       throw redirect({
         to: '/system-settings/billing/$section',
         params: { section: BILLING_DEFAULT_SECTION },

@@ -35,6 +35,9 @@ func DecideRelayRetry(c *gin.Context, err *types.NewAPIError, retryTimes int) Po
 	if types.IsChannelError(err) {
 		return PolicyDecision{Action: "retry", Reason: "channel_error", Source: "system"}
 	}
+	if !operation_setting.GetUpstreamErrorInterceptionSetting().RetryOnMatch && MatchUpstreamErrorKeyword(err) {
+		return PolicyDecision{Action: "stop", Reason: "upstream_error_keyword", Source: "global"}
+	}
 	if types.IsSkipRetryError(err) {
 		return PolicyDecision{Action: "stop", Reason: "non_retryable_error", Source: "system"}
 	}
@@ -83,9 +86,21 @@ func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		if c.Request != nil && c.Request.URL != nil {
 			other.SetPublic("request_path", c.Request.URL.Path)
 		}
-		other.SetPublic("error_type", err.GetErrorType())
-		other.SetPublic("error_code", err.GetErrorCode())
-		other.SetPublic("status_code", err.StatusCode)
+		// Users can read their own error logs, so an intercepted upstream error
+		// is logged as the client saw it and the original stays admin-only.
+		logErr := err
+		if intercepted := InterceptUpstreamError(err); intercepted != nil {
+			logErr = intercepted
+			other.SetAdmin("upstream_error", map[string]any{
+				"error_type":  err.GetErrorType(),
+				"error_code":  err.GetErrorCode(),
+				"status_code": err.StatusCode,
+				"message":     err.MaskSensitiveError(),
+			})
+		}
+		other.SetPublic("error_type", logErr.GetErrorType())
+		other.SetPublic("error_code", logErr.GetErrorCode())
+		other.SetPublic("status_code", logErr.StatusCode)
 		AppendRelayLogAdminInfo(c, relayInfo, other)
 		AppendResponseModelLogInfo(relayInfo, other)
 		AppendTaskPluginContextAuditInfo(c, other)
@@ -94,6 +109,6 @@ func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			startTime = time.Now()
 		}
 		useTimeSeconds := int(time.Since(startTime).Seconds())
-		model.RecordErrorLog(c, userId, channelError.ChannelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
+		model.RecordErrorLog(c, userId, channelError.ChannelId, modelName, tokenName, logErr.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
 	}
 }

@@ -874,6 +874,9 @@ func buildResponsesWSErrorPayload(eventID, streamID string, apiErr *types.NewAPI
 	if apiErr == nil {
 		return nil, errors.New("api error is nil")
 	}
+	if intercepted := service.InterceptUpstreamError(apiErr); intercepted != nil {
+		apiErr = intercepted
+	}
 	status := apiErr.StatusCode
 	if status == 0 {
 		status = http.StatusInternalServerError

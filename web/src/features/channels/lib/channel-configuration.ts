@@ -95,7 +95,7 @@ const CONFIGURATION_BLOCKS = {
       'upstream_model_update_ignored_models',
     ],
   },
-  internalNotes: { section: 'other', fields: ['tag', 'remark'] },
+  internalNotes: { section: 'other', fields: ['tag', 'remark', 'alias'] },
 } as const satisfies Record<
   string,
   {
@@ -184,7 +184,9 @@ export function getChannelConfigurationState(
         values.upstream_model_update_auto_sync_enabled ||
         values.upstream_model_update_ignored_models?.trim()
       ),
-    internalNotes: Boolean(values.tag?.trim() || values.remark?.trim()),
+    internalNotes: Boolean(
+      values.tag?.trim() || values.remark?.trim() || values.alias?.trim()
+    ),
   }
   const blocks = {} as Record<
     ChannelConfigurationBlock,

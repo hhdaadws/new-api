@@ -16,6 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import {
+  ADMIN_PERMISSION_ACTIONS,
+  ADMIN_PERMISSION_RESOURCES,
+  hasPermission,
+} from '@/lib/admin-permissions'
+import { useAuthStore } from '@/stores/auth-store'
+
 import { CHANNEL_TYPE_VLLM, CHANNEL_TYPE_SGLANG } from '../constants'
 import { useChannels } from './channels-provider'
 import { BalanceQueryDialog } from './dialogs/balance-query-dialog'
@@ -32,6 +39,13 @@ import { ChannelMutateDrawer } from './drawers/channel-mutate-drawer'
 
 export function ChannelsDialogs() {
   const { open, setOpen, currentRow, upstream } = useChannels()
+  const canTest = useAuthStore((state) =>
+    hasPermission(
+      state.auth.user,
+      ADMIN_PERMISSION_RESOURCES.CHANNEL,
+      ADMIN_PERMISSION_ACTIONS.TEST
+    )
+  )
 
   return (
     <>
@@ -58,10 +72,12 @@ export function ChannelsDialogs() {
       />
 
       {/* Test Channel Dialog */}
-      <ChannelTestDialog
-        open={open === 'test-channel'}
-        onOpenChange={(v) => !v && setOpen(null)}
-      />
+      {canTest && (
+        <ChannelTestDialog
+          open={open === 'test-channel'}
+          onOpenChange={(v) => !v && setOpen(null)}
+        />
+      )}
 
       {/* Balance Query Dialog */}
       <BalanceQueryDialog

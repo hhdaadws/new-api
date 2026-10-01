@@ -44,6 +44,7 @@ const SECURITY_SECTIONS = [
   {
     id: 'ssrf',
     titleKey: 'SSRF Protection',
+    rootOnly: true,
     build: (settings: SecuritySettings) => (
       <SSRFSection
         defaultValues={{

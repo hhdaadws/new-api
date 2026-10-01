@@ -28,6 +28,7 @@ const (
 )
 
 type BoundChannel struct {
+	Id   int    `json:"-"`
 	Name string `json:"name"`
 	Type int    `json:"type"`
 }

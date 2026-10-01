@@ -4,11 +4,15 @@ import "slices"
 
 // ActionDefinition describes a single action exposed by a resource. DefaultRoles
 // lists the role keys that receive this action as part of their baseline grants.
+// NotTokenScope marks actions that are never offered as access token scopes:
+// display-only permissions that guard no route, and permissions layered on
+// routes that keep their existing static token scope.
 type ActionDefinition struct {
 	Action         string   `json:"action"`
 	LabelKey       string   `json:"label_key"`
 	DescriptionKey string   `json:"description_key"`
 	DefaultRoles   []string `json:"-"`
+	NotTokenScope  bool     `json:"-"`
 }
 
 // ResourceDefinition describes a resource and the actions it exposes.

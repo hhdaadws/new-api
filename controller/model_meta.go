@@ -55,6 +55,10 @@ func listModelsMeta(c *gin.Context, keyword, vendor string) {
 		common.ApiError(c, err)
 		return
 	}
+	if err := channelViewPolicyOf(c).redactBoundChannels(c, modelsMeta); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	if squareState != "" {
 		filtered := make([]*model.Model, 0, len(modelsMeta))
 		for _, metadata := range modelsMeta {
@@ -97,6 +101,10 @@ func GetModelMeta(c *gin.Context) {
 		return
 	}
 	if err := enrichModels([]*model.Model{&m}); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := channelViewPolicyOf(c).redactBoundChannels(c, []*model.Model{&m}); err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -290,7 +298,7 @@ func enrichModels(models []*model.Model) error {
 			}
 			names[name] = true
 			groups[connection.Group] = true
-			channels[connection.ChannelId] = model.BoundChannel{Name: connection.ChannelName, Type: connection.ChannelType}
+			channels[connection.ChannelId] = model.BoundChannel{Id: connection.ChannelId, Name: connection.ChannelName, Type: connection.ChannelType}
 			for _, endpoint := range model.GetModelSupportEndpointTypes(name) {
 				endpoints[string(endpoint)] = true
 			}

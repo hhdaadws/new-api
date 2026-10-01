@@ -237,6 +237,10 @@ export const channelFormSchema = z
       .string()
       .max(255, 'Remark must be less than 255 characters')
       .optional(),
+    alias: z
+      .string()
+      .max(255, 'Alias must be less than 255 characters')
+      .optional(),
     setting: z
       .string()
       .optional()
@@ -255,6 +259,9 @@ export const channelFormSchema = z
       .refine(isOptionalJsonObject, ERROR_MESSAGES.INVALID_JSON),
     advanced_custom: z.string().optional(),
     other: z.string().optional(),
+    // Set when the current administrator cannot view the stored base URL; an
+    // empty submission then keeps the stored value (not sent to backend).
+    base_url_hidden: z.boolean().optional(),
     // Multi-key options (not sent to backend directly)
     multi_key_mode: z.enum(['single', 'batch', 'multi_to_single']).optional(),
     multi_key_type: z.enum(['random', 'polling']).optional(),
@@ -305,6 +312,7 @@ export const channelFormSchema = z
         CHANNEL_TYPE_VLLM,
         CHANNEL_TYPE_SGLANG,
       ].includes(data.type) &&
+      !data.base_url_hidden &&
       !data.base_url?.trim()
     ) {
       addRequiredIssue(
@@ -331,6 +339,7 @@ export const channelFormSchema = z
       }
       if (
         advancedCustomConfigUsesRelativeUpstreamPath(advancedCustomConfig) &&
+        !data.base_url_hidden &&
         !data.base_url?.trim()
       ) {
         addRequiredIssue(
@@ -445,6 +454,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   status_code_mapping: '',
   tag: '',
   remark: '',
+  alias: '',
   setting: '',
   param_override: '',
   header_override: '',
@@ -607,6 +617,7 @@ export function transformChannelToFormDefaults(
     status_code_mapping: channel.status_code_mapping || '',
     tag: channel.tag || '',
     remark: channel.remark || '',
+    alias: channel.alias || '',
     setting: channel.setting || '',
     param_override: channel.param_override || '',
     header_override: channel.header_override || '',
@@ -832,10 +843,21 @@ function normalizeBaseUrl(value: string | undefined): string {
     .replace(/\/+$/, '')
 }
 
+export type ChannelPayloadOptions = {
+  /**
+   * Only the super admin may set an alias; the backend rejects alias changes
+   * from other administrators, so the key is omitted unless this is true.
+   */
+  includeAlias?: boolean
+}
+
 /**
  * Transform form data to API payload for creating channel
  */
-export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
+export function transformFormDataToCreatePayload(
+  formData: ChannelFormValues,
+  options?: ChannelPayloadOptions
+): {
   mode: 'single' | 'batch' | 'multi_to_single'
   multi_key_mode?: 'random' | 'polling'
   batch_add_set_key_prefix_2_name?: boolean
@@ -866,6 +888,9 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
     settings: buildSettingsJSON(formData),
     other: formData.other || '',
   }
+  if (options?.includeAlias) {
+    channel.alias = formData.alias?.trim() || null
+  }
 
   // Clean up empty strings to null for optional fields
   Object.keys(channel).forEach((key) => {
@@ -889,7 +914,8 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
  */
 export function transformFormDataToUpdatePayload(
   formData: ChannelFormValues,
-  channelId: number
+  channelId: number,
+  options?: ChannelPayloadOptions
 ): Partial<Channel> {
   const payload: Partial<Channel> = {
     id: channelId,
@@ -936,6 +962,9 @@ export function transformFormDataToUpdatePayload(
   payload.status_code_mapping = formData.status_code_mapping || ''
   payload.param_override = formData.param_override || ''
   payload.header_override = formData.header_override || ''
+  if (options?.includeAlias) {
+    payload.alias = formData.alias?.trim() || ''
+  }
 
   return payload
 }

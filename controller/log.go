@@ -32,6 +32,22 @@ func GetAllLogs(c *gin.Context) {
 	} else {
 		model.FormatRootLogs(logs)
 	}
+	if viewPolicy := channelViewPolicyOf(c); !viewPolicy.RealName {
+		ids := make([]int, 0, len(logs))
+		for _, log := range logs {
+			if log.ChannelId != 0 {
+				ids = append(ids, log.ChannelId)
+			}
+		}
+		names, err := viewPolicy.displayNames(c, ids)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		for _, log := range logs {
+			log.ChannelName = names[log.ChannelId]
+		}
+	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(logs)
 	common.ApiSuccess(c, pageInfo)

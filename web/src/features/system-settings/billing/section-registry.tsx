@@ -131,6 +131,7 @@ const BILLING_SECTIONS = [
   {
     id: 'payment',
     titleKey: 'Payment Gateway',
+    rootOnly: true,
     build: (settings: BillingSettings) => (
       <PaymentSettingsSection
         defaultValues={{

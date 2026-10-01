@@ -843,6 +843,26 @@ export function DetailsDialog(props: DetailsDialogProps) {
           </DetailSection>
         )}
 
+        {/* Original upstream error replaced by interception (admin only) */}
+        {props.isAdmin && adminInfo?.upstream_error && (
+          <DetailSection
+            icon={<AlertTriangle className='size-3.5' aria-hidden='true' />}
+            label={t('Original Upstream Error')}
+            variant='danger'
+          >
+            {adminInfo.upstream_error.status_code !== undefined && (
+              <DetailRow
+                label={t('Status Code')}
+                value={String(adminInfo.upstream_error.status_code)}
+                mono
+              />
+            )}
+            <p className='text-xs wrap-break-word'>
+              {adminInfo.upstream_error.message}
+            </p>
+          </DetailSection>
+        )}
+
         {/* Violation fee info */}
         {isViolation && other && (
           <DetailSection

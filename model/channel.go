@@ -50,6 +50,9 @@ type Channel struct {
 	ParamOverride     *string `json:"param_override" gorm:"type:text"`
 	HeaderOverride    *string `json:"header_override" gorm:"type:text"`
 	Remark            *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	// Alias is set by root and shown in place of Name to administrators who
+	// lack the channel.name_view permission.
+	Alias *string `json:"alias" gorm:"type:varchar(255)" validate:"max=255"`
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
@@ -393,20 +396,39 @@ func GetChannelsByTag(tag string, idSort bool, selectAll bool, sortOptions ...Ch
 	return channels, err
 }
 
-func SearchChannels(keyword string, group string, model string, idSort bool, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
-	var channels []*Channel
+// ChannelHiddenFields names the channel fields the caller may not see. Keyword
+// search must not match on them, otherwise results would reveal their values.
+type ChannelHiddenFields struct {
+	Name    bool
+	BaseURL bool
+}
+
+// channelKeywordCondition builds the keyword/model WHERE clause shared by
+// channel and tag search. A hidden name is searched by alias instead.
+func channelKeywordCondition(keyword string, model string, hidden ChannelHiddenFields) (string, []any) {
 	modelsCol := "`models`"
-
-	// 如果是 PostgreSQL，使用双引号
-	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
-		modelsCol = `"models"`
-	}
-
 	baseURLCol := "`base_url`"
 	// 如果是 PostgreSQL，使用双引号
 	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
+		modelsCol = `"models"`
 		baseURLCol = `"base_url"`
 	}
+
+	nameCol := "name"
+	if hidden.Name {
+		nameCol = "alias"
+	}
+	conditions := "id = ? OR " + nameCol + " LIKE ? OR " + commonKeyCol + " = ?"
+	args := []any{common.String2Int(keyword), "%" + keyword + "%", keyword}
+	if !hidden.BaseURL {
+		conditions += " OR " + baseURLCol + " LIKE ?"
+		args = append(args, "%"+keyword+"%")
+	}
+	return "(" + conditions + ") AND " + modelsCol + " LIKE ?", append(args, "%"+model+"%")
+}
+
+func SearchChannels(keyword string, group string, model string, idSort bool, hidden ChannelHiddenFields, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
+	var channels []*Channel
 
 	order := resolveChannelSortOptions(idSort, sortOptions)
 
@@ -414,8 +436,7 @@ func SearchChannels(keyword string, group string, model string, idSort bool, sor
 	baseQuery := DB.Model(&Channel{}).Omit("key")
 
 	// 构造WHERE子句
-	whereClause := "(id = ? OR name LIKE ? OR " + commonKeyCol + " = ? OR " + baseURLCol + " LIKE ?) AND " + modelsCol + " LIKE ?"
-	args := []any{common.String2Int(keyword), "%" + keyword + "%", keyword, "%" + keyword + "%", "%" + model + "%"}
+	whereClause, args := channelKeywordCondition(keyword, model, hidden)
 	baseQuery = ApplyChannelGroupFilter(baseQuery.Where(whereClause, args...), group)
 
 	// 执行查询
@@ -944,20 +965,8 @@ func GetPaginatedChannelTags(query *gorm.DB, offset int, limit int) ([]*string, 
 	return tags, err
 }
 
-func SearchTags(keyword string, group string, model string, idSort bool) ([]*string, error) {
+func SearchTags(keyword string, group string, model string, idSort bool, hidden ChannelHiddenFields) ([]*string, error) {
 	var tags []*string
-	modelsCol := "`models`"
-
-	// 如果是 PostgreSQL，使用双引号
-	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
-		modelsCol = `"models"`
-	}
-
-	baseURLCol := "`base_url`"
-	// 如果是 PostgreSQL，使用双引号
-	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
-		baseURLCol = `"base_url"`
-	}
 
 	order := "priority desc"
 	if idSort {
@@ -968,8 +977,7 @@ func SearchTags(keyword string, group string, model string, idSort bool) ([]*str
 	baseQuery := DB.Model(&Channel{}).Omit("key")
 
 	// 构造WHERE子句
-	whereClause := "(id = ? OR name LIKE ? OR " + commonKeyCol + " = ? OR " + baseURLCol + " LIKE ?) AND " + modelsCol + " LIKE ?"
-	args := []any{common.String2Int(keyword), "%" + keyword + "%", keyword, "%" + keyword + "%", "%" + model + "%"}
+	whereClause, args := channelKeywordCondition(keyword, model, hidden)
 	baseQuery = ApplyChannelGroupFilter(baseQuery.Where(whereClause, args...), group)
 
 	subQuery := baseQuery.
@@ -1193,4 +1201,31 @@ func CountChannelsGroupByType() (map[int64]int64, error) {
 		counts[r.Type] = r.Count
 	}
 	return counts, nil
+}
+
+// GetChannelAliases returns the non-empty aliases of the given channels, keyed
+// by channel id.
+func GetChannelAliases(ids []int) (map[int]string, error) {
+	aliases := make(map[int]string, len(ids))
+	if len(ids) == 0 {
+		return aliases, nil
+	}
+	if common.MemoryCacheEnabled {
+		for _, id := range ids {
+			if channel, err := CacheGetChannel(id); err == nil && channel.Alias != nil && *channel.Alias != "" {
+				aliases[id] = *channel.Alias
+			}
+		}
+		return aliases, nil
+	}
+	var channels []Channel
+	if err := DB.Model(&Channel{}).Select("id", "alias").Where("id IN ?", ids).Find(&channels).Error; err != nil {
+		return nil, err
+	}
+	for _, channel := range channels {
+		if channel.Alias != nil && *channel.Alias != "" {
+			aliases[channel.Id] = *channel.Alias
+		}
+	}
+	return aliases, nil
 }

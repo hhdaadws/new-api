@@ -1,0 +1,129 @@
+name: Publish Docker image (alpha branch)
+
+on:
+  push:
+    branches:
+      - alpha
+  workflow_dispatch:
+
+concurrency:
+  group: docker-image-alpha
+  cancel-in-progress: true
+
+env:
+  IMAGE: miku66/newapi
+
+jobs:
+  prepare:
+    name: Prepare Docker tags
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.version.outputs.sha }}
+      version: ${{ steps.version.outputs.version }}
+    permissions:
+      contents: read
+    steps:
+      - name: Check out alpha
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          ref: alpha
+
+      - name: Resolve Docker tags
+        id: version
+        run: |
+          SHA=$(git rev-parse HEAD)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION="alpha-$(date +'%Y%m%d')-${SHORT_SHA}"
+
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Prepared Docker tags for alpha at $SHORT_SHA"
+
+  build_single_arch:
+    name: Build & push (${{ matrix.arch }}) [native]
+    needs: [prepare]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - name: Check out alpha
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - name: Write VERSION
+        run: |
+          echo "${{ needs.prepare.outputs.version }}" > VERSION
+          echo "Publishing version: ${{ needs.prepare.outputs.version }} for ${{ matrix.arch }}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata (labels)
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: |
+            ${{ env.IMAGE }}
+
+      - name: Build & push single-arch
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:alpha-${{ matrix.arch }}
+            ${{ env.IMAGE }}:${{ needs.prepare.outputs.version }}-${{ matrix.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=alpha-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=alpha-${{ matrix.arch }}
+
+  create_manifests:
+    name: Create multi-arch manifests (Docker Hub)
+    needs: [prepare, build_single_arch]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Log in to Docker Hub
+        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create & push manifests
+        run: |
+          for tag in alpha "${{ needs.prepare.outputs.version }}"; do
+            docker buildx imagetools create \
+              -t "$IMAGE:$tag" \
+              "$IMAGE:$tag-amd64" \
+              "$IMAGE:$tag-arm64"
+          done
+
+      - name: Output manifest digest
+        run: |
+          echo "### Multi-arch Manifest Digests" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          docker buildx imagetools inspect "$IMAGE:alpha" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          docker buildx imagetools inspect "$IMAGE:${{ needs.prepare.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

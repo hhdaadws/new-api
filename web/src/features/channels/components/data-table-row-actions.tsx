@@ -94,6 +94,11 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
     ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
   )
+  const canTest = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.TEST
+  )
 
   const handleEdit = () => {
     setCurrentRow(channel)
@@ -184,28 +189,30 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         </Tooltip>
       )}
 
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant='ghost'
-              size='icon-sm'
-              onClick={handleDirectTest}
-              disabled={isTesting}
-              aria-label={t('Test Connection')}
-            />
-          }
-        >
-          {isTesting ? (
-            <Loader2 className='size-4 animate-spin' />
-          ) : (
-            <Gauge className='size-4' />
-          )}
-        </TooltipTrigger>
-        <TooltipContent>{t('Test Connection')}</TooltipContent>
-      </Tooltip>
+      {canTest && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant='ghost'
+                size='icon-sm'
+                onClick={handleDirectTest}
+                disabled={isTesting}
+                aria-label={t('Test Connection')}
+              />
+            }
+          >
+            {isTesting ? (
+              <Loader2 className='size-4 animate-spin' />
+            ) : (
+              <Gauge className='size-4' />
+            )}
+          </TooltipTrigger>
+          <TooltipContent>{t('Test Connection')}</TooltipContent>
+        </Tooltip>
+      )}
 
-      {layout === 'card' && (
+      {canTest && layout === 'card' && (
         <Tooltip>
           <TooltipTrigger
             render={
@@ -273,12 +280,14 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           )}
 
           {/* Test Connection */}
-          <DropdownMenuItem onClick={handleTest}>
-            {t('Test Connection')}
-            <DropdownMenuShortcut>
-              <PlugZap size={16} />
-            </DropdownMenuShortcut>
-          </DropdownMenuItem>
+          {canTest && (
+            <DropdownMenuItem onClick={handleTest}>
+              {t('Test Connection')}
+              <DropdownMenuShortcut>
+                <PlugZap size={16} />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+          )}
 
           {/* Query Balance */}
           <DropdownMenuItem onClick={handleQueryBalance}>

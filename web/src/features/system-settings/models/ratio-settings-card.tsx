@@ -37,6 +37,8 @@ import {
 } from '@/features/model-pricing/api'
 import { pricingOptions } from '@/features/model-pricing/pricing'
 import { handleServerError } from '@/lib/handle-server-error'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { SettingsPageTitleStatusPortal } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
@@ -169,9 +171,21 @@ export function RatioSettingsCard({
   groupDefaults,
   toolPricesDefault,
   titleKey = 'Pricing Ratios',
-  visibleTabs = ['models', 'groups', 'tool-prices', 'upstream-sync'],
+  visibleTabs: requestedTabs = [
+    'models',
+    'groups',
+    'tool-prices',
+    'upstream-sync',
+  ],
 }: RatioSettingsCardProps) {
   const { t } = useTranslation()
+  const isSuperAdmin = useAuthStore(
+    (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
+  )
+  // Upstream price sync relies on super-admin-only endpoints.
+  const visibleTabs = isSuperAdmin
+    ? requestedTabs
+    : requestedTabs.filter((tab) => tab !== 'upstream-sync')
   const updateOption = useUpdateOption()
   const [confirmOpen, setConfirmOpen] = useState(false)
 

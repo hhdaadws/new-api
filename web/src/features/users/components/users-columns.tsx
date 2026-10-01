@@ -42,6 +42,7 @@ import {
   USER_ROLES,
   isUserDeleted,
 } from '../constants'
+import { useCanManageUsers } from '../hooks/use-can-manage-users'
 import type { User } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
 import { UserQuotaCell } from './user-quota-cell'
@@ -51,8 +52,9 @@ export function useUsersColumns(): ColumnDef<User>[] {
   const currencyConfig = useSystemConfigStore((state) => state.config.currency)
   const { meta: currency } = getCurrencyDisplay()
   const quotaUnit = currency.kind === 'tokens' ? t('Tokens') : currency.symbol
-  return useMemo<ColumnDef<User>[]>(
-    () => [
+  const canManageUsers = useCanManageUsers()
+  return useMemo<ColumnDef<User>[]>(() => {
+    const columns: ColumnDef<User>[] = [
       {
         id: 'select',
         header: ({ table }) => (
@@ -289,15 +291,18 @@ export function useUsersColumns(): ColumnDef<User>[] {
         minSize: 240,
         meta: { mobileHidden: true },
       },
-      {
+    ]
+    // Every row action changes the user, so read-only admins get no column.
+    if (canManageUsers) {
+      columns.push({
         id: 'actions',
         header: () => t('Actions'),
         cell: ({ row }) => <DataTableRowActions row={row} />,
         meta: { pinned: 'right' as const },
-      },
-    ],
+      })
+    }
+    return columns
     // formatQuota reads the currency configuration from the store.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t, quotaUnit, currencyConfig]
-  )
+  }, [t, quotaUnit, currencyConfig, canManageUsers])
 }

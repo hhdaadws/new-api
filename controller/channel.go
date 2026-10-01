@@ -24,6 +24,7 @@ import (
 	"github.com/QuantumNous/new-api/service/authz"
 
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 	"gorm.io/gorm"
 )
 
@@ -193,7 +194,8 @@ func GetAllChannels(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	channelData := make([]*model.Channel, 0)
 	idSort, _ := strconv.ParseBool(c.Query("id_sort"))
-	sortOptions := model.NewChannelSortOptions(c.Query("sort_by"), c.Query("sort_order"), idSort)
+	viewPolicy := channelViewPolicyOf(c)
+	sortOptions := model.NewChannelSortOptions(viewPolicy.sortBy(c.Query("sort_by")), c.Query("sort_order"), idSort)
 	enableTagMode, _ := strconv.ParseBool(c.Query("tag_mode"))
 	groupFilter := model.NormalizeChannelGroupFilter(c.Query("group"))
 	statusParam := c.Query("status")
@@ -259,6 +261,7 @@ func GetAllChannels(c *gin.Context) {
 
 	for _, datum := range channelData {
 		clearChannelInfo(datum)
+		viewPolicy.redact(c, datum)
 	}
 
 	countQuery := buildChannelListQuery(groupFilter, statusFilter, -1)
@@ -371,11 +374,12 @@ func SearchChannels(c *gin.Context) {
 	statusParam := c.Query("status")
 	statusFilter := parseStatusFilter(statusParam)
 	idSort, _ := strconv.ParseBool(c.Query("id_sort"))
-	sortOptions := model.NewChannelSortOptions(c.Query("sort_by"), c.Query("sort_order"), idSort)
+	viewPolicy := channelViewPolicyOf(c)
+	sortOptions := model.NewChannelSortOptions(viewPolicy.sortBy(c.Query("sort_by")), c.Query("sort_order"), idSort)
 	enableTagMode, _ := strconv.ParseBool(c.Query("tag_mode"))
 	channelData := make([]*model.Channel, 0)
 	if enableTagMode {
-		tags, err := model.SearchTags(keyword, group, modelKeyword, idSort)
+		tags, err := model.SearchTags(keyword, group, modelKeyword, idSort, viewPolicy.hiddenFields())
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
@@ -400,7 +404,7 @@ func SearchChannels(c *gin.Context) {
 			}
 		}
 	} else {
-		channels, err := model.SearchChannels(keyword, group, modelKeyword, idSort, sortOptions)
+		channels, err := model.SearchChannels(keyword, group, modelKeyword, idSort, viewPolicy.hiddenFields(), sortOptions)
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
@@ -466,6 +470,7 @@ func SearchChannels(c *gin.Context) {
 
 	for _, datum := range pagedData {
 		clearChannelInfo(datum)
+		viewPolicy.redact(c, datum)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -493,6 +498,7 @@ func GetChannel(c *gin.Context) {
 	}
 	if channel != nil {
 		clearChannelInfo(channel)
+		channelViewPolicyOf(c).redact(c, channel)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -702,7 +708,7 @@ func RefreshCodexChannelCredential(c *gin.Context) {
 			"email":        oauthKey.Email,
 			"channel_id":   ch.Id,
 			"channel_type": ch.Type,
-			"channel_name": ch.Name,
+			"channel_name": channelViewPolicyOf(c).nameOf(c, ch),
 		},
 	})
 }
@@ -1146,19 +1152,40 @@ func UpdateChannel(c *gin.Context) {
 		return
 	}
 
-	baseURLFromPluginDefault := channel.Type == constant.ChannelTypeTaskPlugin &&
-		(channel.BaseURL == nil || strings.TrimSpace(*channel.BaseURL) == "")
-	// 使用统一的校验函数
-	if err := validateChannel(&channel.Channel, false); err != nil {
+	// Preserve existing ChannelInfo to ensure multi-key channels keep correct state even if the client does not send ChannelInfo in the request.
+	originChannel, err := model.GetChannelById(channel.Id, true)
+	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": err.Error(),
 		})
 		return
 	}
-	// Preserve existing ChannelInfo to ensure multi-key channels keep correct state even if the client does not send ChannelInfo in the request.
-	originChannel, err := model.GetChannelById(channel.Id, true)
-	if err != nil {
+
+	// An administrator who cannot see the real name or base URL received
+	// redacted values, so whatever the form sends back for them must not
+	// overwrite the stored ones. A non-empty base URL is still a deliberate
+	// edit, gated by ChannelSensitiveWrite below.
+	viewPolicy := channelViewPolicyOf(c)
+	if !viewPolicy.RealName {
+		channel.Name = originChannel.Name
+	}
+	if !viewPolicy.BaseURL && (channel.BaseURL == nil || strings.TrimSpace(*channel.BaseURL) == "") {
+		channel.BaseURL = originChannel.BaseURL
+		delete(requestData, "base_url")
+	}
+	if c.GetInt("role") < common.RoleRootUser {
+		if _, ok := requestData["alias"]; ok && viewPolicy.RealName && lo.FromPtr(channel.Alias) != lo.FromPtr(originChannel.Alias) {
+			common.ApiErrorI18n(c, i18n.MsgAuthInsufficientPrivilege)
+			return
+		}
+		channel.Alias = nil
+	}
+
+	baseURLFromPluginDefault := channel.Type == constant.ChannelTypeTaskPlugin &&
+		(channel.BaseURL == nil || strings.TrimSpace(*channel.BaseURL) == "")
+	// 使用统一的校验函数
+	if err := validateChannel(&channel.Channel, false); err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": err.Error(),
@@ -1317,6 +1344,7 @@ func UpdateChannel(c *gin.Context) {
 	recordManageAudit(c, "channel.update", updateAudit)
 	channel.Key = ""
 	clearChannelInfo(&channel.Channel)
+	viewPolicy.redact(c, &channel.Channel)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

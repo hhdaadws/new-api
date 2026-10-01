@@ -37,6 +37,14 @@ export type HealthSettings = {
     | 'auto_ban_only'
     | 'passive_recovery'
 }
+export type ErrorInterceptionSettings = {
+  'upstream_error_interception.enabled': boolean
+  /** JSON array of keywords, e.g. `["quota exceeded"]` */
+  'upstream_error_interception.keywords': string
+  'upstream_error_interception.status_code': number
+  'upstream_error_interception.message': string
+  'upstream_error_interception.retry_on_match': boolean
+}
 export type FilteringSettings = Pick<
   SecuritySettings,
   'CheckSensitiveEnabled' | 'CheckSensitiveOnPromptEnabled' | 'SensitiveWords'
@@ -44,6 +52,7 @@ export type FilteringSettings = Pick<
 export type RequestPolicySettings = RetrySettings &
   HealthSettings &
   FilteringSettings &
+  ErrorInterceptionSettings &
   Pick<ChannelAffinitySettings, keyof ChannelAffinitySettings>
 
 export const defaultRequestPolicySettings: RequestPolicySettings = {
@@ -69,4 +78,9 @@ export const defaultRequestPolicySettings: RequestPolicySettings = {
   CheckSensitiveEnabled: false,
   CheckSensitiveOnPromptEnabled: false,
   SensitiveWords: '',
+  'upstream_error_interception.enabled': false,
+  'upstream_error_interception.keywords': '[]',
+  'upstream_error_interception.status_code': 502,
+  'upstream_error_interception.message': 'bad response',
+  'upstream_error_interception.retry_on_match': false,
 }

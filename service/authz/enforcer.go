@@ -57,7 +57,10 @@ func Init(db *gorm.DB) error {
 	if !common.IsMasterNode {
 		return nil
 	}
-	return seedDefaultPolicies()
+	if err := seedDefaultPolicies(); err != nil {
+		return err
+	}
+	return migrateChannelTestOverrides(db)
 }
 
 func currentEnforcer() *casbin.SyncedEnforcer {

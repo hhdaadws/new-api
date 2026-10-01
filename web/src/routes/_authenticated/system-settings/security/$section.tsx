@@ -22,7 +22,10 @@ import { SecuritySettings } from '@/features/system-settings/security'
 import {
   SECURITY_DEFAULT_SECTION,
   SECURITY_SECTION_IDS,
+  getSecuritySectionMeta,
 } from '@/features/system-settings/security/section-registry.tsx'
+import { isSettingsSectionAvailable } from '@/features/system-settings/utils/section-registry'
+import { useAuthStore } from '@/stores/auth-store'
 
 export const Route = createFileRoute(
   '/_authenticated/system-settings/security/$section'
@@ -35,8 +38,15 @@ export const Route = createFileRoute(
         replace: true,
       })
     }
-    const validSections = SECURITY_SECTION_IDS as unknown as string[]
-    if (!validSections.includes(params.section)) {
+    const user = useAuthStore.getState().auth.user
+    if (
+      !isSettingsSectionAvailable(
+        SECURITY_SECTION_IDS,
+        getSecuritySectionMeta,
+        params.section,
+        user
+      )
+    ) {
       throw redirect({
         to: '/system-settings/security/$section',
         params: { section: SECURITY_DEFAULT_SECTION },

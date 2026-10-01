@@ -26,6 +26,7 @@ import {
   hasPermission,
 } from '@/lib/admin-permissions'
 import { handleServerError } from '@/lib/handle-server-error'
+import { ROLE } from '@/lib/roles'
 import { createServerError } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -65,13 +66,17 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
     ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
   )
+  const payloadOptions = {
+    includeAlias: currentUser?.role === ROLE.SUPER_ADMIN,
+  }
 
   return useMutation({
     mutationFn: async (data: ChannelFormValues): Promise<string> => {
       if (props.isEditing && props.currentRow) {
         const payload = transformFormDataToUpdatePayload(
           data,
-          props.currentRow.id
+          props.currentRow.id,
+          payloadOptions
         )
         if (!data.key?.trim()) {
           delete payload.key
@@ -104,7 +109,7 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
         return SUCCESS_MESSAGES.UPDATED
       }
 
-      const payload = transformFormDataToCreatePayload(data)
+      const payload = transformFormDataToCreatePayload(data, payloadOptions)
       const response = await createChannel(payload)
       if (!response.success) {
         throw createServerError(response, t(ERROR_MESSAGES.CREATE_FAILED))

@@ -371,6 +371,53 @@ it('disables channel mutations and tests for a read-only operator', async () => 
   expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled()
 })
 
+it('disables the test action for an operator without channel:test', async () => {
+  useAuthStore.setState({
+    auth: {
+      ...originalAuth,
+      user: {
+        id: 3,
+        username: 'operator',
+        role: ROLE.ADMIN,
+        permissions: {
+          admin_permissions: {
+            channel: { read: true, operate: true, write: true },
+          },
+        },
+      },
+    },
+  })
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: { success: true, data: fixture() },
+  })
+  render(panel())
+  await screen.findByText('served-model')
+  expect(screen.getByRole('button', { name: 'Sync models' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: 'Test Connection' })).toBeDisabled()
+})
+
+it('enables the test action with channel:test alone', async () => {
+  useAuthStore.setState({
+    auth: {
+      ...originalAuth,
+      user: {
+        id: 4,
+        username: 'tester',
+        role: ROLE.ADMIN,
+        permissions: {
+          admin_permissions: { channel: { read: true, test: true } },
+        },
+      },
+    },
+  })
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: { success: true, data: fixture() },
+  })
+  render(panel())
+  await screen.findByText('served-model')
+  expect(screen.getByRole('button', { name: 'Test Connection' })).toBeEnabled()
+})
+
 it('keeps SGLang worker values separate and wraps long labels below them', async () => {
   const data = fixture()
   const workerLabels = {

@@ -22,19 +22,39 @@ import { AuthSettings } from '@/features/system-settings/auth'
 import {
   AUTH_DEFAULT_SECTION,
   AUTH_SECTION_IDS,
+  getAuthSectionMeta,
 } from '@/features/system-settings/auth/section-registry.tsx'
+import { isSettingsSectionAvailable } from '@/features/system-settings/utils/section-registry'
+import { useAuthStore } from '@/stores/auth-store'
 
 export const Route = createFileRoute(
   '/_authenticated/system-settings/auth/$section'
 )({
   beforeLoad: ({ params }) => {
-    const validSections = AUTH_SECTION_IDS as unknown as string[]
-    if (!validSections.includes(params.section)) {
-      throw redirect({
-        to: '/system-settings/auth/$section',
-        params: { section: AUTH_DEFAULT_SECTION },
-      })
+    const user = useAuthStore.getState().auth.user
+    const sectionAvailable = isSettingsSectionAvailable(
+      AUTH_SECTION_IDS,
+      getAuthSectionMeta,
+      params.section,
+      user
+    )
+    if (sectionAvailable) return
+
+    // Every authentication section is root-only, so other admins leave the
+    // category entirely instead of bouncing between unavailable sections.
+    const defaultAvailable = isSettingsSectionAvailable(
+      AUTH_SECTION_IDS,
+      getAuthSectionMeta,
+      AUTH_DEFAULT_SECTION,
+      user
+    )
+    if (!defaultAvailable) {
+      throw redirect({ to: '/system-settings/site' })
     }
+    throw redirect({
+      to: '/system-settings/auth/$section',
+      params: { section: AUTH_DEFAULT_SECTION },
+    })
   },
   component: AuthSettings,
 })

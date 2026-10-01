@@ -736,6 +736,13 @@ export function useChannelsColumns(
                     className='font-medium'
                     maxWidth='max-w-full'
                   />
+                  {sensitiveVisible && channel.alias && (
+                    <TruncatedText
+                      text={channel.alias}
+                      className='text-muted-foreground text-xs'
+                      maxWidth='max-w-[8rem]'
+                    />
+                  )}
                   {isPassThrough && (
                     <TooltipProvider delay={100}>
                       <Tooltip>

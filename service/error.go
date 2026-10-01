@@ -109,6 +109,11 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		} else {
 			logger.LogError(ctx, fmt.Sprintf("bad response status code %d, body: %s", resp.StatusCode, responseBodyPreview))
 			newApiErr.Err = fmt.Errorf("bad response status code %d", resp.StatusCode)
+			// The raw body is not forwarded, so surface the matched keyword to
+			// let upstream error interception act on non-JSON error pages.
+			if keyword := matchUpstreamErrorKeywordText(responseBodyText); keyword != "" {
+				newApiErr.Err = fmt.Errorf("bad response status code %d (matched keyword: %s)", resp.StatusCode, keyword)
+			}
 		}
 		return
 	}

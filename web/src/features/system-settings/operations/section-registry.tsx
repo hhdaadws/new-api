@@ -62,6 +62,7 @@ const OPERATIONS_SECTIONS = [
   {
     id: 'email',
     titleKey: 'SMTP Email',
+    rootOnly: true,
     build: (settings: OperationsSettings) => (
       <EmailSettingsSection
         defaultValues={{
@@ -81,6 +82,7 @@ const OPERATIONS_SECTIONS = [
   {
     id: 'worker',
     titleKey: 'Worker Proxy',
+    rootOnly: true,
     build: (settings: OperationsSettings) => (
       <WorkerSettingsSection
         defaultValues={{
@@ -95,6 +97,7 @@ const OPERATIONS_SECTIONS = [
   {
     id: 'logs',
     titleKey: 'Log Maintenance',
+    rootOnly: true,
     build: (settings: OperationsSettings) => (
       <LogSettingsSection
         defaultEnabled={Boolean(settings.LogConsumeEnabled)}
@@ -104,6 +107,7 @@ const OPERATIONS_SECTIONS = [
   {
     id: 'performance',
     titleKey: 'Performance',
+    rootOnly: true,
     build: (settings: OperationsSettings) => (
       <PerformanceSection
         defaultValues={{

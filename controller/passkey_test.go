@@ -92,6 +92,8 @@ func passkeyDomainRequest(t *testing.T, path string, payload any, identity servi
 	require.NoError(t, err)
 	return securityEnrollmentRequest(http.MethodPost, path, string(body), "", identity, func(c *gin.Context) {
 		c.Request.Header.Set("Origin", origin)
+		// Passkey domain options are root-only; the auth middleware sets the role.
+		c.Set("role", common.RoleRootUser)
 		handler(c)
 	})
 }

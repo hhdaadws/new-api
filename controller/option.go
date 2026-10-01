@@ -35,6 +35,43 @@ var completionRatioMetaOptionKeys = []string{
 	"AudioCompletionRatio",
 }
 
+// isSecretOptionKey reports options whose values are credentials. They are
+// never returned by GetOptions.
+func isSecretOptionKey(key string) bool {
+	return strings.HasSuffix(key, "Token") ||
+		strings.HasSuffix(key, "Secret") ||
+		strings.HasSuffix(key, "Key") ||
+		strings.HasSuffix(key, "secret") ||
+		strings.HasSuffix(key, "api_key")
+}
+
+var rootOnlyOptionKeys = []string{
+	"PayAddress", "CustomCallbackAddress", "PayMethods",
+	"ServerAddress", "WorkerUrl", "WorkerAllowHttpImageRequestEnabled",
+	"PasswordLoginEnabled", "PasswordRegisterEnabled", "RegisterEnabled",
+	"EmailVerificationEnabled", "EmailDomainRestrictionEnabled", "EmailAliasRestrictionEnabled", "EmailDomainWhitelist",
+}
+
+var rootOnlyOptionPrefixes = []string{
+	"Epay", "Stripe", "Creem", "Waffo", "payment_setting.",
+	"SMTP", "GitHub", "LinuxDO", "WeChat", "Telegram", "Turnstile",
+	"oidc.", "discord.", "telegram.", "passkey.",
+	"fetch_setting.", "performance_setting.",
+}
+
+// isRootOnlyOptionKey reports options that an administrator holding the
+// system_setting.write permission still may not change: credentials, payment
+// and merchant settings, and settings that control sign-in, outbound mail, or
+// server-side request targets.
+func isRootOnlyOptionKey(key string) bool {
+	if isSecretOptionKey(key) || slices.Contains(rootOnlyOptionKeys, key) {
+		return true
+	}
+	return slices.ContainsFunc(rootOnlyOptionPrefixes, func(prefix string) bool {
+		return strings.HasPrefix(key, prefix)
+	})
+}
+
 func isPaymentComplianceOptionKey(key string) bool {
 	return strings.HasPrefix(key, "payment_setting.compliance_")
 }
@@ -90,12 +127,7 @@ func GetOptions(c *gin.Context) {
 			continue
 		}
 		value := common.Interface2String(v)
-		isSensitiveKey := strings.HasSuffix(k, "Token") ||
-			strings.HasSuffix(k, "Secret") ||
-			strings.HasSuffix(k, "Key") ||
-			strings.HasSuffix(k, "secret") ||
-			strings.HasSuffix(k, "api_key")
-		if isSensitiveKey {
+		if isSecretOptionKey(k) {
 			continue
 		}
 		options = append(options, &model.Option{
@@ -187,6 +219,13 @@ func UpdateOption(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"message": "无效的参数",
+		})
+		return
+	}
+	if c.GetInt("role") < common.RoleRootUser && isRootOnlyOptionKey(option.Key) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"message": common.TranslateMessage(c, i18n.MsgAuthInsufficientPrivilege),
 		})
 		return
 	}

@@ -25,10 +25,12 @@ import { UsersMutateDrawer } from './components/users-mutate-drawer'
 import { UsersPrimaryButtons } from './components/users-primary-buttons'
 import { UsersProvider, useUsers } from './components/users-provider'
 import { UsersTable } from './components/users-table'
+import { useCanManageUsers } from './hooks/use-can-manage-users'
 
 function UsersContent() {
   const { t } = useTranslation()
   const { open, setOpen, currentRow } = useUsers()
+  const canManageUsers = useCanManageUsers()
 
   return (
     <>
@@ -42,12 +44,16 @@ function UsersContent() {
         </SectionPageLayout.Content>
       </SectionPageLayout>
 
-      <UsersMutateDrawer
-        open={open === 'create' || open === 'update'}
-        onOpenChange={(isOpen) => !isOpen && setOpen(null)}
-        currentRow={open === 'update' ? currentRow || undefined : undefined}
-      />
-      <UsersDeleteDialog />
+      {canManageUsers && (
+        <>
+          <UsersMutateDrawer
+            open={open === 'create' || open === 'update'}
+            onOpenChange={(isOpen) => !isOpen && setOpen(null)}
+            currentRow={open === 'update' ? currentRow || undefined : undefined}
+          />
+          <UsersDeleteDialog />
+        </>
+      )}
     </>
   )
 }

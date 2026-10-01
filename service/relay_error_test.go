@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"github.com/gin-gonic/gin"
@@ -210,4 +212,112 @@ func TestRequestPolicyEventsReachLogAdminInfo(t *testing.T) {
 	other := model.NewLogOther()
 	AppendRelayLogAdminInfo(untouched, nil, other)
 	assert.NotContains(t, other.Snapshot()["admin_info"], "request_policy", "requests without decisions do not carry an empty record")
+}
+
+func TestUpstreamErrorInterception(t *testing.T) {
+	setting := operation_setting.GetUpstreamErrorInterceptionSetting()
+	saved := *setting
+	t.Cleanup(func() { *setting = saved })
+	configure := func(enabled, retryOnMatch bool) {
+		*setting = operation_setting.UpstreamErrorInterceptionSetting{
+			Enabled:      enabled,
+			Keywords:     []string{"Upstream Vendor", "quota exhausted"},
+			StatusCode:   http.StatusServiceUnavailable,
+			Message:      "service busy",
+			RetryOnMatch: retryOnMatch,
+		}
+	}
+	upstreamJSON := func(message string, status int) *types.NewAPIError {
+		return types.WithOpenAIError(types.OpenAIError{Message: message, Type: "upstream_error", Code: "x"}, status)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		enabled bool
+		err     *types.NewAPIError
+		want    bool
+	}{
+		{name: "upstream JSON error matches case-insensitively", enabled: true, err: upstreamJSON("powered by upstream vendor", http.StatusTooManyRequests), want: true},
+		{name: "upstream status error matches", enabled: true, err: types.NewOpenAIError(errors.New("Quota Exhausted for key"), types.ErrorCodeBadResponseStatusCode, http.StatusForbidden), want: true},
+		{name: "no keyword", enabled: true, err: upstreamJSON("rate limited", http.StatusTooManyRequests), want: false},
+		{name: "disabled", enabled: false, err: upstreamJSON("upstream vendor", http.StatusTooManyRequests), want: false},
+		{name: "gateway local error never matches", enabled: true, err: types.NewError(errors.New("upstream vendor"), types.ErrorCodeInvalidRequest), want: false},
+		{name: "channel error never matches", enabled: true, err: types.NewError(errors.New("upstream vendor"), types.ErrorCodeChannelNoAvailableKey), want: false},
+		{name: "nil error", enabled: true, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configure(tc.enabled, false)
+			assert.Equal(t, tc.want, MatchUpstreamErrorKeyword(tc.err))
+		})
+	}
+
+	t.Run("replacement carries configured status and message in every client format", func(t *testing.T) {
+		configure(true, false)
+		intercepted := InterceptUpstreamError(upstreamJSON("upstream vendor overloaded", http.StatusTooManyRequests))
+		require.NotNil(t, intercepted)
+		assert.Equal(t, http.StatusServiceUnavailable, intercepted.StatusCode)
+		assert.Equal(t, types.ErrorCodeBadResponse, intercepted.GetErrorCode())
+		assert.Equal(t, "service busy", intercepted.ToOpenAIError().Message)
+		assert.Equal(t, "service busy", intercepted.ToClaudeError().Message)
+		assert.Nil(t, InterceptUpstreamError(upstreamJSON("rate limited", http.StatusTooManyRequests)))
+	})
+
+	t.Run("non-JSON error body surfaces the matched keyword without the body", func(t *testing.T) {
+		configure(true, false)
+		resp := &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader("<html>Upstream Vendor gateway error secret-host</html>"))}
+		apiErr := RelayErrorHandler(t.Context(), resp, false)
+		assert.Equal(t, "bad response status code 502 (matched keyword: upstream vendor)", apiErr.Error())
+		assert.True(t, MatchUpstreamErrorKeyword(apiErr))
+	})
+
+	t.Run("error log shows users the replacement and keeps the original for admins", func(t *testing.T) {
+		configure(true, false)
+		previousLogDB, previousDB, previousErrorLog := model.LOG_DB, model.DB, constant.ErrorLogEnabled
+		t.Cleanup(func() {
+			model.LOG_DB, model.DB, constant.ErrorLogEnabled = previousLogDB, previousDB, previousErrorLog
+		})
+		database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+		require.NoError(t, err)
+		sqlDB, err := database.DB()
+		require.NoError(t, err)
+		sqlDB.SetMaxOpenConns(1)
+		t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
+		require.NoError(t, database.AutoMigrate(&model.Log{}, &model.User{}))
+		model.LOG_DB, model.DB, constant.ErrorLogEnabled = database, database, true
+
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		ProcessChannelError(c, types.ChannelError{ChannelId: 7}, upstreamJSON("upstream vendor overloaded", http.StatusTooManyRequests), nil)
+
+		var log model.Log
+		require.NoError(t, database.First(&log).Error)
+		assert.Equal(t, "status_code=503, service busy", log.Content)
+		var other struct {
+			StatusCode int `json:"status_code"`
+			AdminInfo  struct {
+				UpstreamError struct {
+					StatusCode int    `json:"status_code"`
+					Message    string `json:"message"`
+				} `json:"upstream_error"`
+			} `json:"admin_info"`
+		}
+		require.NoError(t, common.UnmarshalJsonStr(log.Other, &other))
+		assert.Equal(t, http.StatusServiceUnavailable, other.StatusCode)
+		assert.Equal(t, http.StatusTooManyRequests, other.AdminInfo.UpstreamError.StatusCode)
+		assert.Equal(t, "upstream vendor overloaded", other.AdminInfo.UpstreamError.Message)
+	})
+
+	for _, tc := range []struct {
+		name         string
+		retryOnMatch bool
+		want         PolicyDecision
+	}{
+		{name: "matched error stops retry by default", want: PolicyDecision{Action: "stop", Reason: "upstream_error_keyword", Source: "global"}},
+		{name: "matched error follows retry rules when allowed", retryOnMatch: true, want: PolicyDecision{Action: "retry", Reason: "retry_status_matched", Source: "global"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configure(true, tc.retryOnMatch)
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			assert.Equal(t, tc.want, DecideRelayRetry(c, upstreamJSON("upstream vendor overloaded", http.StatusTooManyRequests), 1))
+		})
+	}
 }

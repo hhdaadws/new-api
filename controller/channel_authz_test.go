@@ -2,15 +2,21 @@ package controller
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -175,7 +181,10 @@ func TestChannelFieldsAreClassified(t *testing.T) {
 		if _, ok := channelOperationalFields[name]; ok {
 			return true
 		}
-		_, ok := channelReadOnlyFields[name]
+		if _, ok := channelReadOnlyFields[name]; ok {
+			return true
+		}
+		_, ok := channelRootOnlyFields[name]
 		return ok
 	}
 
@@ -201,4 +210,70 @@ func TestChannelFieldsAreClassified(t *testing.T) {
 		assert.Truef(t, classified(name),
 			"channel field %q is not classified; add it to channelSensitiveFields, channelNonSensitiveFields, channelOperationalFields, or channelReadOnlyFields in channel_authz.go", name)
 	}
+}
+
+func TestChannelViewPolicyHidesRealNameAndBaseURL(t *testing.T) {
+	setupTaskPluginBindChannelTest(t)
+	require.NoError(t, i18n.Init())
+	const restrictedAdmin, plainAdmin, root = 2, 3, 1
+	require.NoError(t, authz.SetUserPermissions(restrictedAdmin, authz.PermissionsMap{authz.ResourceChannel: {
+		authz.ActionNameView: false, authz.ActionBaseURLView: false, authz.ActionSensitiveWrite: true,
+	}}))
+
+	baseURL, alias := "https://secret-upstream.example", "Line A"
+	aliased := model.Channel{Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Name: "real-upstream", Alias: &alias, Models: "gpt-4", Group: "default", Key: "sk-1", BaseURL: &baseURL}
+	require.NoError(t, aliased.Insert())
+	unaliased := model.Channel{Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Name: "real-backup", Models: "gpt-4", Group: "default", Key: "sk-2", BaseURL: &baseURL}
+	require.NoError(t, unaliased.Insert())
+
+	call := func(handler gin.HandlerFunc, userID, role int, method, target, body string, params gin.Params) string {
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Set("id", userID)
+		context.Set("role", role)
+		context.Params = params
+		context.Request = httptest.NewRequest(method, target, strings.NewReader(body))
+		context.Request.Header.Set("Content-Type", "application/json")
+		context.Request.Header.Set("Accept-Language", "en")
+		handler(context)
+		return recorder.Body.String()
+	}
+	idParam := func(id int) gin.Params { return gin.Params{{Key: "id", Value: strconv.Itoa(id)}} }
+
+	t.Run("restricted admin sees alias or channel id and no base URL", func(t *testing.T) {
+		list := call(GetAllChannels, restrictedAdmin, common.RoleAdminUser, http.MethodGet, "/api/channel/?p=1&page_size=10&sort_by=name", "", nil)
+		assert.Contains(t, list, `"name":"Line A"`)
+		assert.Contains(t, list, fmt.Sprintf(`"name":"Channel #%d"`, unaliased.Id))
+		assert.NotContains(t, list, "real-")
+		assert.NotContains(t, list, "secret-upstream")
+
+		detail := call(GetChannel, restrictedAdmin, common.RoleAdminUser, http.MethodGet, "/api/channel/1", "", idParam(aliased.Id))
+		assert.Contains(t, detail, `"name":"Line A"`)
+		assert.Contains(t, detail, `"alias":null`)
+		assert.Contains(t, detail, `"base_url":null`)
+	})
+
+	t.Run("saving redacted values keeps the stored name and base URL", func(t *testing.T) {
+		body := fmt.Sprintf(`{"id":%d,"type":1,"name":"Line A","base_url":"","models":"gpt-4,gpt-4o","group":"default"}`, aliased.Id)
+		result := call(UpdateChannel, restrictedAdmin, common.RoleAdminUser, http.MethodPut, "/api/channel", body, nil)
+		assert.Contains(t, result, `"success":true`)
+		assert.NotContains(t, result, "real-upstream")
+		stored, err := model.GetChannelById(aliased.Id, true)
+		require.NoError(t, err)
+		assert.Equal(t, "real-upstream", stored.Name)
+		assert.Equal(t, baseURL, lo.FromPtr(stored.BaseURL))
+		assert.Equal(t, "gpt-4,gpt-4o", stored.Models)
+		assert.Equal(t, "Line A", lo.FromPtr(stored.Alias))
+	})
+
+	t.Run("only root changes the alias", func(t *testing.T) {
+		body := fmt.Sprintf(`{"id":%d,"type":1,"name":"real-upstream","alias":"Line B","models":"gpt-4,gpt-4o","group":"default"}`, aliased.Id)
+		denied := call(UpdateChannel, plainAdmin, common.RoleAdminUser, http.MethodPut, "/api/channel", body, nil)
+		assert.Contains(t, denied, `"success":false`)
+		allowed := call(UpdateChannel, root, common.RoleRootUser, http.MethodPut, "/api/channel", body, nil)
+		assert.Contains(t, allowed, `"success":true`)
+		stored, err := model.GetChannelById(aliased.Id, true)
+		require.NoError(t, err)
+		assert.Equal(t, "Line B", lo.FromPtr(stored.Alias))
+	})
 }

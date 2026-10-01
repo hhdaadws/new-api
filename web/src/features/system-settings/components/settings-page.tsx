@@ -22,10 +22,20 @@ import { useTranslation } from 'react-i18next'
 
 import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  ADMIN_PERMISSION_ACTIONS,
+  ADMIN_PERMISSION_RESOURCES,
+  hasPermission,
+} from '@/lib/admin-permissions'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { useSystemOptions, getOptionValue } from '../hooks/use-system-options'
 import type { SystemOption } from '../types'
-import { SettingsPageProvider } from './settings-page-context'
+import {
+  SettingsPageProvider,
+  SettingsReadOnlyFieldset,
+} from './settings-page-context'
 
 type SettingsPageProps<
   TSettings extends Record<string, string | number | boolean | unknown[]>,
@@ -57,6 +67,17 @@ type SettingsPageFrameProps = {
 }
 
 function SettingsPageFrame(props: SettingsPageFrameProps) {
+  const { t } = useTranslation()
+  // Admins with read-only access see every field but cannot change or save
+  // anything; the backend rejects writes without system_setting:write.
+  const readOnly = useAuthStore(
+    (state) =>
+      !hasPermission(
+        state.auth.user,
+        ADMIN_PERMISSION_RESOURCES.SYSTEM_SETTING,
+        ADMIN_PERMISSION_ACTIONS.WRITE
+      )
+  )
   const [actionsContainer, setActionsContainer] =
     useState<HTMLDivElement | null>(null)
   const [titleStatusContainer, setTitleStatusContainer] =
@@ -66,6 +87,7 @@ function SettingsPageFrame(props: SettingsPageFrameProps) {
     <SettingsPageProvider
       actionsContainer={actionsContainer}
       titleStatusContainer={titleStatusContainer}
+      readOnly={readOnly}
     >
       <SectionPageLayout>
         <SectionPageLayout.Title>
@@ -84,9 +106,21 @@ function SettingsPageFrame(props: SettingsPageFrameProps) {
           />
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
-          <div className='flex h-full min-h-0 w-full flex-col gap-4'>
+          <SettingsReadOnlyFieldset
+            readOnly={readOnly}
+            className='flex h-full min-h-0 w-full flex-col gap-4'
+          >
+            {readOnly && (
+              <Alert className='shrink-0'>
+                <AlertDescription>
+                  {t(
+                    'You have read-only access to system settings. Changes cannot be saved with this account.'
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
             {props.children}
-          </div>
+          </SettingsReadOnlyFieldset>
         </SectionPageLayout.Content>
       </SectionPageLayout>
     </SettingsPageProvider>

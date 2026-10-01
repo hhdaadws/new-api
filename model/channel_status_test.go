@@ -100,3 +100,34 @@ func TestSaveStatusStateFromSingleKeySnapshotPreservesUnownedColumns(t *testing.
 	assert.Equal(t, "manual operation", otherInfo["status_reason"])
 	assert.Equal(t, float64(1234), otherInfo["status_time"])
 }
+
+func TestSearchChannelsDoesNotMatchHiddenFields(t *testing.T) {
+	setupChannelStatusTest(t)
+
+	baseURL, alias := "https://secret-upstream.example", "Line A"
+	require.NoError(t, DB.Create(&Channel{Name: "real-upstream", Alias: &alias, Key: "sk-1", Models: "gpt-4", Group: "default", Tag: common.GetPointer("pool"), BaseURL: &baseURL, Status: common.ChannelStatusEnabled}).Error)
+	require.NoError(t, DB.Create(&Channel{Name: "real-backup", Key: "sk-2", Models: "gpt-4", Group: "default", BaseURL: &baseURL, Status: common.ChannelStatusEnabled}).Error)
+
+	for _, tc := range []struct {
+		name     string
+		keyword  string
+		hidden   ChannelHiddenFields
+		channels int
+		tags     int
+	}{
+		{name: "real name matches when visible", keyword: "real", channels: 2, tags: 1},
+		{name: "base URL matches when visible", keyword: "secret-upstream", channels: 2, tags: 1},
+		{name: "hidden name is not searchable", keyword: "real", hidden: ChannelHiddenFields{Name: true}, channels: 0, tags: 0},
+		{name: "hidden name is searched by alias", keyword: "Line", hidden: ChannelHiddenFields{Name: true}, channels: 1, tags: 1},
+		{name: "hidden base URL is not searchable", keyword: "secret-upstream", hidden: ChannelHiddenFields{BaseURL: true}, channels: 0, tags: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			channels, err := SearchChannels(tc.keyword, "", "", true, tc.hidden)
+			require.NoError(t, err)
+			assert.Len(t, channels, tc.channels)
+			tags, err := SearchTags(tc.keyword, "", "", true, tc.hidden)
+			require.NoError(t, err)
+			assert.Len(t, tags, tc.tags)
+		})
+	}
+}

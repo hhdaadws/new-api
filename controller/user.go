@@ -473,7 +473,7 @@ func GetSelf(c *gin.Context) {
 	// The authenticated role is loaded from GetUserCache. It should equal the
 	// row role, but use it for capabilities so GetSelf and login/refresh remain
 	// consistent with the authorization decision made for this request.
-	permissions := calculateUserPermissions(userRole)
+	permissions := calculateUserPermissions(id, userRole)
 	permissions["admin_permissions"] = authz.Capabilities(id, userRole)
 	responseData["permissions"] = permissions
 
@@ -490,7 +490,7 @@ func GetSelf(c *gin.Context) {
 // administrator-only remarks.
 func buildSelfUserData(user *model.User) map[string]any {
 	userSetting := user.GetSetting()
-	permissions := calculateUserPermissions(user.Role)
+	permissions := calculateUserPermissions(user.Id, user.Role)
 	permissions["admin_permissions"] = authz.Capabilities(user.Id, user.Role)
 	return map[string]any{
 		"id":                user.Id,
@@ -523,7 +523,7 @@ func buildSelfUserData(user *model.User) map[string]any {
 }
 
 // 计算用户权限的辅助函数
-func calculateUserPermissions(userRole int) map[string]any {
+func calculateUserPermissions(userID int, userRole int) map[string]any {
 	permissions := map[string]any{}
 
 	// 根据用户角色计算权限
@@ -532,11 +532,11 @@ func calculateUserPermissions(userRole int) map[string]any {
 		permissions["sidebar_settings"] = false
 		permissions["sidebar_modules"] = map[string]any{}
 	} else if userRole == common.RoleAdminUser {
-		// 管理员可以设置边栏，但不包含系统设置功能
+		// 管理员可以设置边栏；系统设置仅在超级管理员授予 system_setting.read 时可见
 		permissions["sidebar_settings"] = true
 		permissions["sidebar_modules"] = map[string]any{
 			"admin": map[string]any{
-				"setting": false, // 管理员不能访问系统设置
+				"setting": authz.Can(userID, userRole, authz.SystemSettingRead),
 			},
 		}
 	} else {

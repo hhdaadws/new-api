@@ -32,6 +32,8 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
 import { FormNavigationGuard } from '../components/form-navigation-guard'
@@ -76,6 +78,11 @@ function normalizeValue(value: unknown): string {
 
 export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
   const { t } = useTranslation()
+  // The server address drives OAuth callbacks and payment webhooks, so only
+  // super admins may change it; the backend rejects it for other admins.
+  const isSuperAdmin = useAuthStore(
+    (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
+  )
   const updateOption = useUpdateOption()
 
   const normalizedDefaults: SystemInfoFormValues = {
@@ -180,7 +187,11 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                   <FormItem>
                     <FormLabel>{t('Server Address')}</FormLabel>
                     <FormControl>
-                      <Input placeholder='https://yourdomain.com' {...field} />
+                      <Input
+                        placeholder='https://yourdomain.com'
+                        {...field}
+                        disabled={!isSuperAdmin}
+                      />
                     </FormControl>
                     <FormDescription>
                       {t(

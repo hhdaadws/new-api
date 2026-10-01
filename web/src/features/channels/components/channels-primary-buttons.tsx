@@ -89,6 +89,11 @@ export function ChannelsPrimaryButtons() {
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
     ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
   )
+  const canTest = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.TEST
+  )
 
   const handleTagModeToggle = (checked: boolean) => {
     localStorage.setItem('enable-tag-mode', String(checked))
@@ -207,16 +212,18 @@ export function ChannelsPrimaryButtons() {
 
             <DropdownMenuSeparator className='sm:hidden' />
 
-            <DropdownMenuItem
-              onClick={() => {
-                handleTestAllChannels(queryClient)
-              }}
-            >
-              {t('Test All Channels')}
-              <DropdownMenuShortcut>
-                <TestTube className='h-4 w-4' />
-              </DropdownMenuShortcut>
-            </DropdownMenuItem>
+            {canTest && (
+              <DropdownMenuItem
+                onClick={() => {
+                  handleTestAllChannels(queryClient)
+                }}
+              >
+                {t('Test All Channels')}
+                <DropdownMenuShortcut>
+                  <TestTube className='h-4 w-4' />
+                </DropdownMenuShortcut>
+              </DropdownMenuItem>
+            )}
 
             <DropdownMenuItem
               onClick={() => {

@@ -423,7 +423,18 @@ export function ChannelMutateDrawer({
     ADMIN_PERMISSION_RESOURCES.TASK_PLUGIN,
     ADMIN_PERMISSION_ACTIONS.BIND
   )
+  const canViewChannelName = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.NAME_VIEW
+  )
+  const canViewBaseUrl = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.BASE_URL_VIEW
+  )
   const canRevealChannelKey = currentUser?.role === ROLE.SUPER_ADMIN
+  const canEditAlias = currentUser?.role === ROLE.SUPER_ADMIN
   const [isCodexCredentialRefreshing, setIsCodexCredentialRefreshing] =
     useState(false)
   const initialModelsRef = useRef<string[]>([])
@@ -466,6 +477,10 @@ export function ChannelMutateDrawer({
   }
   const channelId = currentRow?.id ?? null
   const sensitiveLocked = isEditing && !canEditSensitive
+  // The API redacts these values for administrators without the matching
+  // view permission, and the backend keeps the stored values on save.
+  const nameLocked = isEditing && !canViewChannelName
+  const baseUrlHidden = isEditing && !canViewBaseUrl
   const [providerTarget, setProviderTarget] =
     useState<ChannelProviderTarget | null>(null)
   const [choosingProvider, setChoosingProvider] = useState(true)
@@ -580,14 +595,15 @@ export function ChannelMutateDrawer({
   const keyMode = formValues.key_mode
   const currentGroups = formValues.group
   const currentType = formValues.type
-  const baseUrlPlaceholder = [CHANNEL_TYPE_VLLM, CHANNEL_TYPE_SGLANG].includes(
-    currentType
-  )
-    ? t(
-        getChannelTypeConfig(currentType).hints?.baseUrl ||
-          FIELD_PLACEHOLDERS.BASE_URL
-      )
-    : defaultBaseURLs?.[currentType] || t(FIELD_PLACEHOLDERS.BASE_URL)
+  const hiddenBaseUrlPlaceholder = baseUrlHidden ? t('Hidden') : undefined
+  const baseUrlPlaceholder =
+    hiddenBaseUrlPlaceholder ??
+    ([CHANNEL_TYPE_VLLM, CHANNEL_TYPE_SGLANG].includes(currentType)
+      ? t(
+          getChannelTypeConfig(currentType).hints?.baseUrl ||
+            FIELD_PLACEHOLDERS.BASE_URL
+        )
+      : defaultBaseURLs?.[currentType] || t(FIELD_PLACEHOLDERS.BASE_URL))
   const currentStatus = formValues.status
   const currentBaseUrl = formValues.base_url
   const currentTaskPluginKey = formValues.task_plugin_key
@@ -1045,7 +1061,7 @@ export function ChannelMutateDrawer({
         return
       }
       const defaults = transformChannelToFormDefaults(channelData.data)
-      form.reset(defaults)
+      form.reset({ ...defaults, base_url_hidden: !canViewBaseUrl })
       loadedForm.current = {
         channelId: channelData.data.id,
         snapshot: JSON.stringify(form.getValues()),
@@ -1074,7 +1090,7 @@ export function ChannelMutateDrawer({
       initialModelMappingRef.current = ''
       initialStatusCodeMappingRef.current = ''
     }
-  }, [isEditing, channelId, channelData, form, open])
+  }, [isEditing, channelId, channelData, form, open, canViewBaseUrl])
 
   // Handle type change - set default values for specific types
   useEffect(() => {
@@ -2049,6 +2065,27 @@ export function ChannelMutateDrawer({
             </FormItem>
           )}
         />
+
+        {canEditAlias && (
+          <FormField
+            control={form.control}
+            name='alias'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Alias')}</FormLabel>
+                <FormControl>
+                  <Input maxLength={255} {...field} />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Shown instead of the channel name to administrators who cannot view real channel names'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
       </div>
     </div>
   )
@@ -2562,8 +2599,17 @@ export function ChannelMutateDrawer({
               <FormItem>
                 <FormLabel required>{t('Name')}</FormLabel>
                 <FormControl>
-                  <Input placeholder={t(FIELD_PLACEHOLDERS.NAME)} {...field} />
+                  <Input
+                    placeholder={t(FIELD_PLACEHOLDERS.NAME)}
+                    {...field}
+                    disabled={nameLocked}
+                  />
                 </FormControl>
+                {nameLocked && (
+                  <FormDescription>
+                    {t('You do not have permission to change the channel name')}
+                  </FormDescription>
+                )}
                 <FormMessage />
               </FormItem>
             )}
@@ -3553,9 +3599,10 @@ export function ChannelMutateDrawer({
                       </FormLabel>
                       <FormControl>
                         <Input
-                          placeholder={t(
-                            'e.g., https://docs-test-001.openai.azure.com'
-                          )}
+                          placeholder={
+                            hiddenBaseUrlPlaceholder ??
+                            t('e.g., https://docs-test-001.openai.azure.com')
+                          }
                           {...field}
                         />
                       </FormControl>
@@ -3620,9 +3667,10 @@ export function ChannelMutateDrawer({
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder={t(
-                          'e.g., https://api.openai.com/v1/chat/completions'
-                        )}
+                        placeholder={
+                          hiddenBaseUrlPlaceholder ??
+                          t('e.g., https://api.openai.com/v1/chat/completions')
+                        }
                         {...field}
                       />
                     </FormControl>
@@ -3790,9 +3838,10 @@ export function ChannelMutateDrawer({
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder={t(
-                          'e.g., https://api.example.com (path before /suno)'
-                        )}
+                        placeholder={
+                          hiddenBaseUrlPlaceholder ??
+                          t('e.g., https://api.example.com (path before /suno)')
+                        }
                         {...field}
                       />
                     </FormControl>

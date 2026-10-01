@@ -21,16 +21,20 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 
+import { useCanManageUsers } from '../hooks/use-can-manage-users'
 import { useUsers } from './users-provider'
 
 export function UsersPrimaryButtons() {
   const { t } = useTranslation()
   const { setOpen, setCurrentRow } = useUsers()
+  const canManageUsers = useCanManageUsers()
 
   const handleCreate = () => {
     setCurrentRow(null)
     setOpen('create')
   }
+
+  if (!canManageUsers) return null
 
   return (
     <div className='flex gap-2'>

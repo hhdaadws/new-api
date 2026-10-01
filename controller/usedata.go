@@ -96,6 +96,22 @@ func GetAllFlowQuotaDates(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if viewPolicy := channelViewPolicyOf(c); !viewPolicy.RealName {
+		ids := make([]int, 0, len(dates))
+		for _, row := range dates {
+			if row.ChannelID != 0 {
+				ids = append(ids, row.ChannelID)
+			}
+		}
+		names, err := viewPolicy.displayNames(c, ids)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		for _, row := range dates {
+			row.ChannelName = names[row.ChannelID]
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

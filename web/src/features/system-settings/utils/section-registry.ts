@@ -19,13 +19,48 @@ For commercial licensing, please contact support@quantumnous.com
 import type { TFunction } from 'i18next'
 import type { ReactNode } from 'react'
 
+import { ROLE } from '@/lib/roles'
+import type { AuthUser } from '@/stores/auth-store'
+
 /**
  * Section definition for settings pages
  */
 export type SectionDefinition<TSettings, TExtraArgs extends unknown[] = []> = {
   id: string
   titleKey: string
+  /**
+   * The section relies on super-admin-only endpoints or option keys, so it is
+   * hidden from navigation and rejected by route guards for other admins.
+   * The backend enforces the same boundary independently.
+   */
+  rootOnly?: boolean
   build: (settings: TSettings, ...extraArgs: TExtraArgs) => ReactNode
+}
+
+/**
+ * Whether the user may open a settings section. Root-only sections are
+ * limited to super admins; every other section is visible to any admin that
+ * reached the system settings area.
+ */
+export function canAccessSettingsSection(
+  section: { rootOnly?: boolean },
+  user: AuthUser | null | undefined
+): boolean {
+  return !section.rootOnly || user?.role === ROLE.SUPER_ADMIN
+}
+
+/**
+ * Route-guard check: `sectionId` names a registered section the user may open.
+ * Takes the registry's public `sectionIds` and `getSectionMeta` exports.
+ */
+export function isSettingsSectionAvailable<TSectionId extends string>(
+  sectionIds: readonly TSectionId[],
+  getSectionMeta: (sectionId: TSectionId) => { rootOnly?: boolean },
+  sectionId: string,
+  user: AuthUser | null | undefined
+): boolean {
+  if (!(sectionIds as readonly string[]).includes(sectionId)) return false
+  return canAccessSettingsSection(getSectionMeta(sectionId as TSectionId), user)
 }
 
 /**
@@ -61,16 +96,18 @@ export function createSectionRegistry<
   ]
 
   /**
-   * Get navigation items for sidebar
+   * Get navigation items for sidebar, omitting sections the user cannot open
    */
-  function getSectionNavItems(t: TFunction) {
-    return sections.map((section) => ({
-      title: t(section.titleKey),
-      url:
-        urlStyle === 'path'
-          ? `${basePath}/${section.id}`
-          : `${basePath}?section=${section.id}`,
-    }))
+  function getSectionNavItems(t: TFunction, user?: AuthUser | null) {
+    return sections
+      .filter((section) => canAccessSettingsSection(section, user))
+      .map((section) => ({
+        title: t(section.titleKey),
+        url:
+          urlStyle === 'path'
+            ? `${basePath}/${section.id}`
+            : `${basePath}?section=${section.id}`,
+      }))
   }
 
   /**

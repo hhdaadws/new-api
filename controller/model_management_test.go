@@ -920,7 +920,7 @@ export function parseTaskResult() { return {}; }
 				rule := &model.Model{ModelName: "matrix-hidden-", NameRule: model.NameRulePrefix}
 				enrichModels([]*model.Model{exact, rule})
 				assert.Equal(t, []string{"available"}, exact.EnableGroups)
-				assert.Equal(t, []model.BoundChannel{{Name: "Active route", Type: 1}}, exact.BoundChannels)
+				assert.Equal(t, []model.BoundChannel{{Id: active.Id, Name: "Active route", Type: 1}}, exact.BoundChannels)
 				assert.Equal(t, []string{"matrix-hidden-unpriced"}, rule.MatchedModels)
 				assert.Empty(t, exact.Endpoints, "inferred endpoints must not become stored configuration")
 				priceBefore, err := model.GetModelPricingSnapshot([]string{"matrix-hidden-unpriced"})

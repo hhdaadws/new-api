@@ -124,6 +124,7 @@ const MODELS_SECTIONS = [
   {
     id: 'model-deployment',
     titleKey: 'Model Deployment',
+    rootOnly: true,
     build: (settings: ModelSettings) => (
       <IoNetDeploymentSettingsSection
         defaultValues={{

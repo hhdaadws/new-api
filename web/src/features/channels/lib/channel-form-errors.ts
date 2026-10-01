@@ -31,6 +31,7 @@ const ADVANCED_SETTINGS_FIELDS = new Set<FieldPath<ChannelFormValues>>([
   'auto_ban',
   'tag',
   'remark',
+  'alias',
   'param_override',
   'header_override',
   'status_code_mapping',

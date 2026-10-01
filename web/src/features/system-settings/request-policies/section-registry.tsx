@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { createSectionRegistry } from '../utils/section-registry'
 import { ChannelHealthSection } from './channel-health-section'
 import type { RequestPolicySettings } from './defaults'
+import { ErrorInterceptionSection } from './error-interception-section'
 import { RequestChecksSection } from './request-checks-section'
 import { RoutingPolicySection } from './routing-section'
 
@@ -46,6 +47,13 @@ const POLICY_SECTIONS = [
     titleKey: 'Channel health',
     build: (settings: RequestPolicySettings) => (
       <ChannelHealthSection defaultValues={settings} />
+    ),
+  },
+  {
+    id: 'error-interception',
+    titleKey: 'Upstream error interception',
+    build: (settings: RequestPolicySettings) => (
+      <ErrorInterceptionSection defaultValues={settings} />
     ),
   },
 ] as const

@@ -2,6 +2,7 @@ package authz
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/QuantumNous/new-api/model"
 	"gorm.io/gorm"
@@ -63,4 +64,54 @@ func seedDefaultPolicies() error {
 		}
 	}
 	return nil
+}
+
+// channelTestSplitMarker is stored as a non-policy casbin_rule row once user
+// overrides have been carried over to the channel.test action.
+const channelTestSplitMarker = "channel_test_split"
+
+// migrateChannelTestOverrides keeps subjects that are denied channel.operate
+// from gaining channel tests after testing became its own action. User
+// overrides are carried over exactly once, so a later root decision to allow
+// tests is not reverted on restart. Role baselines are reseeded on every start,
+// so a restricted role is denied again each time.
+func migrateChannelTestOverrides(db *gorm.DB) error {
+	e := currentEnforcer()
+	if e == nil {
+		return fmt.Errorf("authz enforcer is not initialized")
+	}
+	marker := newRule("m", []string{channelTestSplitMarker})
+	var migrated int64
+	if err := db.Model(&model.CasbinRule{}).Where("ptype = ? AND v0 = ?", marker.Ptype, marker.V0).Count(&migrated).Error; err != nil {
+		return err
+	}
+	operatePolicies, err := e.GetFilteredPolicy(1, ResourceChannel, ActionOperate)
+	if err != nil {
+		return err
+	}
+	for _, policy := range operatePolicies {
+		if policyEffect(policy) != EffectDeny {
+			continue
+		}
+		subject := policy[0]
+		if strings.HasPrefix(subject, userSubjectPrefix) {
+			if migrated > 0 {
+				continue
+			}
+			existing, err := e.GetFilteredPolicy(0, subject, ResourceChannel, ActionTest)
+			if err != nil {
+				return err
+			}
+			if len(existing) > 0 {
+				continue
+			}
+		}
+		if _, err := e.AddPolicy(subject, ResourceChannel, ActionTest, EffectDeny); err != nil {
+			return err
+		}
+	}
+	if migrated > 0 {
+		return nil
+	}
+	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&marker).Error
 }

@@ -40,6 +40,10 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import type { SidebarData } from '@/components/layout/types'
+import {
+  ADMIN_PERMISSION_ACTIONS,
+  ADMIN_PERMISSION_RESOURCES,
+} from '@/lib/admin-permissions'
 import { ROLE } from '@/lib/roles'
 
 /**
@@ -146,6 +150,10 @@ export function useSidebarData(): SidebarData {
             title: t('Users'),
             url: '/users',
             icon: Users,
+            requiredPermission: {
+              resource: ADMIN_PERMISSION_RESOURCES.USER_MANAGEMENT,
+              action: ADMIN_PERMISSION_ACTIONS.READ,
+            },
           },
           {
             title: t('Redemption Codes'),
@@ -174,7 +182,10 @@ export function useSidebarData(): SidebarData {
             url: '/system-settings/site',
             activeUrls: ['/system-settings'],
             icon: Settings,
-            requiredRole: ROLE.SUPER_ADMIN,
+            requiredPermission: {
+              resource: ADMIN_PERMISSION_RESOURCES.SYSTEM_SETTING,
+              action: ADMIN_PERMISSION_ACTIONS.READ,
+            },
           },
         ],
       },

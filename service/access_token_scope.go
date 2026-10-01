@@ -135,6 +135,9 @@ func AccessTokenCatalog(userID, role int) []AccessTokenCatalogGroup {
 		for _, definition := range authz.Catalog() {
 			resource := AccessTokenResource{Resource: definition.Resource, LabelKey: definition.LabelKey}
 			for _, action := range definition.Actions {
+				if action.NotTokenScope {
+					continue
+				}
 				if authz.Can(userID, role, authz.Permission{Resource: definition.Resource, Action: action.Action}) {
 					resource.Actions = append(resource.Actions, action)
 				}
@@ -164,7 +167,10 @@ func AccessTokenScopeDictionary() []AccessTokenResource {
 		resources = append(resources, resource)
 	}
 	for _, definition := range definitions {
-		resources = append(resources, AccessTokenResource{Resource: definition.Resource, LabelKey: definition.LabelKey, Actions: definition.Actions})
+		actions := slices.DeleteFunc(definition.Actions, func(action authz.ActionDefinition) bool { return action.NotTokenScope })
+		if len(actions) > 0 {
+			resources = append(resources, AccessTokenResource{Resource: definition.Resource, LabelKey: definition.LabelKey, Actions: actions})
+		}
 	}
 	return resources
 }

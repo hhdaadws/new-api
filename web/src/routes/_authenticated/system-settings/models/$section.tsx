@@ -22,7 +22,10 @@ import { ModelSettings } from '@/features/system-settings/models'
 import {
   MODELS_DEFAULT_SECTION,
   MODELS_SECTION_IDS,
+  getModelsSectionMeta,
 } from '@/features/system-settings/models/section-registry.tsx'
+import { isSettingsSectionAvailable } from '@/features/system-settings/utils/section-registry'
+import { useAuthStore } from '@/stores/auth-store'
 
 export const Route = createFileRoute(
   '/_authenticated/system-settings/models/$section'
@@ -42,8 +45,15 @@ export const Route = createFileRoute(
         replace: true,
       })
     }
-    const validSections = MODELS_SECTION_IDS as unknown as string[]
-    if (!validSections.includes(params.section)) {
+    const user = useAuthStore.getState().auth.user
+    if (
+      !isSettingsSectionAvailable(
+        MODELS_SECTION_IDS,
+        getModelsSectionMeta,
+        params.section,
+        user
+      )
+    ) {
       throw redirect({
         to: '/system-settings/models/$section',
         params: { section: MODELS_DEFAULT_SECTION },
