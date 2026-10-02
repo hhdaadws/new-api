@@ -19,18 +19,17 @@ For commercial licensing, please contact support@quantumnous.com
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { CopyButton } from '@/components/copy-button'
 import { DataTablePagination, useDataTable } from '@/components/data-table'
 import { Dialog } from '@/components/dialog'
 import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
-import { StatusBadge } from '@/components/status-badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatTimestampToDate } from '@/lib/format'
 
 import { useChannelProbeResults } from '../hooks/use-channel-probes'
 import { PROBE_RESULT_KEEP } from '../lib/probe-form'
 import type { ChannelProbe, ChannelProbeResult } from '../types'
+import { ProbeBaselineSummary } from './probe-baseline-summary'
+import { ProbeResultItem } from './probe-result-item'
 
 type ProbeResultsDialogProps = {
   probe: ChannelProbe
@@ -91,59 +90,14 @@ export function ProbeResultsDialog(props: ProbeResultsDialogProps) {
               bordered
             />
           )}
+        {resultsQuery.data && results.length > 0 && (
+          <ProbeBaselineSummary baseline={resultsQuery.data.baseline} />
+        )}
         {results.map((result) => (
           <ProbeResultItem key={result.id} result={result} />
         ))}
         {results.length > 0 && <DataTablePagination table={table} compact />}
       </div>
     </Dialog>
-  )
-}
-
-function ProbeResultItem(props: { result: ChannelProbeResult }) {
-  const { t } = useTranslation()
-  const result = props.result
-  return (
-    <section
-      aria-label={formatTimestampToDate(result.created_at)}
-      className='space-y-2 rounded-md border p-3'
-    >
-      <div className='flex flex-wrap items-center gap-2 text-sm'>
-        <StatusBadge
-          label={result.success ? t('Success') : t('Failed')}
-          variant={result.success ? 'success' : 'danger'}
-          copyable={false}
-        />
-        <span className='text-muted-foreground'>
-          {formatTimestampToDate(result.created_at)}
-        </span>
-        {result.status_code > 0 && (
-          <span className='text-muted-foreground'>
-            {t('HTTP {{code}}', { code: result.status_code })}
-          </span>
-        )}
-        <span className='text-muted-foreground'>
-          {t('{{ms}} ms', { ms: result.latency_ms })}
-        </span>
-      </div>
-      {result.error && (
-        <p className='text-destructive text-sm break-all'>{result.error}</p>
-      )}
-      {result.response && (
-        <div className='relative'>
-          <CopyButton
-            value={result.response}
-            size='icon'
-            variant='ghost'
-            className='absolute top-1 right-1 size-7'
-            tooltip={t('Copy response')}
-            aria-label={t('Copy response')}
-          />
-          <pre className='bg-muted/40 max-h-64 overflow-y-auto rounded border p-2 pr-9 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap'>
-            {result.response}
-          </pre>
-        </div>
-      )}
-    </section>
   )
 }

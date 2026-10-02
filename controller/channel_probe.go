@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -37,6 +38,16 @@ type channelProbeTarget struct {
 	Name   string `json:"name"`
 	Type   int    `json:"type"`
 	Status int    `json:"status"`
+}
+
+type channelProbeResultView struct {
+	*model.ChannelProbeResult
+	Anomalies []string `json:"anomalies"`
+}
+
+type channelProbeResultsPage struct {
+	*common.PageInfo
+	Baseline model.ChannelProbeBaseline `json:"baseline"`
 }
 
 type channelProbeRunSummary struct {
@@ -95,13 +106,61 @@ func buildChannelProbeRequest(probe *model.ChannelProbe) (*channelProbeRequest, 
 	}, nil
 }
 
+// channelProbeResponseText extracts the assistant text from a probe response
+// in the probe's endpoint format, joining the text deltas of a stream.
+func channelProbeResponseText(endpointType string, body []byte, isStream bool) string {
+	var text strings.Builder
+	if !isStream {
+		response := gjson.ParseBytes(body)
+		switch constant.EndpointType(endpointType) {
+		case constant.EndpointTypeOpenAI:
+			text.WriteString(response.Get("choices.0.message.content").String())
+		case constant.EndpointTypeAnthropic:
+			for _, block := range response.Get("content").Array() {
+				if block.Get("type").String() == "text" {
+					text.WriteString(block.Get("text").String())
+				}
+			}
+		case constant.EndpointTypeOpenAIResponse:
+			for _, item := range response.Get("output").Array() {
+				for _, part := range item.Get("content").Array() {
+					if part.Get("type").String() == "output_text" {
+						text.WriteString(part.Get("text").String())
+					}
+				}
+			}
+		}
+		return text.String()
+	}
+	for line := range bytes.SplitSeq(body, []byte{'\n'}) {
+		payload, ok := bytes.CutPrefix(bytes.TrimSpace(line), []byte("data:"))
+		if !ok {
+			continue
+		}
+		event := gjson.ParseBytes(bytes.TrimSpace(payload))
+		switch constant.EndpointType(endpointType) {
+		case constant.EndpointTypeOpenAI:
+			text.WriteString(event.Get("choices.0.delta.content").String())
+		case constant.EndpointTypeAnthropic:
+			if event.Get("type").String() == "content_block_delta" {
+				text.WriteString(event.Get("delta.text").String())
+			}
+		case constant.EndpointTypeOpenAIResponse:
+			if event.Get("type").String() == "response.output_text.delta" {
+				text.WriteString(event.Get("delta").String())
+			}
+		}
+	}
+	return text.String()
+}
+
 // runChannelProbe sends one probe request and records its result.
 func runChannelProbe(ctx context.Context, probe *model.ChannelProbe, testUserID int) *model.ChannelProbeResult {
 	ctx, cancel := context.WithTimeout(ctx, channelProbeTimeout)
 	defer cancel()
 
 	started := time.Now()
-	result := &model.ChannelProbeResult{ProbeId: probe.Id, ChannelId: probe.ChannelId}
+	result := &model.ChannelProbeResult{ChannelId: probe.ChannelId}
 	probeRequest, err := buildChannelProbeRequest(probe)
 	var channel *model.Channel
 	if err == nil {
@@ -114,6 +173,16 @@ func runChannelProbe(ctx context.Context, probe *model.ChannelProbe, testUserID 
 		tested := testChannel(ctx, channel, testUserID, probeRequest.model, probe.EndpointType, probeRequest.isStream, probeRequest)
 		result.StatusCode = tested.statusCode
 		result.Response = string(tested.responseBody)
+		result.Content = channelProbeResponseText(probe.EndpointType, tested.responseBody, probeRequest.isStream)
+		if usage := tested.usage; usage != nil {
+			// Anthropic usage reports cached input separately; count the whole
+			// input so cache hits do not look like a different prompt.
+			result.InputTokens = usage.PromptTokens
+			if usage.UsageSemantic == "anthropic" {
+				result.InputTokens += usage.PromptTokensDetails.CachedTokens + usage.PromptTokensDetails.CachedCreationTokens
+			}
+			result.OutputTokens = usage.CompletionTokens
+		}
 		err = tested.localErr
 	}
 	result.LatencyMs = time.Since(started).Milliseconds()
@@ -121,7 +190,7 @@ func runChannelProbe(ctx context.Context, probe *model.ChannelProbe, testUserID 
 	if err != nil {
 		result.Error = err.Error()
 	}
-	if recordErr := model.RecordChannelProbeResult(result); recordErr != nil {
+	if recordErr := model.RecordChannelProbeResult(probe, result); recordErr != nil {
 		common.SysError(fmt.Sprintf("failed to record channel probe %d result: %v", probe.Id, recordErr))
 	}
 	return result
@@ -264,6 +333,7 @@ func UpdateChannelProbe(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	requestHash := probe.RequestHash()
 	probe.Name = input.Name
 	probe.ChannelId = input.ChannelId
 	probe.EndpointType = input.EndpointType
@@ -272,6 +342,10 @@ func UpdateChannelProbe(c *gin.Context) {
 	probe.IntervalSeconds = input.IntervalSeconds
 	probe.Enabled = input.Enabled
 	probe.NextRunAt = common.GetTimestamp() + int64(input.IntervalSeconds)
+	if probe.RequestHash() != requestHash {
+		// Runs of the old request no longer form this probe's baseline.
+		probe.LastAnomaly = false
+	}
 	if err := probe.Update(); err != nil {
 		common.ApiError(c, err)
 		return
@@ -315,9 +389,18 @@ func GetChannelProbeResults(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	baseline, err := model.GetChannelProbeBaseline(probe)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	views := make([]channelProbeResultView, 0, len(results))
+	for _, result := range results {
+		views = append(views, channelProbeResultView{ChannelProbeResult: result, Anomalies: baseline.Anomalies(result)})
+	}
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(results)
-	common.ApiSuccess(c, pageInfo)
+	pageInfo.SetItems(views)
+	common.ApiSuccess(c, channelProbeResultsPage{PageInfo: pageInfo, Baseline: baseline})
 }
 
 // channelProbeFromParam loads the probe named by the :id path parameter and

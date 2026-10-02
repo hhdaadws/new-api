@@ -44,6 +44,7 @@ const probe: ChannelProbe = {
   last_run_at: 0,
   last_success: false,
   last_error: '',
+  last_anomaly: false,
   created_at: 0,
   updated_at: 0,
 }

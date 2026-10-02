@@ -39,9 +39,10 @@ type testResult struct {
 	context     *gin.Context
 	localErr    error
 	newAPIError *types.NewAPIError
-	// statusCode and responseBody are filled for probe runs only.
+	// statusCode, responseBody and usage are filled for probe runs only.
 	statusCode   int
 	responseBody []byte
+	usage        *dto.Usage
 }
 
 // channelProbeRequest replaces the generated test request with a probe's own
@@ -511,7 +512,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	}
 	usageA, respErr := adaptor.DoResponse(c, httpResp, info)
 	if probe != nil {
-		return probeTestResult(c, w, httpResp, respErr, isStream)
+		return probeTestResult(c, w, httpResp, usageA, respErr, isStream)
 	}
 	if respErr != nil {
 		return testResult{
@@ -573,11 +574,17 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 }
 
 // probeTestResult keeps the response the probe received, as relayed in the
-// probe's endpoint format, together with any error the relay reported.
-func probeTestResult(c *gin.Context, w *httptest.ResponseRecorder, httpResp *http.Response, respErr *types.NewAPIError, isStream bool) testResult {
+// probe's endpoint format, with the usage and any error the relay reported.
+func probeTestResult(c *gin.Context, w *httptest.ResponseRecorder, httpResp *http.Response, usageAny any, respErr *types.NewAPIError, isStream bool) testResult {
 	result := testResult{context: c, statusCode: http.StatusOK}
 	if httpResp != nil {
 		result.statusCode = httpResp.StatusCode
+	}
+	switch usage := usageAny.(type) {
+	case *dto.Usage:
+		result.usage = usage
+	case dto.Usage:
+		result.usage = &usage
 	}
 	body := w.Body.Bytes()
 	result.responseBody = body[:min(len(body), channelProbeResponseMaxBytes)]

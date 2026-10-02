@@ -29,6 +29,8 @@ export const PROBE_INTERVAL_MIN_SECONDS = 30
 export const PROBE_INTERVAL_MAX_SECONDS = 7 * 24 * 3600
 // Mirrors model.ChannelProbeResultKeep on the server.
 export const PROBE_RESULT_KEEP = 200
+// Mirrors model.ChannelProbeBaselineMinSamples on the server.
+export const BASELINE_MIN_SAMPLES = 3
 
 export const PROBE_ENDPOINT_TYPES = [
   'openai',

@@ -1,6 +1,9 @@
 package model
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -15,6 +18,12 @@ const (
 	ChannelProbeResultKeep = 200
 	// channelProbeTextMaxBytes keeps stored text within a MySQL TEXT column.
 	channelProbeTextMaxBytes = 60000
+	// ChannelProbeBaselineMinSamples is how many comparable runs a probe needs
+	// before a majority value becomes its baseline.
+	ChannelProbeBaselineMinSamples = 3
+
+	ChannelProbeAnomalyInputTokens = "input_tokens"
+	ChannelProbeAnomalyContent     = "content"
 )
 
 // ChannelProbe is an administrator-defined request that is sent to one channel
@@ -33,8 +42,10 @@ type ChannelProbe struct {
 	LastRunAt       int64  `json:"last_run_at" gorm:"bigint"`
 	LastSuccess     bool   `json:"last_success"`
 	LastError       string `json:"last_error" gorm:"type:text"`
-	CreatedAt       int64  `json:"created_at" gorm:"bigint"`
-	UpdatedAt       int64  `json:"updated_at" gorm:"bigint"`
+	// LastAnomaly reports whether the latest run differed from the baseline.
+	LastAnomaly bool  `json:"last_anomaly"`
+	CreatedAt   int64 `json:"created_at" gorm:"bigint"`
+	UpdatedAt   int64 `json:"updated_at" gorm:"bigint"`
 }
 
 // ChannelProbeResult is one recorded run of a probe.
@@ -47,7 +58,82 @@ type ChannelProbeResult struct {
 	LatencyMs  int64  `json:"latency_ms"`
 	Response   string `json:"response" gorm:"type:text"`
 	Error      string `json:"error" gorm:"type:text"`
-	CreatedAt  int64  `json:"created_at" gorm:"bigint;index"`
+	// InputTokens and OutputTokens come from the upstream usage; 0 is unknown.
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+	// Content is the assistant text extracted from Response.
+	Content     string `json:"content" gorm:"type:text"`
+	ContentHash string `json:"-" gorm:"type:varchar(64)"`
+	// RequestHash identifies the probe configuration the run used, so a
+	// baseline only compares runs of the same request.
+	RequestHash string `json:"-" gorm:"type:varchar(64)"`
+	CreatedAt   int64  `json:"created_at" gorm:"bigint;index"`
+}
+
+// ChannelProbeMajority describes how a baseline value was voted for.
+type ChannelProbeMajority struct {
+	Established bool `json:"established"`
+	Votes       int  `json:"votes"`
+	Samples     int  `json:"samples"`
+}
+
+// ChannelProbeBaseline is the value most successful runs of the current probe
+// request agree on. A value becomes the baseline only when more than half of
+// at least ChannelProbeBaselineMinSamples runs share it.
+type ChannelProbeBaseline struct {
+	InputTokens         int                  `json:"input_tokens"`
+	InputTokensMajority ChannelProbeMajority `json:"input_tokens_majority"`
+	Content             string               `json:"content"`
+	ContentMajority     ChannelProbeMajority `json:"content_majority"`
+	contentHash         string
+	requestHash         string
+}
+
+// Anomalies lists how a successful run of the same request differs from the
+// baseline. Failed runs and runs of an older request are never anomalies.
+func (baseline ChannelProbeBaseline) Anomalies(result *ChannelProbeResult) []string {
+	anomalies := []string{}
+	if !result.Success || result.RequestHash != baseline.requestHash {
+		return anomalies
+	}
+	if baseline.InputTokensMajority.Established && result.InputTokens > 0 && result.InputTokens != baseline.InputTokens {
+		anomalies = append(anomalies, ChannelProbeAnomalyInputTokens)
+	}
+	if baseline.ContentMajority.Established && result.ContentHash != "" && result.ContentHash != baseline.contentHash {
+		anomalies = append(anomalies, ChannelProbeAnomalyContent)
+	}
+	return anomalies
+}
+
+// RequestHash identifies the request a probe sends: target channel, format,
+// headers and body.
+func (probe *ChannelProbe) RequestHash() string {
+	return channelProbeHash(strings.Join([]string{
+		strconv.Itoa(probe.ChannelId),
+		probe.EndpointType,
+		strings.TrimSpace(probe.Headers),
+		strings.TrimSpace(probe.Body),
+	}, "\n"))
+}
+
+func channelProbeHash(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
+}
+
+// majorityOf returns the most common value and whether it is a baseline.
+func majorityOf[T comparable](values []T) (T, ChannelProbeMajority) {
+	var top T
+	majority := ChannelProbeMajority{Samples: len(values)}
+	votes := make(map[T]int, len(values))
+	for _, value := range values {
+		votes[value]++
+		if votes[value] > majority.Votes {
+			top, majority.Votes = value, votes[value]
+		}
+	}
+	majority.Established = majority.Samples >= ChannelProbeBaselineMinSamples && majority.Votes*2 > majority.Samples
+	return top, majority
 }
 
 // ChannelProbeText makes upstream text storable on every supported database:
@@ -87,7 +173,7 @@ func (probe *ChannelProbe) Insert() error {
 func (probe *ChannelProbe) Update() error {
 	return DB.Model(probe).Select(
 		"name", "channel_id", "endpoint_type", "headers", "body",
-		"interval_seconds", "enabled", "next_run_at", "updated_at",
+		"interval_seconds", "enabled", "next_run_at", "last_anomaly", "updated_at",
 	).Updates(probe).Error
 }
 
@@ -135,10 +221,17 @@ func ClaimDueChannelProbes(now int64) ([]*ChannelProbe, error) {
 	return claimed, nil
 }
 
-// RecordChannelProbeResult stores a run, updates the probe's last run state,
-// and prunes results beyond ChannelProbeResultKeep.
-func RecordChannelProbeResult(result *ChannelProbeResult) error {
+// RecordChannelProbeResult stores a run of the probe, prunes results beyond
+// ChannelProbeResultKeep, and updates the probe's last run state, including
+// whether the run differs from the baseline.
+func RecordChannelProbeResult(probe *ChannelProbe, result *ChannelProbeResult) error {
+	result.ProbeId = probe.Id
+	result.RequestHash = probe.RequestHash()
+	if result.Success {
+		result.ContentHash = channelProbeHash(strings.TrimSpace(result.Content))
+	}
 	result.Response = ChannelProbeText(result.Response)
+	result.Content = ChannelProbeText(result.Content)
 	result.Error = ChannelProbeText(result.Error)
 	if result.CreatedAt == 0 {
 		result.CreatedAt = common.GetTimestamp()
@@ -146,26 +239,70 @@ func RecordChannelProbeResult(result *ChannelProbeResult) error {
 	if err := DB.Create(result).Error; err != nil {
 		return err
 	}
-	if err := DB.Model(&ChannelProbe{}).Where("id = ?", result.ProbeId).UpdateColumns(map[string]any{
-		"last_run_at":  result.CreatedAt,
-		"last_success": result.Success,
-		"last_error":   result.Error,
-	}).Error; err != nil {
-		return err
-	}
 	var cutoff []int
 	if err := DB.Model(&ChannelProbeResult{}).
-		Where("probe_id = ?", result.ProbeId).
+		Where("probe_id = ?", probe.Id).
 		Order("id desc").
 		Offset(ChannelProbeResultKeep).
 		Limit(1).
 		Pluck("id", &cutoff).Error; err != nil {
 		return err
 	}
-	if len(cutoff) == 0 {
-		return nil
+	if len(cutoff) > 0 {
+		if err := DB.Where("probe_id = ? AND id <= ?", probe.Id, cutoff[0]).Delete(&ChannelProbeResult{}).Error; err != nil {
+			return err
+		}
 	}
-	return DB.Where("probe_id = ? AND id <= ?", result.ProbeId, cutoff[0]).Delete(&ChannelProbeResult{}).Error
+	baseline, err := GetChannelProbeBaseline(probe)
+	if err != nil {
+		return err
+	}
+	return DB.Model(&ChannelProbe{}).Where("id = ?", probe.Id).UpdateColumns(map[string]any{
+		"last_run_at":  result.CreatedAt,
+		"last_success": result.Success,
+		"last_error":   result.Error,
+		"last_anomaly": len(baseline.Anomalies(result)) > 0,
+	}).Error
+}
+
+// GetChannelProbeBaseline votes on the input tokens and output content of the
+// probe's successful runs that used its current request.
+func GetChannelProbeBaseline(probe *ChannelProbe) (ChannelProbeBaseline, error) {
+	baseline := ChannelProbeBaseline{requestHash: probe.RequestHash()}
+	var runs []ChannelProbeResult
+	if err := DB.Model(&ChannelProbeResult{}).
+		Select("input_tokens", "content_hash").
+		Where("probe_id = ? AND request_hash = ? AND success = ?", probe.Id, baseline.requestHash, true).
+		Find(&runs).Error; err != nil {
+		return baseline, err
+	}
+	inputTokens := make([]int, 0, len(runs))
+	contentHashes := make([]string, 0, len(runs))
+	for _, run := range runs {
+		if run.InputTokens > 0 {
+			inputTokens = append(inputTokens, run.InputTokens)
+		}
+		if run.ContentHash != "" {
+			contentHashes = append(contentHashes, run.ContentHash)
+		}
+	}
+	baseline.InputTokens, baseline.InputTokensMajority = majorityOf(inputTokens)
+	baseline.contentHash, baseline.ContentMajority = majorityOf(contentHashes)
+	if !baseline.ContentMajority.Established {
+		return baseline, nil
+	}
+	var contents []string
+	if err := DB.Model(&ChannelProbeResult{}).
+		Where("probe_id = ? AND content_hash = ?", probe.Id, baseline.contentHash).
+		Order("id desc").
+		Limit(1).
+		Pluck("content", &contents).Error; err != nil {
+		return baseline, err
+	}
+	if len(contents) > 0 {
+		baseline.Content = contents[0]
+	}
+	return baseline, nil
 }
 
 func GetChannelProbeResults(probeId int, offset int, limit int) ([]*ChannelProbeResult, int64, error) {

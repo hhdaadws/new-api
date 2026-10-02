@@ -120,6 +120,14 @@ export function ProbesTable(props: ProbesTableProps) {
                     copyable={false}
                     title={probe.last_error || undefined}
                   />
+                  {probe.last_anomaly && (
+                    <StatusBadge
+                      label={t('Anomalous')}
+                      variant='warning'
+                      copyable={false}
+                      title={t('The latest run differs from the baseline')}
+                    />
+                  )}
                   <span className='text-muted-foreground text-xs'>
                     {formatTimestampToDate(probe.last_run_at)}
                   </span>

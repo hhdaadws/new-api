@@ -36,6 +36,7 @@ export type ChannelProbe = {
   last_run_at: number
   last_success: boolean
   last_error: string
+  last_anomaly: boolean
   created_at: number
   updated_at: number
 }
@@ -60,7 +61,26 @@ export type ChannelProbeResult = {
   latency_ms: number
   response: string
   error: string
+  input_tokens: number
+  output_tokens: number
+  content: string
+  anomalies: ChannelProbeAnomaly[]
   created_at: number
+}
+
+export type ChannelProbeAnomaly = 'input_tokens' | 'content'
+
+export type ChannelProbeMajority = {
+  established: boolean
+  votes: number
+  samples: number
+}
+
+export type ChannelProbeBaseline = {
+  input_tokens: number
+  input_tokens_majority: ChannelProbeMajority
+  content: string
+  content_majority: ChannelProbeMajority
 }
 
 export type ChannelProbeTarget = {
@@ -81,4 +101,5 @@ export type ChannelProbeResultsPage = {
   page_size: number
   total: number
   items: ChannelProbeResult[] | null
+  baseline: ChannelProbeBaseline
 }
