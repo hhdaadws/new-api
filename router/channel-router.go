@@ -52,6 +52,24 @@ func registerChannelRoutes(apiRouter *gin.RouterGroup) {
 	for _, route := range channelPermissionRoutes {
 		handlePermissionRoute(channelRoute, route.method, route.path, route.permission, route.handler)
 	}
+
+	probeRoute := apiRouter.Group("/channel_probe")
+	probeRoute.Use(middleware.AdminAuth())
+	for _, route := range channelProbePermissionRoutes {
+		handlePermissionRoute(probeRoute, route.method, route.path, route.permission, route.handler)
+	}
+}
+
+// Probes send scheduled test requests to channels, so every probe route
+// requires the channel test permission.
+var channelProbePermissionRoutes = []permissionRoute{
+	{method: http.MethodGet, path: "/", permission: authz.ChannelTest, handler: controller.GetChannelProbes},
+	{method: http.MethodGet, path: "/channels", permission: authz.ChannelTest, handler: controller.GetChannelProbeTargets},
+	{method: http.MethodPost, path: "/", permission: authz.ChannelTest, handler: controller.CreateChannelProbe},
+	{method: http.MethodPut, path: "/:id", permission: authz.ChannelTest, handler: controller.UpdateChannelProbe},
+	{method: http.MethodDelete, path: "/:id", permission: authz.ChannelTest, handler: controller.DeleteChannelProbe},
+	{method: http.MethodPost, path: "/:id/run", permission: authz.ChannelTest, handler: controller.RunChannelProbe},
+	{method: http.MethodGet, path: "/:id/results", permission: authz.ChannelTest, handler: controller.GetChannelProbeResults},
 }
 
 var channelPermissionRoutes = []permissionRoute{

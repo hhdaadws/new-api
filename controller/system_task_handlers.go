@@ -22,6 +22,7 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
+	service.RegisterSystemTaskHandler(channelProbeHandler{})
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and
@@ -149,6 +150,34 @@ func (asyncTaskPollHandler) NewPayload() any { return nil }
 
 func (asyncTaskPollHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
 	summary := service.RunTaskPollingOnce(ctx, service.NewSystemTaskProgressReporter(task, runnerID))
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
+}
+
+// channelProbeHandler runs the channel probes that are due. Like the polling
+// handlers, Enabled() folds in the "is any probe due?" check so no row is
+// scheduled while every probe is waiting for its own interval.
+type channelProbeHandler struct{}
+
+func (channelProbeHandler) Type() string { return model.SystemTaskTypeChannelProbe }
+
+func (channelProbeHandler) Enabled() bool {
+	due, err := model.HasDueChannelProbes(common.GetTimestamp())
+	if err != nil {
+		common.SysError(fmt.Sprintf("channel probe due check failed: %v", err))
+	}
+	return due
+}
+
+func (channelProbeHandler) Interval() time.Duration { return 15 * time.Second }
+
+func (channelProbeHandler) NewPayload() any { return nil }
+
+func (channelProbeHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	summary, err := runDueChannelProbes(ctx)
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, summary, err)
+		return
+	}
 	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
 }
 

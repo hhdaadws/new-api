@@ -28,6 +28,7 @@ import {
   ListTodo,
   MessageSquare,
   PlugZap,
+  Radar,
   Radio,
   ServerCog,
   Settings,
@@ -140,6 +141,15 @@ export function useSidebarData(): SidebarData {
             title: t('Channels'),
             url: '/channels',
             icon: Radio,
+          },
+          {
+            title: t('Channel Probes'),
+            url: '/channel-probes',
+            icon: Radar,
+            requiredPermission: {
+              resource: ADMIN_PERMISSION_RESOURCES.CHANNEL,
+              action: ADMIN_PERMISSION_ACTIONS.TEST,
+            },
           },
           {
             title: t('Models'),

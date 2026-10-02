@@ -39,6 +39,19 @@ type testResult struct {
 	context     *gin.Context
 	localErr    error
 	newAPIError *types.NewAPIError
+	// statusCode and responseBody are filled for probe runs only.
+	statusCode   int
+	responseBody []byte
+}
+
+// channelProbeRequest replaces the generated test request with a probe's own
+// request and headers. Probe runs skip billing and the consume log, and keep
+// the upstream response for the probe history.
+type channelProbeRequest struct {
+	request  dto.Request
+	headers  map[string]string
+	model    string
+	isStream bool
 }
 
 func normalizeChannelTestEndpoint(channel *model.Channel, endpointType string) string {
@@ -69,7 +82,7 @@ func resolveChannelTestUserID(c *gin.Context) (int, error) {
 	return rootUser.Id, nil
 }
 
-func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) testResult {
+func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool, probe *channelProbeRequest) testResult {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -227,7 +240,12 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		}
 	}
 
-	request := buildTestRequest(testModel, endpointType, channel, isStream)
+	var request dto.Request
+	if probe != nil {
+		request = probe.request
+	} else {
+		request = buildTestRequest(testModel, endpointType, channel, isStream)
+	}
 
 	info, err := relaycommon.GenRelayInfo(c, relayFormat, request, nil)
 
@@ -242,12 +260,29 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	info.IsChannelTest = true
 	info.InitChannelMeta(c)
 
-	err = attachTestBillingRequestInput(info, request)
-	if err != nil {
-		return testResult{
-			context:     c,
-			localErr:    err,
-			newAPIError: types.NewError(err, types.ErrorCodeJsonMarshalFailed),
+	if probe != nil && len(probe.headers) > 0 {
+		// Header names are matched case-insensitively upstream, so a probe
+		// header replaces the channel override with the same name.
+		headersOverride := make(map[string]any, len(info.HeadersOverride)+len(probe.headers))
+		for key, value := range info.HeadersOverride {
+			if _, replaced := probe.headers[strings.ToLower(strings.TrimSpace(key))]; !replaced {
+				headersOverride[key] = value
+			}
+		}
+		for key, value := range probe.headers {
+			headersOverride[key] = value
+		}
+		info.HeadersOverride = headersOverride
+	}
+
+	if probe == nil {
+		err = attachTestBillingRequestInput(info, request)
+		if err != nil {
+			return testResult{
+				context:     c,
+				localErr:    err,
+				newAPIError: types.NewError(err, types.ErrorCodeJsonMarshalFailed),
+			}
 		}
 	}
 
@@ -294,12 +329,15 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	//logInfo.ApiKey = ""
 	common.SysLog(fmt.Sprintf("testing channel %d with model %s , info %+v ", channel.Id, testModel, info.ToString()))
 
-	priceData, err := helper.ModelPriceHelper(c, info, 0, request.GetTokenCountMeta())
-	if err != nil {
-		return testResult{
-			context:     c,
-			localErr:    err,
-			newAPIError: types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest)),
+	var priceData hosttypes.PriceData
+	if probe == nil {
+		priceData, err = helper.ModelPriceHelper(c, info, 0, request.GetTokenCountMeta())
+		if err != nil {
+			return testResult{
+				context:     c,
+				localErr:    err,
+				newAPIError: types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest)),
+			}
 		}
 	}
 
@@ -445,6 +483,12 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	if resp != nil {
 		httpResp = resp.(*http.Response)
 		if httpResp.StatusCode != http.StatusOK {
+			var errorBody []byte
+			if probe != nil {
+				errorBody, _ = io.ReadAll(io.LimitReader(httpResp.Body, channelProbeResponseMaxBytes))
+				_ = httpResp.Body.Close()
+				httpResp.Body = io.NopCloser(bytes.NewReader(errorBody))
+			}
 			err := service.RelayErrorHandler(c.Request.Context(), httpResp, true)
 			common.SysError(fmt.Sprintf(
 				"channel test bad response: channel_id=%d name=%s type=%d model=%s endpoint_type=%s status=%d err=%v",
@@ -457,13 +501,18 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 				err,
 			))
 			return testResult{
-				context:     c,
-				localErr:    err,
-				newAPIError: types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError),
+				context:      c,
+				localErr:     err,
+				newAPIError:  types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError),
+				statusCode:   httpResp.StatusCode,
+				responseBody: errorBody,
 			}
 		}
 	}
 	usageA, respErr := adaptor.DoResponse(c, httpResp, info)
+	if probe != nil {
+		return probeTestResult(c, w, httpResp, respErr, isStream)
+	}
 	if respErr != nil {
 		return testResult{
 			context:     c,
@@ -521,6 +570,27 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		localErr:    nil,
 		newAPIError: nil,
 	}
+}
+
+// probeTestResult keeps the response the probe received, as relayed in the
+// probe's endpoint format, together with any error the relay reported.
+func probeTestResult(c *gin.Context, w *httptest.ResponseRecorder, httpResp *http.Response, respErr *types.NewAPIError, isStream bool) testResult {
+	result := testResult{context: c, statusCode: http.StatusOK}
+	if httpResp != nil {
+		result.statusCode = httpResp.StatusCode
+	}
+	body := w.Body.Bytes()
+	result.responseBody = body[:min(len(body), channelProbeResponseMaxBytes)]
+	if respErr != nil {
+		result.localErr = respErr
+		result.newAPIError = respErr
+		return result
+	}
+	if bodyErr := validateTestResponseBody(result.responseBody, isStream); bodyErr != nil {
+		result.localErr = bodyErr
+		result.newAPIError = types.NewOpenAIError(bodyErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+	}
+	return result
 }
 
 func attachTestBillingRequestInput(info *relaycommon.RelayInfo, request dto.Request) error {
@@ -874,7 +944,7 @@ func TestChannel(c *gin.Context) {
 	if c.Request != nil {
 		requestCtx = c.Request.Context()
 	}
-	result := testChannel(requestCtx, channel, testUserID, testModel, endpointType, isStream)
+	result := testChannel(requestCtx, channel, testUserID, testModel, endpointType, isStream, nil)
 	if result.localErr != nil {
 		resp := gin.H{
 			"success": false,
@@ -921,7 +991,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	summary := channelTestSummary{}
 	isChannelEnabled := channel.Status == common.ChannelStatusEnabled
 	tik := time.Now()
-	result := testChannel(ctx, channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
+	result := testChannel(ctx, channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel), nil)
 	milliseconds := time.Since(tik).Milliseconds()
 	if ctx.Err() != nil {
 		return summary
