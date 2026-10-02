@@ -2,11 +2,13 @@ package dto
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
 	"slices"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/relaykit/types"
 )
@@ -32,6 +34,13 @@ type ChannelSettings struct {
 	// HTTP2ConnectionShards spreads HTTP/2 traffic across N independent transports
 	// (1-8). Zero/unset means 1. Ignored when HTTPProtocol is "http1".
 	HTTP2ConnectionShards int `json:"http2_connection_shards,omitempty"`
+	// RequestTimeoutSeconds cuts a relay attempt that is still unfinished this
+	// many seconds after the channel was selected. Zero disables the limit.
+	RequestTimeoutSeconds int `json:"request_timeout_seconds,omitempty"`
+	// RequestTimeoutStatusCode and RequestTimeoutMessage shape the error the
+	// client receives on timeout; unset values use 502 and "bad response".
+	RequestTimeoutStatusCode int    `json:"request_timeout_status_code,omitempty"`
+	RequestTimeoutMessage    string `json:"request_timeout_message,omitempty"`
 }
 
 // BindsTaskPlugin reports whether the channel is bound to the task plugin,
@@ -83,6 +92,44 @@ func (s *ChannelSettings) ValidateHTTPTransport() error {
 		return fmt.Errorf("http2_connection_shards must be 1 when http_protocol is http1")
 	}
 	return nil
+}
+
+const (
+	MaxRequestTimeoutSeconds        = 86400
+	MaxRequestTimeoutMessageLength  = 1000
+	DefaultRequestTimeoutStatusCode = http.StatusBadGateway
+	DefaultRequestTimeoutMessage    = "bad response"
+)
+
+// ValidateRequestTimeout validates save-time channel request timeout settings.
+func (s *ChannelSettings) ValidateRequestTimeout() error {
+	if s == nil {
+		return nil
+	}
+	if s.RequestTimeoutSeconds < 0 || s.RequestTimeoutSeconds > MaxRequestTimeoutSeconds {
+		return fmt.Errorf("invalid request_timeout_seconds: %d", s.RequestTimeoutSeconds)
+	}
+	if s.RequestTimeoutStatusCode != 0 && (s.RequestTimeoutStatusCode < 400 || s.RequestTimeoutStatusCode > 599) {
+		return fmt.Errorf("invalid request_timeout_status_code: %d", s.RequestTimeoutStatusCode)
+	}
+	if utf8.RuneCountInString(s.RequestTimeoutMessage) > MaxRequestTimeoutMessageLength {
+		return fmt.Errorf("request_timeout_message must not exceed %d characters", MaxRequestTimeoutMessageLength)
+	}
+	return nil
+}
+
+// RequestTimeoutResponse returns the status code and message sent to clients
+// when the channel request timeout fires, falling back to the defaults.
+func (s ChannelSettings) RequestTimeoutResponse() (int, string) {
+	statusCode := s.RequestTimeoutStatusCode
+	if statusCode < 400 || statusCode > 599 {
+		statusCode = DefaultRequestTimeoutStatusCode
+	}
+	message := strings.TrimSpace(s.RequestTimeoutMessage)
+	if message == "" {
+		message = DefaultRequestTimeoutMessage
+	}
+	return statusCode, message
 }
 
 type VertexKeyType string

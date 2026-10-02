@@ -3,6 +3,7 @@ package dto
 import (
 	"encoding/json"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -719,6 +720,38 @@ func TestChannelSettingsValidateHTTPTransport(t *testing.T) {
 	err = (&ChannelSettings{HTTPProtocol: "http1", HTTP2ConnectionShards: 2}).ValidateHTTPTransport()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "http2_connection_shards")
+}
+
+func TestChannelSettingsRequestTimeout(t *testing.T) {
+	require.NoError(t, (&ChannelSettings{}).ValidateRequestTimeout())
+	require.NoError(t, (&ChannelSettings{RequestTimeoutSeconds: 30, RequestTimeoutStatusCode: 504, RequestTimeoutMessage: "slow upstream"}).ValidateRequestTimeout())
+
+	invalid := []struct {
+		name     string
+		settings ChannelSettings
+		field    string
+	}{
+		{name: "negative seconds", settings: ChannelSettings{RequestTimeoutSeconds: -1}, field: "request_timeout_seconds"},
+		{name: "seconds above max", settings: ChannelSettings{RequestTimeoutSeconds: MaxRequestTimeoutSeconds + 1}, field: "request_timeout_seconds"},
+		{name: "success status", settings: ChannelSettings{RequestTimeoutStatusCode: 200}, field: "request_timeout_status_code"},
+		{name: "status above 599", settings: ChannelSettings{RequestTimeoutStatusCode: 600}, field: "request_timeout_status_code"},
+		{name: "message too long", settings: ChannelSettings{RequestTimeoutMessage: strings.Repeat("超", MaxRequestTimeoutMessageLength+1)}, field: "request_timeout_message"},
+	}
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.settings.ValidateRequestTimeout()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.field)
+		})
+	}
+
+	statusCode, message := ChannelSettings{}.RequestTimeoutResponse()
+	assert.Equal(t, 502, statusCode)
+	assert.Equal(t, "bad response", message)
+
+	statusCode, message = ChannelSettings{RequestTimeoutStatusCode: 504, RequestTimeoutMessage: " slow upstream "}.RequestTimeoutResponse()
+	assert.Equal(t, 504, statusCode)
+	assert.Equal(t, "slow upstream", message)
 }
 
 func TestChannelOtherSettingsValidateToolLossPolicy(t *testing.T) {

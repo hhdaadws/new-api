@@ -28,6 +28,7 @@ var gatewayLocalErrorCodes = map[types.ErrorCode]struct{}{
 	types.ErrorCodeUpdateDataError:            {},
 	types.ErrorCodeInsufficientUserQuota:      {},
 	types.ErrorCodePreConsumeTokenQuotaFailed: {},
+	types.ErrorCodeUpstreamTimeout:            {},
 }
 
 // matchUpstreamErrorKeywordText reports the first configured keyword found in

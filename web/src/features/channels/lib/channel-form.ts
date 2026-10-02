@@ -82,6 +82,10 @@ function isOptionalProxyURL(value: string | undefined): boolean {
 export const HTTP_PROTOCOL_AUTO = 'auto'
 export const HTTP_PROTOCOL_HTTP1 = 'http1'
 export const MAX_HTTP2_CONNECTION_SHARDS = 8
+export const MAX_REQUEST_TIMEOUT_SECONDS = 86400
+export const MAX_REQUEST_TIMEOUT_MESSAGE_LENGTH = 1000
+export const DEFAULT_REQUEST_TIMEOUT_STATUS_CODE = 502
+export const DEFAULT_REQUEST_TIMEOUT_MESSAGE = 'bad response'
 
 export function normalizeHttpProtocol(
   value: string | undefined | null
@@ -276,6 +280,9 @@ export const channelFormSchema = z
       .refine(isOptionalProxyURL, ERROR_MESSAGES.INVALID_PROXY),
     http_protocol: z.enum(['auto', 'http1']).optional(),
     http2_connection_shards: z.number().int().optional(),
+    request_timeout_seconds: z.number().int().optional(),
+    request_timeout_status_code: z.number().int().optional(),
+    request_timeout_message: z.string().optional(),
     pass_through_body_enabled: z.boolean().optional(),
     responses_websocket_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
@@ -427,6 +434,37 @@ export const channelFormSchema = z
         ERROR_MESSAGES.INVALID_HTTP1_WITH_SHARDS
       )
     }
+
+    const timeoutSeconds = data.request_timeout_seconds ?? 0
+    if (timeoutSeconds < 0 || timeoutSeconds > MAX_REQUEST_TIMEOUT_SECONDS) {
+      addRequiredIssue(
+        ctx,
+        'request_timeout_seconds',
+        ERROR_MESSAGES.INVALID_REQUEST_TIMEOUT_SECONDS
+      )
+    }
+    // The response settings only matter once a timeout is set.
+    if (timeoutSeconds > 0) {
+      const statusCode =
+        data.request_timeout_status_code ?? DEFAULT_REQUEST_TIMEOUT_STATUS_CODE
+      if (statusCode < 400 || statusCode > 599) {
+        addRequiredIssue(
+          ctx,
+          'request_timeout_status_code',
+          ERROR_MESSAGES.INVALID_REQUEST_TIMEOUT_STATUS_CODE
+        )
+      }
+      if (
+        [...(data.request_timeout_message ?? '')].length >
+        MAX_REQUEST_TIMEOUT_MESSAGE_LENGTH
+      ) {
+        addRequiredIssue(
+          ctx,
+          'request_timeout_message',
+          ERROR_MESSAGES.INVALID_REQUEST_TIMEOUT_MESSAGE
+        )
+      }
+    }
   })
 
 export type ChannelFormValues = z.infer<typeof channelFormSchema>
@@ -470,6 +508,9 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   proxy: '',
   http_protocol: HTTP_PROTOCOL_AUTO,
   http2_connection_shards: 1,
+  request_timeout_seconds: 0,
+  request_timeout_status_code: DEFAULT_REQUEST_TIMEOUT_STATUS_CODE,
+  request_timeout_message: DEFAULT_REQUEST_TIMEOUT_MESSAGE,
   pass_through_body_enabled: false,
   responses_websocket_enabled: false,
   system_prompt: '',
@@ -514,6 +555,9 @@ export function transformChannelToFormDefaults(
     proxy: '',
     http_protocol: HTTP_PROTOCOL_AUTO as 'auto' | 'http1',
     http2_connection_shards: 1,
+    request_timeout_seconds: 0,
+    request_timeout_status_code: DEFAULT_REQUEST_TIMEOUT_STATUS_CODE,
+    request_timeout_message: DEFAULT_REQUEST_TIMEOUT_MESSAGE,
     pass_through_body_enabled: false,
     responses_websocket_enabled: false,
     system_prompt: '',
@@ -535,6 +579,12 @@ export function transformChannelToFormDefaults(
         proxy: parsed.proxy || '',
         http_protocol: protocol,
         http2_connection_shards: protocol === HTTP_PROTOCOL_HTTP1 ? 1 : shards,
+        request_timeout_seconds: Number(parsed.request_timeout_seconds) || 0,
+        request_timeout_status_code:
+          Number(parsed.request_timeout_status_code) ||
+          DEFAULT_REQUEST_TIMEOUT_STATUS_CODE,
+        request_timeout_message:
+          parsed.request_timeout_message || DEFAULT_REQUEST_TIMEOUT_MESSAGE,
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
         responses_websocket_enabled:
           parsed.responses_websocket_enabled === true,
@@ -688,6 +738,17 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
     settingObj.http_protocol = HTTP_PROTOCOL_HTTP1
   } else if (shards > 1) {
     settingObj.http2_connection_shards = shards
+  }
+
+  const timeoutSeconds = formData.request_timeout_seconds ?? 0
+  if (timeoutSeconds > 0) {
+    settingObj.request_timeout_seconds = timeoutSeconds
+    settingObj.request_timeout_status_code =
+      formData.request_timeout_status_code ??
+      DEFAULT_REQUEST_TIMEOUT_STATUS_CODE
+    settingObj.request_timeout_message =
+      formData.request_timeout_message?.trim() ||
+      DEFAULT_REQUEST_TIMEOUT_MESSAGE
   }
 
   return JSON.stringify(settingObj)

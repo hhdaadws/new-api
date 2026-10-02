@@ -93,6 +93,9 @@ export interface ChannelSettings {
   system_prompt_override?: boolean
   http_protocol?: 'auto' | 'http1' | string
   http2_connection_shards?: number
+  request_timeout_seconds?: number
+  request_timeout_status_code?: number
+  request_timeout_message?: string
 }
 
 export interface ChannelOtherSettings {

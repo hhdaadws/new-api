@@ -39,6 +39,7 @@ import {
   Route,
   Settings,
   SlidersHorizontal,
+  Timer,
   Wand2,
 } from 'lucide-react'
 import {
@@ -167,6 +168,9 @@ import {
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
   CHANNEL_TYPE_ADVANCED_CUSTOM,
+  DEFAULT_REQUEST_TIMEOUT_MESSAGE,
+  DEFAULT_REQUEST_TIMEOUT_STATUS_CODE,
+  MAX_REQUEST_TIMEOUT_MESSAGE_LENGTH,
   channelFormSchema,
   channelsQueryKeys,
   getAdvancedCustomStats,
@@ -299,6 +303,9 @@ const SENSITIVE_FORM_FIELDS = [
   'proxy',
   'http_protocol',
   'http2_connection_shards',
+  'request_timeout_seconds',
+  'request_timeout_status_code',
+  'request_timeout_message',
   'pass_through_body_enabled',
   'responses_websocket_enabled',
   'system_prompt',
@@ -620,6 +627,7 @@ export function ChannelMutateDrawer({
   const currentHeaderOverride = formValues.header_override
   const currentProxy = formValues.proxy
   const currentHttpProtocol = formValues.http_protocol
+  const requestTimeoutEnabled = (formValues.request_timeout_seconds ?? 0) > 0
   const {
     unlocked: doubaoApiEditUnlocked,
     handleClick: handleApiConfigSecretClick,
@@ -2194,6 +2202,95 @@ export function ChannelMutateDrawer({
         )
       }}
     />
+  )
+
+  const requestTimeoutFields = (
+    <div
+      role='group'
+      aria-label={t('Request Timeout')}
+      className={channelConfigurationBlockClassName(
+        configuration.blocks.requestTimeout,
+        'space-y-4'
+      )}
+    >
+      <CardHeading
+        status={configuration.blocks.requestTimeout}
+        title={t('Request Timeout')}
+        icon={<Timer className='size-4' />}
+      />
+      <fieldset
+        disabled={sensitiveLocked}
+        className='space-y-4 disabled:opacity-60'
+      >
+        <FormField
+          control={form.control}
+          name='request_timeout_seconds'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('Timeout (seconds)')}</FormLabel>
+              <FormControl>
+                <Input
+                  type='number'
+                  placeholder='0'
+                  {...field}
+                  onChange={(e) => field.onChange(Number(e.target.value))}
+                />
+              </FormControl>
+              <FormDescription>
+                {t(
+                  'Cut off requests routed to this channel that have not finished within this many seconds. 0 disables the timeout.'
+                )}
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <div className='grid gap-4 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]'>
+          <FormField
+            control={form.control}
+            name='request_timeout_status_code'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Timeout Status Code')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type='number'
+                    placeholder={String(DEFAULT_REQUEST_TIMEOUT_STATUS_CODE)}
+                    {...field}
+                    disabled={!requestTimeoutEnabled}
+                    onChange={(e) => field.onChange(Number(e.target.value))}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='request_timeout_message'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Timeout Error Message')}</FormLabel>
+                <FormControl>
+                  <Input
+                    maxLength={MAX_REQUEST_TIMEOUT_MESSAGE_LENGTH}
+                    placeholder={DEFAULT_REQUEST_TIMEOUT_MESSAGE}
+                    {...field}
+                    disabled={!requestTimeoutEnabled}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Returned to the client when the timeout fires. Timed-out requests are not retried on other channels. If a stream has already started, it ends with an error event instead.'
+          )}
+        </p>
+      </fieldset>
+    </div>
   )
 
   const routingFields = (
@@ -4741,6 +4838,7 @@ export function ChannelMutateDrawer({
                 {httpShardsFields}
               </fieldset>
             </div>
+            {requestTimeoutFields}
             {upstreamModelDetectionFields}
             {notesFields}
           </>

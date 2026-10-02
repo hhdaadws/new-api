@@ -72,6 +72,7 @@ const (
 	ErrorCodeReadResponseBodyFailed ErrorCode = "read_response_body_failed"
 	ErrorCodeBadResponseStatusCode  ErrorCode = "bad_response_status_code"
 	ErrorCodeBadResponse            ErrorCode = "bad_response"
+	ErrorCodeUpstreamTimeout        ErrorCode = "upstream_timeout"
 	ErrorCodeBadResponseBody        ErrorCode = "bad_response_body"
 	ErrorCodeEmptyResponse          ErrorCode = "empty_response"
 	ErrorCodeAwsInvokeError         ErrorCode = "aws_invoke_error"

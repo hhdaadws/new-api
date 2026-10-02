@@ -190,12 +190,19 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		switch relayFormat {
 		case types.RelayFormatOpenAIRealtime:
 			newAPIError = relay.WssHelper(c, relayInfo)
-		case types.RelayFormatClaude:
-			newAPIError = relay.ClaudeHelper(c, relayInfo)
-		case types.RelayFormatGemini:
-			newAPIError = geminiRelayHandler(c, relayInfo)
 		default:
-			newAPIError = relayHandler(c, relayInfo)
+			// Realtime sessions are long-lived, so only HTTP relays honor the
+			// channel request timeout.
+			requestTimeout := helper.StartChannelRequestTimeout(c)
+			switch relayFormat {
+			case types.RelayFormatClaude:
+				newAPIError = relay.ClaudeHelper(c, relayInfo)
+			case types.RelayFormatGemini:
+				newAPIError = geminiRelayHandler(c, relayInfo)
+			default:
+				newAPIError = relayHandler(c, relayInfo)
+			}
+			newAPIError = requestTimeout.Finish(c, relayInfo, newAPIError)
 		}
 
 		if newAPIError == nil {

@@ -30,6 +30,7 @@ const (
 	ContextKeyChannelType              ContextKey = "channel_type"
 	ContextKeyChannelSetting           ContextKey = "channel_setting"
 	ContextKeyChannelOtherSetting      ContextKey = "channel_other_setting"
+	ContextKeyChannelUpstreamContext   ContextKey = "channel_upstream_context" // deadline-bound upstream context while a channel request timeout is armed
 	ContextKeyChannelParamOverride     ContextKey = "param_override"
 	ContextKeyChannelHeaderOverride    ContextKey = "header_override"
 	ContextKeyChannelOrganization      ContextKey = "channel_organization"

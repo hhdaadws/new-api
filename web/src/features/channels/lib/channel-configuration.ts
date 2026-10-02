@@ -87,6 +87,14 @@ const CONFIGURATION_BLOCKS = {
       'disable_task_polling_sleep',
     ],
   },
+  requestTimeout: {
+    section: 'other',
+    fields: [
+      'request_timeout_seconds',
+      'request_timeout_status_code',
+      'request_timeout_message',
+    ],
+  },
   upstreamModelDetection: {
     section: 'other',
     fields: [
@@ -177,6 +185,7 @@ export function getChannelConfigurationState(
       (values.http2_connection_shards ?? 1) > 1 ||
       values.disable_task_polling_sleep
     ),
+    requestTimeout: (values.request_timeout_seconds ?? 0) > 0,
     upstreamModelDetection:
       MODEL_FETCHABLE_TYPES.has(values.type) &&
       Boolean(

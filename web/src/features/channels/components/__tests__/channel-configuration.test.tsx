@@ -1646,6 +1646,85 @@ test('an invalid edit switches categories and replaces configured styling with t
   ).not.toBeInTheDocument()
 })
 
+test('a channel request timeout enables its response fields and saves them into the channel setting', async () => {
+  const put = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true } })
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  const otherTab = screen.getByRole('tab', { name: /Other Settings/ })
+  await user.click(otherTab)
+  const block = screen.getByRole('group', { name: 'Request Timeout' })
+  const statusCode = within(block).getByLabelText('Timeout Status Code')
+  const message = within(block).getByLabelText('Timeout Error Message')
+  expect(statusCode).toBeDisabled()
+  expect(message).toBeDisabled()
+  expect(otherTab).not.toHaveAccessibleName(/Configured/)
+
+  fireEvent.change(within(block).getByLabelText('Timeout (seconds)'), {
+    target: { value: '30' },
+  })
+  expect(statusCode).toBeEnabled()
+  expect(statusCode).toHaveValue(502)
+  expect(message).toHaveValue('bad response')
+  expect(within(block).getByRole('img', { name: 'Configured' })).toBeVisible()
+  fireEvent.change(statusCode, { target: { value: '504' } })
+  fireEvent.change(message, { target: { value: 'upstream too slow' } })
+
+  await user.click(screen.getByRole('button', { name: 'Update Channel' }))
+  await waitFor(() => expect(put).toHaveBeenCalled())
+  const payload = put.mock.calls[0]?.[1] as { setting: string }
+  expect(JSON.parse(payload.setting)).toMatchObject({
+    request_timeout_seconds: 30,
+    request_timeout_status_code: 504,
+    request_timeout_message: 'upstream too slow',
+  })
+})
+
+test('a saved channel request timeout loads its values, rejects a non-error status code, and is omitted once cleared', async () => {
+  editingChannel = {
+    ...editingChannel,
+    setting:
+      '{"request_timeout_seconds":45,"request_timeout_status_code":503,"request_timeout_message":"try later"}',
+  }
+  const put = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true } })
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  const otherTab = screen.getByRole('tab', { name: /Other Settings/ })
+  expect(otherTab).toHaveAccessibleName(/Configured/)
+  await user.click(otherTab)
+  const block = screen.getByRole('group', { name: 'Request Timeout' })
+  const seconds = within(block).getByLabelText('Timeout (seconds)')
+  const statusCode = within(block).getByLabelText('Timeout Status Code')
+  expect(seconds).toHaveValue(45)
+  expect(statusCode).toHaveValue(503)
+  expect(within(block).getByLabelText('Timeout Error Message')).toHaveValue(
+    'try later'
+  )
+
+  fireEvent.change(statusCode, { target: { value: '200' } })
+  await user.click(screen.getByRole('button', { name: 'Update Channel' }))
+  expect(
+    await within(block).findByText(
+      'Timeout status code must be between 400 and 599'
+    )
+  ).toBeVisible()
+  expect(put).not.toHaveBeenCalled()
+
+  fireEvent.change(seconds, { target: { value: '0' } })
+  await user.click(screen.getByRole('button', { name: 'Update Channel' }))
+  await waitFor(() => expect(put).toHaveBeenCalled())
+  const payload = put.mock.calls[0]?.[1] as { setting: string }
+  const setting = JSON.parse(payload.setting)
+  expect(setting).not.toHaveProperty('request_timeout_seconds')
+  expect(setting).not.toHaveProperty('request_timeout_status_code')
+  expect(setting).not.toHaveProperty('request_timeout_message')
+})
+
 test('ordinary edits discover models with saved settings and keep removed draft models available for reselection', async () => {
   const user = userEvent.setup()
   const post = vi.spyOn(api, 'post')
