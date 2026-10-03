@@ -16,15 +16,32 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { TFunction } from 'i18next'
 import { describe, expect, test } from 'vitest'
 
 import {
   formValuesToPayload,
-  isValidProbeBody,
+  getProbeFormSchema,
   isValidProbeHeaders,
   PROBE_FORM_DEFAULT_VALUES,
+  SIGNATURE_TAMPER_TEMPLATE,
   ZERO_INJECTION_TEMPLATE,
+  type ProbeFormValues,
 } from '../lib/probe-form'
+
+const schema = getProbeFormSchema(((key: string) => key) as TFunction)
+
+function issues(overrides: Partial<ProbeFormValues>) {
+  const parsed = schema.safeParse({
+    ...PROBE_FORM_DEFAULT_VALUES,
+    name: 'probe',
+    channel_id: '1',
+    ...overrides,
+  })
+  return parsed.success
+    ? []
+    : parsed.error.issues.map((issue) => [issue.path.join('.'), issue.message])
+}
 
 describe('probe headers validation', () => {
   test.each([
@@ -39,36 +56,94 @@ describe('probe headers validation', () => {
   })
 })
 
-describe('probe body validation', () => {
+describe('probe request validation', () => {
   test.each([
-    ['{"model":"gpt-4o-mini","messages":[]}', true],
-    ['{"messages":[]}', false],
-    ['{"model":"  "}', false],
-    ['{"model":"m","max_tokens":200,}', false],
-    ['', false],
-  ])('body %j is valid: %s', (value, expected) => {
-    expect(isValidProbeBody(value)).toBe(expected)
+    {
+      name: 'body with a model',
+      values: { body: '{"model":"m","messages":[]}' },
+      expected: [],
+    },
+    {
+      name: 'selected models stand in for the body model',
+      values: { body: '{"messages":[]}', models: ['a', 'b'] },
+      expected: [],
+    },
+    {
+      name: 'no model anywhere',
+      values: { body: '{"model":"  "}' },
+      expected: [
+        [
+          'models',
+          'Select at least one model or set a model in the request body',
+        ],
+      ],
+    },
+    {
+      name: 'trailing comma',
+      values: { body: '{"model":"m","max_tokens":200,}' },
+      expected: [['body', 'Request body must be a JSON object']],
+    },
+    {
+      name: 'signature probe in another format',
+      values: {
+        probe_type: 'signature' as const,
+        endpoint_type: 'openai' as const,
+        body: '{"model":"m"}',
+      },
+      expected: [
+        [
+          'endpoint_type',
+          'Signature probes must use the Anthropic Messages format',
+        ],
+      ],
+    },
+    {
+      name: 'streaming signature probe',
+      values: {
+        probe_type: 'signature' as const,
+        endpoint_type: 'anthropic' as const,
+        body: '{"model":"m","stream":true}',
+      },
+      expected: [['body', 'Signature probes must not stream']],
+    },
+  ])('$name', (testCase) => {
+    expect(issues(testCase.values)).toEqual(testCase.expected)
   })
 })
 
-describe('zero injection template', () => {
-  test('template body is valid JSON that asks for the system prompt', () => {
+describe('probe templates', () => {
+  test('zero injection template asks for the system prompt', () => {
     const body = JSON.parse(ZERO_INJECTION_TEMPLATE.body)
 
-    expect(isValidProbeBody(ZERO_INJECTION_TEMPLATE.body)).toBe(true)
+    expect(issues({ body: ZERO_INJECTION_TEMPLATE.body })).toEqual([])
     expect(body).toMatchObject({ model: 'claude-opus-5-5', max_tokens: 200 })
-    expect(body.messages).toHaveLength(1)
     expect(body.messages[0].content).toContain('NONE')
-    expect(ZERO_INJECTION_TEMPLATE.endpoint_type).toBe('openai')
+    expect(ZERO_INJECTION_TEMPLATE.probe_type).toBe('custom')
+  })
+
+  test('signature tamper template is a valid non-streaming thinking request', () => {
+    const body = JSON.parse(SIGNATURE_TAMPER_TEMPLATE.body)
+
+    expect(
+      issues({
+        probe_type: SIGNATURE_TAMPER_TEMPLATE.probe_type,
+        endpoint_type: SIGNATURE_TAMPER_TEMPLATE.endpoint_type,
+        body: SIGNATURE_TAMPER_TEMPLATE.body,
+      })
+    ).toEqual([])
+    expect(SIGNATURE_TAMPER_TEMPLATE.probe_type).toBe('signature')
+    expect(body.thinking).toEqual({ type: 'adaptive' })
+    expect(body.stream).toBeUndefined()
   })
 })
 
 describe('probe form payload', () => {
-  test('channel id becomes a number and text fields are trimmed', () => {
+  test('channel id becomes a number, models are joined and text is trimmed', () => {
     const payload = formValuesToPayload({
       ...PROBE_FORM_DEFAULT_VALUES,
       name: '  zero  ',
       channel_id: '12',
+      models: ['claude-opus-5-5', 'claude-sonnet-5-5'],
       headers: '  ',
       body: ' {"model":"m"} ',
     })
@@ -76,7 +151,9 @@ describe('probe form payload', () => {
     expect(payload).toEqual({
       name: 'zero',
       channel_id: 12,
+      probe_type: 'custom',
       endpoint_type: 'openai',
+      models: 'claude-opus-5-5,claude-sonnet-5-5',
       interval_seconds: 300,
       enabled: true,
       headers: '',

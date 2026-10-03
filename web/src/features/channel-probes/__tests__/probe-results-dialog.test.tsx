@@ -17,7 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import i18n from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 import { afterEach, beforeAll, expect, test, vi } from 'vitest'
@@ -36,6 +43,7 @@ const probe = {
   name: 'zero',
   channel_id: 3,
   endpoint_type: 'openai',
+  effective_models: ['m'],
 } as ChannelProbe
 
 function result(
@@ -46,6 +54,7 @@ function result(
     id,
     probe_id: 5,
     channel_id: 3,
+    model: 'm',
     success: true,
     status_code: 200,
     latency_ms: 120,
@@ -71,12 +80,13 @@ afterEach(() => {
 
 function renderResults(
   items: ChannelProbeResult[],
-  baseline: ChannelProbeBaseline
+  baselines: Record<string, ChannelProbeBaseline>,
+  probeOverrides: Partial<ChannelProbe> = {}
 ) {
-  vi.spyOn(api, 'get').mockResolvedValue({
+  const get = vi.spyOn(api, 'get').mockResolvedValue({
     data: {
       success: true,
-      data: { page: 1, page_size: 10, total: items.length, items, baseline },
+      data: { page: 1, page_size: 10, total: items.length, items, baselines },
     },
   })
   render(
@@ -86,10 +96,14 @@ function renderResults(
           new QueryClient({ defaultOptions: { queries: { retry: false } } })
         }
       >
-        <ProbeResultsDialog probe={probe} onOpenChange={() => undefined} />
+        <ProbeResultsDialog
+          probe={{ ...probe, ...probeOverrides }}
+          onOpenChange={() => undefined}
+        />
       </QueryClientProvider>
     </I18nextProvider>
   )
+  return get
 }
 
 test('a run that differs from the majority baseline is flagged', async () => {
@@ -103,14 +117,16 @@ test('a run that differs from the majority baseline is flagged', async () => {
       result(1, {}),
     ],
     {
-      input_tokens: 20,
-      input_tokens_majority: { established: true, votes: 3, samples: 4 },
-      content: 'NONE',
-      content_majority: { established: true, votes: 3, samples: 4 },
+      m: {
+        input_tokens: 20,
+        input_tokens_majority: { established: true, votes: 3, samples: 4 },
+        content: 'NONE',
+        content_majority: { established: true, votes: 3, samples: 4 },
+      },
     }
   )
 
-  const baseline = await screen.findByRole('region', { name: 'Baseline' })
+  const baseline = await screen.findByRole('region', { name: 'Baseline: m' })
   expect(within(baseline).getByText('20')).toBeInTheDocument()
   expect(within(baseline).getAllByText('3 of 4 runs agree')).toHaveLength(2)
   const runs = screen.getAllByRole('region', { name: /^\d{4}-\d{2}-\d{2}/ })
@@ -127,17 +143,82 @@ test('a run that differs from the majority baseline is flagged', async () => {
 
 test('without a majority the baseline is reported as not established', async () => {
   renderResults([result(1, { content: 'a' }), result(2, { content: 'b' })], {
-    input_tokens: 20,
-    input_tokens_majority: { established: true, votes: 2, samples: 2 },
-    content: '',
-    content_majority: { established: false, votes: 1, samples: 2 },
+    m: {
+      input_tokens: 20,
+      input_tokens_majority: { established: true, votes: 2, samples: 2 },
+      content: '',
+      content_majority: { established: false, votes: 1, samples: 2 },
+    },
   })
 
-  const baseline = await screen.findByRole('region', { name: 'Baseline' })
+  const baseline = await screen.findByRole('region', { name: 'Baseline: m' })
   expect(
     within(baseline).getByText(
       'Not established: needs a majority of at least 3 runs'
     )
   ).toBeInTheDocument()
   expect(screen.queryByText('Output differs from baseline')).toBeNull()
+})
+
+const signatureBaseline: ChannelProbeBaseline = {
+  expectation: 'signature_rejected',
+  input_tokens: 0,
+  input_tokens_majority: { established: false, votes: 0, samples: 0 },
+  content: '',
+  content_majority: { established: false, votes: 0, samples: 0 },
+}
+
+test('a signature probe shows its fixed expectation and flags an accepted tampered signature', async () => {
+  renderResults(
+    [
+      result(2, { content: '3.6 hours', anomalies: ['signature_accepted'] }),
+      result(1, {
+        status_code: 400,
+        content:
+          'messages.1.content.0: Invalid `signature` in `thinking` block',
+      }),
+    ],
+    { m: signatureBaseline },
+    { probe_type: 'signature' }
+  )
+
+  const baseline = await screen.findByRole('region', { name: 'Baseline: m' })
+  expect(baseline).toHaveTextContent('Invalid signature')
+  const runs = screen.getAllByRole('region', { name: /^\d{4}-\d{2}-\d{2}/ })
+  expect(
+    within(runs[0]).getByText('Upstream accepted a tampered signature')
+  ).toBeInTheDocument()
+  expect(
+    within(runs[1]).queryByText('Upstream accepted a tampered signature')
+  ).not.toBeInTheDocument()
+})
+
+test('with several models each model has its own baseline and can be filtered', async () => {
+  const user = userEvent.setup()
+  const get = renderResults(
+    [result(2, { model: 'b' }), result(1, { model: 'a' })],
+    { a: signatureBaseline, b: signatureBaseline },
+    { probe_type: 'signature', effective_models: ['a', 'b'] }
+  )
+
+  expect(
+    await screen.findByRole('region', { name: 'Baseline: a' })
+  ).toBeInTheDocument()
+  expect(
+    screen.getByRole('region', { name: 'Baseline: b' })
+  ).toBeInTheDocument()
+
+  await user.click(screen.getByRole('combobox', { name: 'Model' }))
+  await user.click(await screen.findByRole('option', { name: 'b' }))
+
+  await waitFor(() =>
+    expect(get).toHaveBeenLastCalledWith('/api/channel_probe/5/results', {
+      params: { model: 'b', p: 1, page_size: 10 },
+    })
+  )
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('region', { name: 'Baseline: a' })
+    ).not.toBeInTheDocument()
+  )
 })

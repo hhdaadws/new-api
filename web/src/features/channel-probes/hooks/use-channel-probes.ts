@@ -43,8 +43,15 @@ export const channelProbeQueryKeys = {
   all: ['channel-probes'] as const,
   list: () => [...channelProbeQueryKeys.all, 'list'] as const,
   targets: () => [...channelProbeQueryKeys.all, 'targets'] as const,
-  results: (id: number, page: number, pageSize: number) =>
-    [...channelProbeQueryKeys.all, 'results', id, page, pageSize] as const,
+  results: (id: number, model: string, page: number, pageSize: number) =>
+    [
+      ...channelProbeQueryKeys.all,
+      'results',
+      id,
+      model,
+      page,
+      pageSize,
+    ] as const,
 }
 
 export function useChannelProbes() {
@@ -71,14 +78,15 @@ export function useChannelProbeTargets(enabled: boolean) {
 
 export function useChannelProbeResults(
   id: number,
+  model: string,
   page: number,
   pageSize: number
 ) {
   return useQuery({
-    queryKey: channelProbeQueryKeys.results(id, page, pageSize),
+    queryKey: channelProbeQueryKeys.results(id, model, page, pageSize),
     queryFn: async () => {
       const res = requireServerSuccess(
-        await getChannelProbeResults(id, page, pageSize)
+        await getChannelProbeResults(id, model, page, pageSize)
       )
       return res.data
     },
@@ -127,10 +135,13 @@ export function useRunChannelProbe() {
     mutationFn: async (id: number) =>
       requireServerSuccess(await runChannelProbe(id)),
     onSuccess: (res) => {
-      if (res.data?.success) {
+      const failed = (res.data ?? []).filter((result) => !result.success)
+      if (failed.length === 0) {
         toast.success(i18next.t('Probe run succeeded'))
       } else {
-        toast.error(res.data?.error || i18next.t('Probe run failed'))
+        toast.error(
+          failed.map((result) => `${result.model}: ${result.error}`).join('\n')
+        )
       }
       queryClient.invalidateQueries({ queryKey: channelProbeQueryKeys.all })
     },

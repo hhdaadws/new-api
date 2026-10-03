@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { zodResolver } from '@hookform/resolvers/zod'
 import { FileText } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
@@ -36,14 +36,6 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 
 import {
@@ -57,10 +49,13 @@ import {
   PROBE_INTERVAL_MAX_SECONDS,
   PROBE_INTERVAL_MIN_SECONDS,
   probeToFormValues,
+  SIGNATURE_TAMPER_TEMPLATE,
   ZERO_INJECTION_TEMPLATE,
   type ProbeFormValues,
+  type ProbeTemplate,
 } from '../lib/probe-form'
 import type { ChannelProbe } from '../types'
+import { ProbeRequestFields } from './probe-request-fields'
 
 type ProbeFormDialogProps = {
   open: boolean
@@ -98,25 +93,23 @@ export function ProbeFormDialog(props: ProbeFormDialogProps) {
     [targets.data]
   )
 
-  const endpointOptions = [
-    { value: 'openai', label: t('OpenAI Chat Completions') },
-    { value: 'anthropic', label: t('Anthropic Messages') },
-    { value: 'openai-response', label: t('OpenAI Responses') },
-  ]
+  const channelId = useWatch({ control: form.control, name: 'channel_id' })
+  const probeType = useWatch({ control: form.control, name: 'probe_type' })
+  const channelModels = useMemo(
+    () =>
+      targets.data?.find((target) => String(target.id) === channelId)?.models ??
+      [],
+    [targets.data, channelId]
+  )
 
-  const applyZeroInjectionTemplate = () => {
+  const applyTemplate = (template: ProbeTemplate) => {
     if (form.getValues('name').trim() === '') {
-      form.setValue('name', t(ZERO_INJECTION_TEMPLATE.name), {
-        shouldValidate: true,
-      })
+      form.setValue('name', t(template.name), { shouldValidate: true })
     }
-    form.setValue('endpoint_type', ZERO_INJECTION_TEMPLATE.endpoint_type)
-    form.setValue('headers', ZERO_INJECTION_TEMPLATE.headers, {
-      shouldValidate: true,
-    })
-    form.setValue('body', ZERO_INJECTION_TEMPLATE.body, {
-      shouldValidate: true,
-    })
+    form.setValue('probe_type', template.probe_type)
+    form.setValue('endpoint_type', template.endpoint_type)
+    form.setValue('headers', template.headers, { shouldValidate: true })
+    form.setValue('body', template.body, { shouldValidate: true })
   }
 
   const onSubmit = async (values: ProbeFormValues) => {
@@ -168,15 +161,24 @@ export function ProbeFormDialog(props: ProbeFormDialogProps) {
               .catch(() => {})
           }}
         >
-          <div className='flex justify-end'>
+          <div className='flex flex-wrap justify-end gap-2'>
             <Button
               type='button'
               variant='outline'
               size='sm'
-              onClick={applyZeroInjectionTemplate}
+              onClick={() => applyTemplate(ZERO_INJECTION_TEMPLATE)}
             >
               <FileText aria-hidden='true' />
               {t('Use zero injection template')}
+            </Button>
+            <Button
+              type='button'
+              variant='outline'
+              size='sm'
+              onClick={() => applyTemplate(SIGNATURE_TAMPER_TEMPLATE)}
+            >
+              <FileText aria-hidden='true' />
+              {t('Use signature tamper template')}
             </Button>
           </div>
 
@@ -218,41 +220,6 @@ export function ProbeFormDialog(props: ProbeFormDialogProps) {
             />
             <FormField
               control={form.control}
-              name='endpoint_type'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Request format')}</FormLabel>
-                  <Select
-                    items={endpointOptions}
-                    value={field.value}
-                    onValueChange={(value) => field.onChange(value)}
-                  >
-                    <FormControl>
-                      <SelectTrigger className='w-full'>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent alignItemWithTrigger={false}>
-                      <SelectGroup>
-                        {endpointOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    {t(
-                      'The channel converts this format to its upstream protocol.'
-                    )}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
               name='interval_seconds'
               render={({ field }) => (
                 <FormItem>
@@ -279,6 +246,8 @@ export function ProbeFormDialog(props: ProbeFormDialogProps) {
               )}
             />
           </div>
+
+          <ProbeRequestFields form={form} channelModels={channelModels} />
 
           <FormField
             control={form.control}
@@ -346,9 +315,13 @@ export function ProbeFormDialog(props: ProbeFormDialogProps) {
                   />
                 </FormControl>
                 <FormDescription>
-                  {t(
-                    'JSON request in the selected format. The model field is required; set "stream": true to probe streaming.'
-                  )}
+                  {probeType === 'signature'
+                    ? t(
+                        'First turn of the check, sent without streaming. Keep thinking enabled so the reply carries a signed thinking block.'
+                      )
+                    : t(
+                        'JSON request in the selected format. Each selected model replaces the model field; set "stream": true to probe streaming.'
+                      )}
                 </FormDescription>
                 <FormMessage />
               </FormItem>

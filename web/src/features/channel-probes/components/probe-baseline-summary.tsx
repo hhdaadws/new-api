@@ -49,19 +49,36 @@ function BaselineVote(props: BaselineVoteProps) {
   )
 }
 
-// Shows the values most runs of the current probe request agree on. Runs
-// that differ from them are marked as anomalies.
+// Shows what the model's runs are compared with: the values most runs of the
+// current request agree on, or the fixed expectation of a signature probe.
 export function ProbeBaselineSummary(props: {
+  model: string
   baseline: ChannelProbeBaseline
 }) {
   const { t } = useTranslation()
+  const title = t('Baseline: {{model}}', { model: props.model })
+  if (props.baseline.expectation === 'signature_rejected') {
+    return (
+      <section
+        aria-label={title}
+        className='bg-muted/30 space-y-1 rounded-md border p-3'
+      >
+        <h3 className='text-sm font-semibold'>{title}</h3>
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Expected: the upstream rejects the replayed thinking block with 400 "Invalid signature". Accepting it, returning no signed thinking block, or any other rejection is flagged.'
+          )}
+        </p>
+      </section>
+    )
+  }
   return (
     <section
-      aria-label={t('Baseline')}
+      aria-label={title}
       className='bg-muted/30 space-y-3 rounded-md border p-3'
     >
       <div>
-        <h3 className='text-sm font-semibold'>{t('Baseline')}</h3>
+        <h3 className='text-sm font-semibold'>{title}</h3>
         <p className='text-muted-foreground text-xs'>
           {t(
             'Taken from what most successful runs of the current request return. Runs that differ are flagged.'

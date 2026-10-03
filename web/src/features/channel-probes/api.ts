@@ -61,18 +61,20 @@ export async function deleteChannelProbe(id: number): Promise<ApiResponse> {
 
 export async function runChannelProbe(
   id: number
-): Promise<ApiResponse<ChannelProbeResult>> {
+): Promise<ApiResponse<ChannelProbeResult[]>> {
   const res = await api.post(`/api/channel_probe/${id}/run`)
   return res.data
 }
 
+// An empty model returns the results of every model.
 export async function getChannelProbeResults(
   id: number,
+  model: string,
   page: number,
   pageSize: number
 ): Promise<ApiResponse<ChannelProbeResultsPage>> {
   const res = await api.get(`/api/channel_probe/${id}/results`, {
-    params: { p: page, page_size: pageSize },
+    params: { model: model || undefined, p: page, page_size: pageSize },
   })
   return res.data
 }

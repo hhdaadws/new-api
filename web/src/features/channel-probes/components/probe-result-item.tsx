@@ -28,7 +28,16 @@ import {
 import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-import type { ChannelProbeResult } from '../types'
+import type { ChannelProbeAnomaly, ChannelProbeResult } from '../types'
+
+// i18n keys of each anomaly, passed through t() when rendered.
+const ANOMALY_LABELS: Record<ChannelProbeAnomaly, string> = {
+  input_tokens: 'Input tokens differ from baseline',
+  content: 'Output differs from baseline',
+  signature_accepted: 'Upstream accepted a tampered signature',
+  signature_missing: 'No signed thinking block returned',
+  signature_unexpected: 'Unexpected rejection of a tampered signature',
+}
 
 export function ProbeResultItem(props: { result: ChannelProbeResult }) {
   const { t } = useTranslation()
@@ -48,20 +57,21 @@ export function ProbeResultItem(props: { result: ChannelProbeResult }) {
           variant={result.success ? 'success' : 'danger'}
           copyable={false}
         />
-        {result.anomalies.includes('input_tokens') && (
+        {result.model && (
           <StatusBadge
-            label={t('Input tokens differ from baseline')}
-            variant='warning'
+            label={result.model}
+            variant='neutral'
             copyable={false}
           />
         )}
-        {result.anomalies.includes('content') && (
+        {result.anomalies.map((anomaly) => (
           <StatusBadge
-            label={t('Output differs from baseline')}
+            key={anomaly}
+            label={t(ANOMALY_LABELS[anomaly])}
             variant='warning'
             copyable={false}
           />
-        )}
+        ))}
         <span className='text-muted-foreground'>
           {formatTimestampToDate(result.created_at)}
         </span>

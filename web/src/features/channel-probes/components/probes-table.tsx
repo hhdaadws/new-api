@@ -84,10 +84,17 @@ export function ProbesTable(props: ProbesTableProps) {
               `#${probe.channel_id} ${probe.channel_name || t('Deleted channel')}`,
           },
           {
-            id: 'endpoint',
-            header: t('Request format'),
+            id: 'type',
+            header: t('Probe type'),
             cell: (probe) =>
-              endpointLabels[probe.endpoint_type] ?? probe.endpoint_type,
+              probe.probe_type === 'signature'
+                ? t('Signature tamper check')
+                : (endpointLabels[probe.endpoint_type] ?? probe.endpoint_type),
+          },
+          {
+            id: 'models',
+            header: t('Models'),
+            cell: (probe) => probe.effective_models.join(', '),
           },
           {
             id: 'interval',

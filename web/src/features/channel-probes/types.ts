@@ -21,13 +21,23 @@ export type ChannelProbeEndpointType =
   | 'anthropic'
   | 'openai-response'
 
+// A custom probe sends its own request and is compared with the majority of
+// its runs; a signature probe checks that the upstream rejects a thinking
+// block whose signature was tampered with.
+export type ChannelProbeType = 'custom' | 'signature'
+
 export type ChannelProbe = {
   id: number
   name: string
   channel_id: number
   channel_name: string
   channel_type: number
+  probe_type: ChannelProbeType | ''
   endpoint_type: ChannelProbeEndpointType
+  // Comma separated selected models; effective_models falls back to the
+  // model in the request body when none are selected.
+  models: string
+  effective_models: string[]
   headers: string
   body: string
   interval_seconds: number
@@ -45,7 +55,9 @@ export type ChannelProbePayload = Pick<
   ChannelProbe,
   | 'name'
   | 'channel_id'
+  | 'probe_type'
   | 'endpoint_type'
+  | 'models'
   | 'headers'
   | 'body'
   | 'interval_seconds'
@@ -56,6 +68,7 @@ export type ChannelProbeResult = {
   id: number
   probe_id: number
   channel_id: number
+  model: string
   success: boolean
   status_code: number
   latency_ms: number
@@ -68,7 +81,12 @@ export type ChannelProbeResult = {
   created_at: number
 }
 
-export type ChannelProbeAnomaly = 'input_tokens' | 'content'
+export type ChannelProbeAnomaly =
+  | 'input_tokens'
+  | 'content'
+  | 'signature_accepted'
+  | 'signature_missing'
+  | 'signature_unexpected'
 
 export type ChannelProbeMajority = {
   established: boolean
@@ -77,6 +95,8 @@ export type ChannelProbeMajority = {
 }
 
 export type ChannelProbeBaseline = {
+  // Set for signature probes, whose baseline is a fixed expectation.
+  expectation?: 'signature_rejected'
   input_tokens: number
   input_tokens_majority: ChannelProbeMajority
   content: string
@@ -88,6 +108,7 @@ export type ChannelProbeTarget = {
   name: string
   type: number
   status: number
+  models: string[] | null
 }
 
 export type ApiResponse<T = unknown> = {
@@ -101,5 +122,5 @@ export type ChannelProbeResultsPage = {
   page_size: number
   total: number
   items: ChannelProbeResult[] | null
-  baseline: ChannelProbeBaseline
+  baselines: Record<string, ChannelProbeBaseline>
 }

@@ -23,6 +23,14 @@ import { DataTablePagination, useDataTable } from '@/components/data-table'
 import { Dialog } from '@/components/dialog'
 import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 
 import { useChannelProbeResults } from '../hooks/use-channel-probes'
@@ -42,11 +50,23 @@ const EMPTY_RESULTS: ChannelProbeResult[] = []
 export function ProbeResultsDialog(props: ProbeResultsDialogProps) {
   const { t } = useTranslation()
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 })
+  // An empty model shows the results of every model.
+  const [model, setModel] = useState('')
+  const models = props.probe.effective_models
   const resultsQuery = useChannelProbeResults(
     props.probe.id,
+    model,
     pagination.pageIndex + 1,
     pagination.pageSize
   )
+  const baselines = resultsQuery.data?.baselines ?? {}
+  const shownBaselines = (model ? [model] : models).filter(
+    (name) => baselines[name]
+  )
+  const modelOptions = [
+    { value: '', label: t('All models') },
+    ...models.map((name) => ({ value: name, label: name })),
+  ]
   const results = resultsQuery.data?.items ?? EMPTY_RESULTS
   const { table } = useDataTable({
     data: results,
@@ -90,9 +110,37 @@ export function ProbeResultsDialog(props: ProbeResultsDialogProps) {
               bordered
             />
           )}
-        {resultsQuery.data && results.length > 0 && (
-          <ProbeBaselineSummary baseline={resultsQuery.data.baseline} />
+        {models.length > 1 && (
+          <Select
+            items={modelOptions}
+            value={model}
+            onValueChange={(value) => {
+              setModel(value ?? '')
+              setPagination((previous) => ({ ...previous, pageIndex: 0 }))
+            }}
+          >
+            <SelectTrigger className='w-full sm:w-64' aria-label={t('Model')}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              <SelectGroup>
+                {modelOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         )}
+        {results.length > 0 &&
+          shownBaselines.map((name) => (
+            <ProbeBaselineSummary
+              key={name}
+              model={name}
+              baseline={baselines[name]}
+            />
+          ))}
         {results.map((result) => (
           <ProbeResultItem key={result.id} result={result} />
         ))}

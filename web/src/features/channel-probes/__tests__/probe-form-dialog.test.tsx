@@ -26,7 +26,10 @@ import { afterEach, beforeAll, expect, test, vi } from 'vitest'
 import { api } from '@/lib/api'
 
 import { ProbeFormDialog } from '../components/probe-form-dialog'
-import { ZERO_INJECTION_TEMPLATE } from '../lib/probe-form'
+import {
+  SIGNATURE_TAMPER_TEMPLATE,
+  ZERO_INJECTION_TEMPLATE,
+} from '../lib/probe-form'
 import type { ChannelProbe } from '../types'
 
 const probe: ChannelProbe = {
@@ -35,7 +38,10 @@ const probe: ChannelProbe = {
   channel_id: 3,
   channel_name: 'upstream',
   channel_type: 1,
+  probe_type: 'custom',
   endpoint_type: 'anthropic',
+  models: 'm',
+  effective_models: ['m'],
   headers: '',
   body: '{"model":"m","messages":[]}',
   interval_seconds: 120,
@@ -94,7 +100,9 @@ test('applying the zero injection template saves the template request', async ()
   expect(put).toHaveBeenCalledWith('/api/channel_probe/5', {
     name: 'existing',
     channel_id: 3,
+    probe_type: 'custom',
     endpoint_type: ZERO_INJECTION_TEMPLATE.endpoint_type,
+    models: 'm',
     interval_seconds: 120,
     enabled: true,
     headers: '',
@@ -103,7 +111,7 @@ test('applying the zero injection template saves the template request', async ()
   expect(onOpenChange).toHaveBeenCalledWith(false)
 })
 
-test('a body without a model is rejected before saving', async () => {
+test('an empty request body is rejected before saving', async () => {
   const user = userEvent.setup()
   const { put } = renderDialog()
   const bodyEditor = screen.getByRole('textbox', { name: 'Request body' })
@@ -112,9 +120,28 @@ test('a body without a model is rejected before saving', async () => {
   await user.click(screen.getByRole('button', { name: 'Save' }))
 
   expect(
-    await screen.findByText(
-      'Request body must be a JSON object containing a model'
-    )
+    await screen.findByText('Request body must be a JSON object')
   ).toBeInTheDocument()
   expect(put).not.toHaveBeenCalled()
+})
+
+test('the signature tamper template saves a signature probe in the Anthropic format', async () => {
+  const user = userEvent.setup()
+  const { put } = renderDialog()
+
+  await user.click(
+    screen.getByRole('button', { name: 'Use signature tamper template' })
+  )
+  await user.click(screen.getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
+  expect(put).toHaveBeenCalledWith(
+    '/api/channel_probe/5',
+    expect.objectContaining({
+      probe_type: 'signature',
+      endpoint_type: 'anthropic',
+      models: 'm',
+      body: SIGNATURE_TAMPER_TEMPLATE.body,
+    })
+  )
 })

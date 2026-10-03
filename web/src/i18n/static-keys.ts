@@ -19,6 +19,12 @@ For commercial licensing, please contact support@quantumnous.com
 // Static translation keys that don't get picked up by the t('...') regex.
 // These cover dynamic labels (e.g. constants, configs) that are passed into t at runtime.
 export const STATIC_I18N_KEYS = [
+  // Channel probe anomaly labels (features/channel-probes/components/probe-result-item.tsx).
+  'Input tokens differ from baseline',
+  'Output differs from baseline',
+  'Upstream accepted a tampered signature',
+  'No signed thinking block returned',
+  'Unexpected rejection of a tampered signature',
   'Task usage metadata is unavailable. Pricing details cannot be displayed.',
   'This expression cannot be expanded into a price table. View the original expression below.',
   'This operation is only supported for vLLM or SGLang channels',
