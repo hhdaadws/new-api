@@ -212,7 +212,7 @@ test('with several models each model has its own baseline and can be filtered', 
   await user.click(await screen.findByRole('option', { name: 'b' }))
 
   await waitFor(() =>
-    expect(get).toHaveBeenLastCalledWith('/api/channel_probe/5/results', {
+    expect(get).toHaveBeenLastCalledWith('/api/channel/probe/5/results', {
       params: { model: 'b', p: 1, page_size: 10 },
     })
   )

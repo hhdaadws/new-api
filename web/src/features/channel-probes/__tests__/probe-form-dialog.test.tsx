@@ -97,7 +97,7 @@ test('applying the zero injection template saves the template request', async ()
   await user.click(screen.getByRole('button', { name: 'Save' }))
 
   await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
-  expect(put).toHaveBeenCalledWith('/api/channel_probe/5', {
+  expect(put).toHaveBeenCalledWith('/api/channel/probe/5', {
     name: 'existing',
     channel_id: 3,
     probe_type: 'custom',
@@ -136,7 +136,7 @@ test('the signature tamper template saves a signature probe in the Anthropic for
 
   await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
   expect(put).toHaveBeenCalledWith(
-    '/api/channel_probe/5',
+    '/api/channel/probe/5',
     expect.objectContaining({
       probe_type: 'signature',
       endpoint_type: 'anthropic',

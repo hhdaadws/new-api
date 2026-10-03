@@ -28,21 +28,21 @@ import type {
 } from './types'
 
 export async function getChannelProbes(): Promise<ApiResponse<ChannelProbe[]>> {
-  const res = await api.get('/api/channel_probe/')
+  const res = await api.get('/api/channel/probe')
   return res.data
 }
 
 export async function getChannelProbeTargets(): Promise<
   ApiResponse<ChannelProbeTarget[]>
 > {
-  const res = await api.get('/api/channel_probe/channels')
+  const res = await api.get('/api/channel/probe/channels')
   return res.data
 }
 
 export async function createChannelProbe(
   data: ChannelProbePayload
 ): Promise<ApiResponse<ChannelProbe>> {
-  const res = await api.post('/api/channel_probe/', data)
+  const res = await api.post('/api/channel/probe', data)
   return res.data
 }
 
@@ -50,19 +50,19 @@ export async function updateChannelProbe(
   id: number,
   data: ChannelProbePayload
 ): Promise<ApiResponse<ChannelProbe>> {
-  const res = await api.put(`/api/channel_probe/${id}`, data)
+  const res = await api.put(`/api/channel/probe/${id}`, data)
   return res.data
 }
 
 export async function deleteChannelProbe(id: number): Promise<ApiResponse> {
-  const res = await api.delete(`/api/channel_probe/${id}`)
+  const res = await api.delete(`/api/channel/probe/${id}`)
   return res.data
 }
 
 export async function runChannelProbe(
   id: number
 ): Promise<ApiResponse<ChannelProbeResult[]>> {
-  const res = await api.post(`/api/channel_probe/${id}/run`)
+  const res = await api.post(`/api/channel/probe/${id}/run`)
   return res.data
 }
 
@@ -73,7 +73,7 @@ export async function getChannelProbeResults(
   page: number,
   pageSize: number
 ): Promise<ApiResponse<ChannelProbeResultsPage>> {
-  const res = await api.get(`/api/channel_probe/${id}/results`, {
+  const res = await api.get(`/api/channel/probe/${id}/results`, {
     params: { model: model || undefined, p: page, page_size: pageSize },
   })
   return res.data

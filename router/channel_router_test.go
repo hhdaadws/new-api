@@ -67,3 +67,36 @@ func assertChannelRoutePermission(t *testing.T, method string, path string, perm
 	}
 	t.Fatalf("route %s %s not found", method, path)
 }
+
+// The channel list is requested as /api/channel (no trailing slash) and
+// relies on gin redirecting it to /api/channel/. Registering a route that
+// splits the /api/channel node broke that redirect once the root /:mode/mj
+// relay route was present, so this checks the full API and relay routers.
+func TestChannelListPathRedirectsWithRelayRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	SetApiRouter(engine)
+	SetRelayRouter(engine)
+
+	cases := []struct {
+		method   string
+		path     string
+		wantCode int
+	}{
+		{http.MethodGet, "/api/channel?p=1", http.StatusMovedPermanently},
+		{http.MethodGet, "/api/channel/?p=1", http.StatusUnauthorized},
+		{http.MethodGet, "/api/channel/5", http.StatusUnauthorized},
+		{http.MethodGet, "/api/channel/probe", http.StatusUnauthorized},
+		{http.MethodGet, "/api/channel/probe/channels", http.StatusUnauthorized},
+		{http.MethodPost, "/api/channel/probe/3/run", http.StatusUnauthorized},
+		{http.MethodGet, "/api/channel/probe/3/results", http.StatusUnauthorized},
+	}
+	for _, tc := range cases {
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, httptest.NewRequest(tc.method, tc.path, nil))
+		assert.Equal(t, tc.wantCode, recorder.Code, "%s %s", tc.method, tc.path)
+	}
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/channel?p=1", nil))
+	assert.Equal(t, "/api/channel/?p=1", recorder.Header().Get("Location"))
+}
