@@ -247,9 +247,39 @@ func runCustomProbe(ctx context.Context, probe *model.ChannelProbe, channel *mod
 	return result
 }
 
+// tamperThinkingSignature changes the first, middle and last fully used
+// characters of a base64 signature. The result keeps the length and stays
+// canonical base64, so only real signature verification can tell it apart:
+// padding ("=") carries no data and is often ignored by lenient decoders, and
+// the last data character before padding has unused low bits, so neither is
+// touched.
+func tamperThinkingSignature(signature string) string {
+	chars := []byte(signature)
+	dataLen := len(strings.TrimRight(signature, "="))
+	last := dataLen - 1
+	if dataLen < len(chars) {
+		last--
+	}
+	var tampered []int
+	for _, position := range []int{0, dataLen / 2, last} {
+		// Positions past last would only touch unused bits, and a position
+		// changed twice could be restored, so each is changed once.
+		if position < 0 || position > last || slices.Contains(tampered, position) {
+			continue
+		}
+		tampered = append(tampered, position)
+		if chars[position] == 'A' {
+			chars[position] = 'B'
+		} else {
+			chars[position] = 'A'
+		}
+	}
+	return string(chars)
+}
+
 // runSignatureTamperProbe checks that the upstream verifies thinking
-// signatures. It sends the probe's first turn, changes one character of the
-// returned thinking block's signature, and replays that assistant turn. A
+// signatures. It sends the probe's first turn, tampers with the returned
+// thinking block's signature, and replays that assistant turn. A
 // genuine Anthropic upstream rejects the replay with 400 "Invalid `signature`
 // in `thinking` block"; accepting it, returning no signed thinking block, or
 // rejecting it for another reason is an anomaly. Rate limits and server
@@ -282,15 +312,7 @@ func runSignatureTamperProbe(ctx context.Context, probe *model.ChannelProbe, cha
 		case "thinking":
 			signature := block.Get("signature").String()
 			if signature != "" && !tampered {
-				// Change one character in the middle, keeping valid base64.
-				chars := []byte(signature)
-				middle := len(chars) / 2
-				if chars[middle] == 'A' {
-					chars[middle] = 'B'
-				} else {
-					chars[middle] = 'A'
-				}
-				signature = string(chars)
+				signature = tamperThinkingSignature(signature)
 				tampered = true
 			}
 			assistantContent = append(assistantContent, map[string]any{"type": "thinking", "thinking": block.Get("thinking").String(), "signature": signature})

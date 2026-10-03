@@ -1,7 +1,9 @@
 package controller
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -430,9 +432,53 @@ func TestChannelProbeSignatureTamper(t *testing.T) {
 			replayed := replays[0].Get("messages.1.content.0")
 			assert.Equal(t, "assistant", replays[0].Get("messages.1.role").String())
 			assert.Equal(t, "thinking", replayed.Get("type").String())
-			assert.Len(t, replayed.Get("signature").String(), len(signature))
-			assert.NotEqual(t, signature, replayed.Get("signature").String())
+			assert.Equal(t, tamperThinkingSignature(signature), replayed.Get("signature").String())
 			assert.Equal(t, channelProbeSignatureFollowUp, replays[0].Get("messages.2.content").String())
+		})
+	}
+}
+
+func TestTamperThinkingSignature(t *testing.T) {
+	encode := func(size int, fill byte) string {
+		raw := bytes.Repeat([]byte{fill}, size)
+		return base64.StdEncoding.EncodeToString(raw)
+	}
+	cases := []struct {
+		name          string
+		signature     string
+		wantPositions []int
+	}{
+		// 30 bytes: 40 characters, no padding, the last character is data.
+		{"no padding", encode(30, 0x5a), []int{0, 20, 39}},
+		// 29 bytes: "...X=" where X carries 2 unused bits, so the tail moves left.
+		{"one padding character", encode(29, 0x5a), []int{0, 19, 37}},
+		// 28 bytes: "...X==" where X carries 4 unused bits.
+		{"two padding characters", encode(28, 0x5a), []int{0, 19, 36}},
+		// All zero bytes encode to "A", which becomes "B".
+		{"A becomes B", encode(30, 0x00), []int{0, 20, 39}},
+		// "AA==": head and tail are both position 0 and the middle is the
+		// partly used character, so only position 0 changes, once (A to B and
+		// back to A would undo it).
+		{"coinciding positions", "AA==", []int{0}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tampered := tamperThinkingSignature(tc.signature)
+
+			require.Len(t, tampered, len(tc.signature))
+			var changed []int
+			for i := range tc.signature {
+				if tampered[i] != tc.signature[i] {
+					changed = append(changed, i)
+				}
+			}
+			assert.Equal(t, tc.wantPositions, changed)
+			original, err := base64.StdEncoding.Strict().DecodeString(tc.signature)
+			require.NoError(t, err)
+			decoded, err := base64.StdEncoding.Strict().DecodeString(tampered)
+			require.NoError(t, err, "the tampered signature stays canonical base64")
+			assert.Len(t, decoded, len(original))
+			assert.NotEqual(t, original, decoded)
 		})
 	}
 }
