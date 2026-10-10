@@ -49,27 +49,30 @@ function userAdmin(write: boolean): AuthUser {
 
 async function renderUsersPage(viewer: AuthUser) {
   useAuthStore.getState().auth.setUser(viewer)
-  vi.spyOn(api, 'get').mockResolvedValue({
+  vi.spyOn(api, 'get').mockImplementation(async (url) => ({
     data: {
       success: true,
-      data: {
-        items: [
-          {
-            id: 2,
-            username: 'listed-user',
-            display_name: '',
-            role: ROLE.USER,
-            status: 1,
-            quota: 0,
-            used_quota: 0,
-            request_count: 0,
-            group: 'default',
-          },
-        ],
-        total: 1,
-      },
+      data:
+        url === '/api/group/'
+          ? ['default']
+          : {
+              items: [
+                {
+                  id: 2,
+                  username: 'listed-user',
+                  display_name: '',
+                  role: ROLE.USER,
+                  status: 1,
+                  quota: 0,
+                  used_quota: 0,
+                  request_count: 0,
+                  group: 'default',
+                },
+              ],
+              total: 1,
+            },
     },
-  })
+  }))
   const root = createRootRoute()
   const auth = createRoute({ getParentRoute: () => root, id: '_authenticated' })
   const users = createRoute({
