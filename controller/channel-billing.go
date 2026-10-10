@@ -601,7 +601,7 @@ func UpdateChannelBalance(c *gin.Context) {
 	}
 	result, err := updateChannelBalance(channel)
 	if err != nil {
-		common.ApiError(c, err)
+		common.ApiError(c, channelViewPolicyOf(c).hideBaseURL(channel, err))
 		return
 	}
 	response := gin.H{

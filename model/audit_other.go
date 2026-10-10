@@ -45,6 +45,20 @@ type AuditRequestInfo struct {
 // round-trip through float64 and lose precision before the API returns them.
 type AuditFields map[string]any
 
+// Decode reads one parameter into target, whether it was set in memory or read
+// back from the database as raw JSON.
+func (fields AuditFields) Decode(key string, target any) bool {
+	value, ok := fields[key]
+	if !ok {
+		return false
+	}
+	encoded, err := common.Marshal(value)
+	if err != nil {
+		return false
+	}
+	return common.Unmarshal(encoded, target) == nil
+}
+
 func (fields *AuditFields) UnmarshalJSON(data []byte) error {
 	var values map[string]json.RawMessage
 	if err := common.Unmarshal(data, &values); err != nil {

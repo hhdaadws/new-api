@@ -2,6 +2,9 @@ package controller
 
 import (
 	"cmp"
+	"errors"
+	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -213,6 +216,80 @@ func (p channelViewPolicy) redact(c *gin.Context, channel *model.Channel) {
 	if !p.BaseURL {
 		channel.BaseURL = nil
 	}
+}
+
+// redactedChannelValue replaces a hidden channel value that has no visible
+// substitute, such as a base URL in an error or the name of a channel created
+// without a recorded id.
+const redactedChannelValue = "[REDACTED]"
+
+// dialAddressPattern matches the remote address that net.OpError prints, which
+// is the resolved upstream address even when the base URL names a host.
+var dialAddressPattern = regexp.MustCompile(`\b(dial|read|write) (tcp[46]?|udp[46]?) \S+: `)
+
+// hideBaseURL removes the channel base URL from an upstream request error
+// returned to an administrator who may not see it: net/http errors carry the
+// request URL, dial errors the upstream address, and DNS and TLS errors the
+// host name.
+func (p channelViewPolicy) hideBaseURL(channel *model.Channel, err error) error {
+	if p.BaseURL || err == nil || channel == nil {
+		return err
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(channel.GetBaseURL()), "/")
+	if baseURL == "" {
+		return err
+	}
+	message := dialAddressPattern.ReplaceAllString(err.Error(), "$1 $2 "+redactedChannelValue+": ")
+	message = strings.ReplaceAll(message, baseURL, redactedChannelValue)
+	if parsed, parseErr := url.Parse(baseURL); parseErr == nil && parsed.Host != "" {
+		message = strings.ReplaceAll(message, parsed.Host, redactedChannelValue)
+		message = strings.ReplaceAll(message, parsed.Hostname(), redactedChannelValue)
+	}
+	if message == err.Error() {
+		return err
+	}
+	return errors.New(message)
+}
+
+// redactAuditChannelNames replaces the real channel names recorded by channel
+// audit events with the names the administrator may see.
+func (p channelViewPolicy) redactAuditChannelNames(c *gin.Context, logs []*model.AuditLog) error {
+	if p.RealName {
+		return nil
+	}
+	type namedEvent struct {
+		log      *model.AuditLog
+		realName string
+		id       int
+	}
+	var events []namedEvent
+	var ids []int
+	for _, log := range logs {
+		if log == nil || log.Other.Op == nil || !strings.HasPrefix(log.Other.Op.Action, "channel.") {
+			continue
+		}
+		event := namedEvent{log: log}
+		if !log.Other.Op.Params.Decode("name", &event.realName) || event.realName == "" {
+			continue
+		}
+		if log.Other.Op.Params.Decode("id", &event.id) && event.id > 0 {
+			ids = append(ids, event.id)
+		}
+		events = append(events, event)
+	}
+	names, err := p.displayNames(c, ids)
+	if err != nil {
+		return err
+	}
+	for _, event := range events {
+		displayName := redactedChannelValue
+		if event.id > 0 {
+			displayName = names[event.id]
+		}
+		event.log.Other.Op.Params["name"] = displayName
+		event.log.Content = strings.ReplaceAll(event.log.Content, event.realName, displayName)
+	}
+	return nil
 }
 
 // displayNames maps channel ids to the names the administrator may see, or

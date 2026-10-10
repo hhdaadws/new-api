@@ -48,6 +48,7 @@ func GetAllLogs(c *gin.Context) {
 		for _, log := range logs {
 			log.ChannelName = names[log.ChannelId]
 		}
+		model.HideLegacyLogChannelNames(logs)
 	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(logs)

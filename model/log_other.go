@@ -278,3 +278,25 @@ func formatLogOtherJSON(value string, visibility logOtherVisibility) string {
 	}
 	return string(formatted)
 }
+
+// HideLegacyLogChannelNames drops the real channel name that logs written before
+// metadata was scoped keep at the top level of other, for administrators who
+// may not see real channel names.
+func HideLegacyLogChannelNames(logs []*Log) {
+	for _, log := range logs {
+		if !strings.Contains(log.Other, `"channel_name"`) {
+			continue
+		}
+		var values map[string]json.RawMessage
+		if err := common.UnmarshalJsonStr(log.Other, &values); err != nil {
+			continue
+		}
+		if _, exists := values["channel_name"]; !exists {
+			continue
+		}
+		delete(values, "channel_name")
+		if formatted, err := common.Marshal(values); err == nil {
+			log.Other = string(formatted)
+		}
+	}
+}

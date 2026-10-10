@@ -386,6 +386,10 @@ func GetAuditLogs(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if err := channelViewPolicyOf(c).redactAuditChannelNames(c, logs); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	page.SetItems(logs)
 	page.SetTotal(int(total))
 	common.ApiSuccess(c, page)

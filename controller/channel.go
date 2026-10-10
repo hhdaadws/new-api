@@ -336,6 +336,7 @@ func FetchUpstreamModels(c *gin.Context) {
 
 	ids, err := fetchChannelUpstreamModelIDs(channel)
 	if err != nil {
+		err = channelViewPolicyOf(c).hideBaseURL(channel, err)
 		common.ApiErrorT(c, "Failed to fetch models: {{error}}", map[string]any{"error": err.Error()})
 		return
 	}
@@ -2147,6 +2148,7 @@ func OllamaPullModel(c *gin.Context) {
 	key := strings.Split(channel.Key, "\n")[0]
 	err = ollama.PullOllamaModel(baseURL, key, req.ModelName)
 	if err != nil {
+		err = channelViewPolicyOf(c).hideBaseURL(channel, err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"message": fmt.Sprintf("Failed to pull model: %s", err.Error()),
@@ -2226,6 +2228,7 @@ func OllamaPullModelStream(c *gin.Context) {
 	err = ollama.PullOllamaModelStream(baseURL, key, req.ModelName, progressCallback)
 
 	if err != nil {
+		err = channelViewPolicyOf(c).hideBaseURL(channel, err)
 		errorData, _ := json.Marshal(gin.H{
 			"error": err.Error(),
 		})
@@ -2292,6 +2295,7 @@ func OllamaDeleteModel(c *gin.Context) {
 	key := strings.Split(channel.Key, "\n")[0]
 	err = ollama.DeleteOllamaModel(baseURL, key, req.ModelName)
 	if err != nil {
+		err = channelViewPolicyOf(c).hideBaseURL(channel, err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"message": fmt.Sprintf("Failed to delete model: %s", err.Error()),
@@ -2341,6 +2345,7 @@ func OllamaVersion(c *gin.Context) {
 	key := strings.Split(channel.Key, "\n")[0]
 	version, err := ollama.FetchOllamaVersion(baseURL, key)
 	if err != nil {
+		err = channelViewPolicyOf(c).hideBaseURL(channel, err)
 		common.ApiErrorT(c, "Failed to fetch Ollama version: {{error}}", map[string]any{"error": err.Error()})
 		return
 	}

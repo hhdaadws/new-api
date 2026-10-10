@@ -276,4 +276,55 @@ func TestChannelViewPolicyHidesRealNameAndBaseURL(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "Line B", lo.FromPtr(stored.Alias))
 	})
+
+	t.Run("upstream request errors hide the base URL", func(t *testing.T) {
+		refusedURL := "http://127.0.0.1:9"
+		refused := model.Channel{Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Name: "real-refused", Models: "gpt-4", Group: "default", Key: "sk-3", BaseURL: &refusedURL}
+		require.NoError(t, refused.Insert())
+
+		hidden := call(UpdateChannelBalance, restrictedAdmin, common.RoleAdminUser, http.MethodGet, "/api/channel/update_balance/1", "", idParam(refused.Id))
+		assert.Contains(t, hidden, `"success":false`)
+		assert.Contains(t, hidden, "connection refused")
+		assert.NotContains(t, hidden, "127.0.0.1")
+
+		visible := call(UpdateChannelBalance, plainAdmin, common.RoleAdminUser, http.MethodGet, "/api/channel/update_balance/1", "", idParam(refused.Id))
+		assert.Contains(t, visible, refusedURL)
+
+		ollamaChannel := model.Channel{Type: constant.ChannelTypeOllama, Status: common.ChannelStatusEnabled, Name: "real-ollama", Models: "llama3", Group: "default", Key: "sk-4", BaseURL: &refusedURL}
+		require.NoError(t, ollamaChannel.Insert())
+		ollamaVersion := call(OllamaVersion, restrictedAdmin, common.RoleAdminUser, http.MethodGet, "/api/channel/ollama/version/1", "", idParam(ollamaChannel.Id))
+		assert.Contains(t, ollamaVersion, `"success":false`)
+		assert.NotContains(t, ollamaVersion, "127.0.0.1")
+	})
+
+	t.Run("audit events show the visible channel name", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		actor, _ := gin.CreateTestContext(recorder)
+		actor.Set("id", plainAdmin)
+		actor.Set("role", common.RoleAdminUser)
+		actor.Request = httptest.NewRequest(http.MethodPut, "/api/channel", nil)
+		recordManageAudit(actor, "channel.update", map[string]any{"id": unaliased.Id, "name": unaliased.Name})
+		recordManageAudit(actor, "channel.create", map[string]any{"name": "real-created", "type": constant.ChannelTypeOpenAI, "count": 1})
+
+		hidden := call(GetAuditLogs, restrictedAdmin, common.RoleAdminUser, http.MethodGet, "/api/audit?p=1&page_size=10", "", nil)
+		assert.Contains(t, hidden, fmt.Sprintf("Updated channel Channel #%d", unaliased.Id))
+		assert.Contains(t, hidden, `"name":"[REDACTED]"`)
+		assert.NotContains(t, hidden, "real-")
+
+		visible := call(GetAuditLogs, plainAdmin, common.RoleAdminUser, http.MethodGet, "/api/audit?p=1&page_size=10", "", nil)
+		assert.Contains(t, visible, "real-backup")
+		assert.Contains(t, visible, "real-created")
+	})
+
+	t.Run("legacy log metadata drops the real channel name", func(t *testing.T) {
+		legacy := model.Log{Type: model.LogTypeConsume, CreatedAt: common.GetTimestamp(), ChannelId: unaliased.Id, Other: fmt.Sprintf(`{"channel_name":"real-backup","channel_id":%d}`, unaliased.Id)}
+		require.NoError(t, model.LOG_DB.Create(&legacy).Error)
+
+		hidden := call(GetAllLogs, restrictedAdmin, common.RoleAdminUser, http.MethodGet, "/api/log/?p=1&page_size=10", "", nil)
+		assert.Contains(t, hidden, fmt.Sprintf(`"channel_name":"Channel #%d"`, unaliased.Id))
+		assert.NotContains(t, hidden, "real-")
+
+		visible := call(GetAllLogs, plainAdmin, common.RoleAdminUser, http.MethodGet, "/api/log/?p=1&page_size=10", "", nil)
+		assert.Contains(t, visible, "real-backup")
+	})
 }
