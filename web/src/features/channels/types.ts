@@ -96,6 +96,7 @@ export interface ChannelSettings {
   request_timeout_seconds?: number
   request_timeout_status_code?: number
   request_timeout_message?: string
+  tls_insecure_skip_verify?: boolean
 }
 
 export interface ChannelOtherSettings {
@@ -148,6 +149,8 @@ export type AdvancedCustomConverter =
   | 'openai_responses_to_gemini_generate_content'
   | 'gemini_generate_content_to_openai_chat_completions'
   | 'openai_chat_completions_to_gemini_generate_content'
+  | 'claude_messages_to_openai_responses'
+  | 'gemini_generate_content_to_openai_responses'
 
 export type AdvancedCustomAuthType = 'none' | 'header' | 'query'
 

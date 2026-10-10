@@ -46,6 +46,7 @@ const ADVANCED_SETTINGS_FIELDS = new Set<FieldPath<ChannelFormValues>>([
   'request_timeout_seconds',
   'request_timeout_status_code',
   'request_timeout_message',
+  'tls_insecure_skip_verify',
   'system_prompt',
   'system_prompt_override',
   'allow_service_tier',

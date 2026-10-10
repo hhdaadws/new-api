@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"sync"
@@ -123,7 +122,7 @@ func ResponsesWebSocket(c *gin.Context) {
 	defer ws.Close()
 
 	if apiError := relay.ResponsesWebSocketHelper(c, ws, runner); apiError != nil {
-		logger.LogError(c, fmt.Sprintf("responses websocket relay error: %s", common.LocalLogPreview(apiError.Error())))
+		logger.LogError(c, common.LogText("responses websocket relay error: %s", common.LocalLogPreview(apiError.Error())))
 		if intercepted := service.InterceptUpstreamError(apiError); intercepted != nil {
 			apiError = intercepted
 		}

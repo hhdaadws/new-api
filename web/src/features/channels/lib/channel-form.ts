@@ -283,6 +283,7 @@ export const channelFormSchema = z
     request_timeout_seconds: z.number().int().optional(),
     request_timeout_status_code: z.number().int().optional(),
     request_timeout_message: z.string().optional(),
+    tls_insecure_skip_verify: z.boolean().optional(),
     pass_through_body_enabled: z.boolean().optional(),
     responses_websocket_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
@@ -511,6 +512,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   request_timeout_seconds: 0,
   request_timeout_status_code: DEFAULT_REQUEST_TIMEOUT_STATUS_CODE,
   request_timeout_message: DEFAULT_REQUEST_TIMEOUT_MESSAGE,
+  tls_insecure_skip_verify: false,
   pass_through_body_enabled: false,
   responses_websocket_enabled: false,
   system_prompt: '',
@@ -558,6 +560,7 @@ export function transformChannelToFormDefaults(
     request_timeout_seconds: 0,
     request_timeout_status_code: DEFAULT_REQUEST_TIMEOUT_STATUS_CODE,
     request_timeout_message: DEFAULT_REQUEST_TIMEOUT_MESSAGE,
+    tls_insecure_skip_verify: false,
     pass_through_body_enabled: false,
     responses_websocket_enabled: false,
     system_prompt: '',
@@ -585,6 +588,7 @@ export function transformChannelToFormDefaults(
           DEFAULT_REQUEST_TIMEOUT_STATUS_CODE,
         request_timeout_message:
           parsed.request_timeout_message || DEFAULT_REQUEST_TIMEOUT_MESSAGE,
+        tls_insecure_skip_verify: parsed.tls_insecure_skip_verify === true,
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
         responses_websocket_enabled:
           parsed.responses_websocket_enabled === true,
@@ -738,6 +742,9 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
     settingObj.http_protocol = HTTP_PROTOCOL_HTTP1
   } else if (shards > 1) {
     settingObj.http2_connection_shards = shards
+  }
+  if (formData.tls_insecure_skip_verify === true) {
+    settingObj.tls_insecure_skip_verify = true
   }
 
   const timeoutSeconds = formData.request_timeout_seconds ?? 0
