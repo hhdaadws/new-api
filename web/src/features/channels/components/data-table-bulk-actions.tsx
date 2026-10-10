@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQueryClient } from '@tanstack/react-query'
-import { type Table } from '@tanstack/react-table'
+import type { Table } from '@tanstack/react-table'
 import { Power, PowerOff, Tag, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -66,6 +66,16 @@ export function DataTableBulkActions<TData>({
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
     ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
   )
+  const canOperate = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.OPERATE
+  )
+  const canWrite = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.WRITE
+  )
 
   const selectedRows = table.getFilteredSelectedRowModel().rows
   const selectedIds = selectedRows.reduce<number[]>((ids, row) => {
@@ -109,70 +119,76 @@ export function DataTableBulkActions<TData>({
   return (
     <>
       <BulkActionsToolbar table={table} entityName='channel'>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant='outline'
-                size='icon'
-                onClick={handleEnableAll}
-                className='size-8'
-                aria-label={t('Enable selected channels')}
-                title={t('Enable selected channels')}
-              />
-            }
-          >
-            <Power />
-            <span className='sr-only'>{t('Enable selected channels')}</span>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t('Enable selected channels')}</p>
-          </TooltipContent>
-        </Tooltip>
+        {canOperate && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant='outline'
+                  size='icon'
+                  onClick={handleEnableAll}
+                  className='size-8'
+                  aria-label={t('Enable selected channels')}
+                  title={t('Enable selected channels')}
+                />
+              }
+            >
+              <Power />
+              <span className='sr-only'>{t('Enable selected channels')}</span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{t('Enable selected channels')}</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
 
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant='outline'
-                size='icon'
-                onClick={handleDisableAll}
-                className='size-8'
-                aria-label={t('Disable selected channels')}
-                title={t('Disable selected channels')}
-              />
-            }
-          >
-            <PowerOff />
-            <span className='sr-only'>{t('Disable selected channels')}</span>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t('Disable selected channels')}</p>
-          </TooltipContent>
-        </Tooltip>
+        {canOperate && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant='outline'
+                  size='icon'
+                  onClick={handleDisableAll}
+                  className='size-8'
+                  aria-label={t('Disable selected channels')}
+                  title={t('Disable selected channels')}
+                />
+              }
+            >
+              <PowerOff />
+              <span className='sr-only'>{t('Disable selected channels')}</span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{t('Disable selected channels')}</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
 
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant='outline'
-                size='icon'
-                onClick={() => setShowTagDialog(true)}
-                className='size-8'
-                aria-label={t('Set tag for selected channels')}
-                title={t('Set tag for selected channels')}
-              />
-            }
-          >
-            <Tag />
-            <span className='sr-only'>
-              {t('Set tag for selected channels')}
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t('Set tag for selected channels')}</p>
-          </TooltipContent>
-        </Tooltip>
+        {canWrite && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant='outline'
+                  size='icon'
+                  onClick={() => setShowTagDialog(true)}
+                  className='size-8'
+                  aria-label={t('Set tag for selected channels')}
+                  title={t('Set tag for selected channels')}
+                />
+              }
+            >
+              <Tag />
+              <span className='sr-only'>
+                {t('Set tag for selected channels')}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{t('Set tag for selected channels')}</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
 
         <Tooltip>
           <TooltipTrigger

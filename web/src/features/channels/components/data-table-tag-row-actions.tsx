@@ -33,6 +33,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import {
+  ADMIN_PERMISSION_ACTIONS,
+  ADMIN_PERMISSION_RESOURCES,
+  hasPermission,
+} from '@/lib/admin-permissions'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { handleEnableTagChannels, handleDisableTagChannels } from '../lib'
 import type { Channel } from '../types'
@@ -47,8 +53,19 @@ export function DataTableTagRowActions({ row }: DataTableTagRowActionsProps) {
   const tag = row.original.tag
   const { setOpen, setCurrentTag } = useChannels()
   const queryClient = useQueryClient()
+  const currentUser = useAuthStore((s) => s.auth.user)
+  const canWrite = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.WRITE
+  )
+  const canOperate = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.OPERATE
+  )
 
-  if (!tag) return null
+  if (!tag || (!canWrite && !canOperate)) return null
 
   const handleEnableAll = () => {
     handleEnableTagChannels(tag, queryClient)
@@ -70,48 +87,56 @@ export function DataTableTagRowActions({ row }: DataTableTagRowActionsProps) {
 
   return (
     <div className='-ml-1.5 flex items-center gap-1'>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant='ghost'
-              size='icon-sm'
-              onClick={handleEditTag}
-              aria-label={t('Edit Tag')}
-            />
-          }
-        >
-          <Edit />
-        </TooltipTrigger>
-        <TooltipContent>{t('Edit Tag')}</TooltipContent>
-      </Tooltip>
+      {canWrite && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant='ghost'
+                size='icon-sm'
+                onClick={handleEditTag}
+                aria-label={t('Edit Tag')}
+              />
+            }
+          >
+            <Edit />
+          </TooltipTrigger>
+          <TooltipContent>{t('Edit Tag')}</TooltipContent>
+        </Tooltip>
+      )}
 
       <DataTableRowActionMenu ariaLabel={t('Open menu')}>
         {/* Batch Edit */}
-        <DropdownMenuItem onClick={handleBatchEdit}>
-          {t('Batch Edit')}
-          <DropdownMenuShortcut>
-            <Pencil size={16} />
-          </DropdownMenuShortcut>
-        </DropdownMenuItem>
+        {canWrite && (
+          <DropdownMenuItem onClick={handleBatchEdit}>
+            {t('Batch Edit')}
+            <DropdownMenuShortcut>
+              <Pencil size={16} />
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
+        )}
 
-        <DropdownMenuSeparator />
+        {canWrite && canOperate && <DropdownMenuSeparator />}
 
         {/* Enable All */}
-        <DropdownMenuItem onClick={handleEnableAll}>
-          {t('Enable All')}
-          <DropdownMenuShortcut>
-            <Power size={16} />
-          </DropdownMenuShortcut>
-        </DropdownMenuItem>
+        {canOperate && (
+          <DropdownMenuItem onClick={handleEnableAll}>
+            {t('Enable All')}
+            <DropdownMenuShortcut>
+              <Power size={16} />
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
+        )}
 
         {/* Disable All */}
-        <DropdownMenuItem onClick={handleDisableAll}>
-          {t('Disable All')}
-          <DropdownMenuShortcut>
-            <PowerOff size={16} />
-          </DropdownMenuShortcut>
-        </DropdownMenuItem>
+        {canOperate && (
+          <DropdownMenuItem onClick={handleDisableAll}>
+            {t('Disable All')}
+            <DropdownMenuShortcut>
+              <PowerOff size={16} />
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
+        )}
       </DataTableRowActionMenu>
     </div>
   )

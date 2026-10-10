@@ -606,6 +606,24 @@ test('configuration navigation retains its height when the form content overflow
   expect(screen.getByRole('dialog')).toHaveClass('sm:max-w-7xl')
 })
 
+test('without channel:write the edit drawer shows the channel but cannot save it', async () => {
+  useAuthStore.setState({
+    auth: {
+      ...originalAuth,
+      user: {
+        id: 2,
+        username: 'admin',
+        role: ROLE.ADMIN,
+        permissions: { admin_permissions: { channel: { read: true } } },
+      },
+    },
+  })
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+
+  expect(await screen.findByDisplayValue('Existing channel')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Update Channel' })).toBeDisabled()
+})
+
 test('without plugin binding permission only built-in providers are offered', () => {
   useAuthStore.setState({
     auth: {

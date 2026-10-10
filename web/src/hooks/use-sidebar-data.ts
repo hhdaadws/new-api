@@ -141,6 +141,10 @@ export function useSidebarData(): SidebarData {
             title: t('Channels'),
             url: '/channels',
             icon: Radio,
+            requiredPermission: {
+              resource: ADMIN_PERMISSION_RESOURCES.CHANNEL,
+              action: ADMIN_PERMISSION_ACTIONS.READ,
+            },
           },
           {
             title: t('Channel Probes'),

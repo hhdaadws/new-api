@@ -94,6 +94,16 @@ export function ChannelsPrimaryButtons() {
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
     ADMIN_PERMISSION_ACTIONS.TEST
   )
+  const canOperate = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.OPERATE
+  )
+  const canWrite = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.WRITE
+  )
 
   const handleTagModeToggle = (checked: boolean) => {
     localStorage.setItem('enable-tag-mode', String(checked))
@@ -178,7 +188,15 @@ export function ChannelsPrimaryButtons() {
 
         {/* More Actions */}
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant='outline' size='sm' />}>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant='outline'
+                size='sm'
+                aria-label={t('More actions')}
+              />
+            }
+          >
             <MoreHorizontal className='h-4 w-4' />
           </DropdownMenuTrigger>
           <DropdownMenuContent align='end' className='w-56'>
@@ -225,52 +243,62 @@ export function ChannelsPrimaryButtons() {
               </DropdownMenuItem>
             )}
 
-            <DropdownMenuItem
-              onClick={() => {
-                handleUpdateAllBalances(queryClient)
-              }}
-            >
-              {t('Update All Balances')}
-              <DropdownMenuShortcut>
-                <DollarSign className='h-4 w-4' />
-              </DropdownMenuShortcut>
-            </DropdownMenuItem>
+            {canOperate && (
+              <DropdownMenuItem
+                onClick={() => {
+                  handleUpdateAllBalances(queryClient)
+                }}
+              >
+                {t('Update All Balances')}
+                <DropdownMenuShortcut>
+                  <DollarSign className='h-4 w-4' />
+                </DropdownMenuShortcut>
+              </DropdownMenuItem>
+            )}
 
-            <DropdownMenuSeparator />
+            {(canOperate || canWrite) && <DropdownMenuSeparator />}
 
-            <DropdownMenuItem
-              onClick={() => upstream.detectAllUpdates()}
-              disabled={upstream.detectAllLoading}
-            >
-              {t('Detect All Upstream Updates')}
-              <DropdownMenuShortcut>
-                <RefreshCw className='h-4 w-4' />
-              </DropdownMenuShortcut>
-            </DropdownMenuItem>
+            {canOperate && (
+              <DropdownMenuItem
+                onClick={() => upstream.detectAllUpdates()}
+                disabled={upstream.detectAllLoading}
+              >
+                {t('Detect All Upstream Updates')}
+                <DropdownMenuShortcut>
+                  <RefreshCw className='h-4 w-4' />
+                </DropdownMenuShortcut>
+              </DropdownMenuItem>
+            )}
 
-            <DropdownMenuItem
-              onClick={() => upstream.applyAllUpdates()}
-              disabled={upstream.applyAllLoading}
-            >
-              {t('Apply All Upstream Updates')}
-              <DropdownMenuShortcut>
-                <ArrowUpFromLine className='h-4 w-4' />
-              </DropdownMenuShortcut>
-            </DropdownMenuItem>
+            {canWrite && (
+              <DropdownMenuItem
+                onClick={() => upstream.applyAllUpdates()}
+                disabled={upstream.applyAllLoading}
+              >
+                {t('Apply All Upstream Updates')}
+                <DropdownMenuShortcut>
+                  <ArrowUpFromLine className='h-4 w-4' />
+                </DropdownMenuShortcut>
+              </DropdownMenuItem>
+            )}
 
-            <DropdownMenuSeparator />
+            {canOperate && (
+              <>
+                <DropdownMenuSeparator />
 
-            <DropdownMenuItem
-              onSelect={(e) => {
-                e.preventDefault()
-                setShowConsistencyDialog(true)
-              }}
-            >
-              {t('Repair Channel Consistency')}
-              <DropdownMenuShortcut>
-                <Settings2 className='h-4 w-4' />
-              </DropdownMenuShortcut>
-            </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault()
+                    setShowConsistencyDialog(true)
+                  }}
+                >
+                  {t('Repair Channel Consistency')}
+                  <DropdownMenuShortcut>
+                    <Settings2 className='h-4 w-4' />
+                  </DropdownMenuShortcut>
+                </DropdownMenuItem>
+              </>
+            )}
 
             <DropdownMenuSeparator />
 

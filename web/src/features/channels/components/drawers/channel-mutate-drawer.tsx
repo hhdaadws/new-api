@@ -426,6 +426,11 @@ export function ChannelMutateDrawer({
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
     ADMIN_PERMISSION_ACTIONS.OPERATE
   )
+  const canWriteChannel = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.WRITE
+  )
   const canBindTaskPlugin = hasPermission(
     currentUser,
     ADMIN_PERMISSION_RESOURCES.TASK_PLUGIN,
@@ -5109,7 +5114,7 @@ export function ChannelMutateDrawer({
                 disabled={
                   isSubmitting ||
                   (!isEditing && !canEditSensitive) ||
-                  (isEditing && !channelData?.data)
+                  (isEditing && (!canWriteChannel || !channelData?.data))
                 }
               >
                 {isSubmitting && (

@@ -99,6 +99,11 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
     ADMIN_PERMISSION_ACTIONS.TEST
   )
+  const canOperate = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.OPERATE
+  )
 
   const handleEdit = () => {
     setCurrentRow(channel)
@@ -233,29 +238,31 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         </Tooltip>
       )}
 
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant='ghost'
-              size='icon-sm'
-              onClick={handleToggleStatus}
-              disabled={isTogglingStatus}
-              aria-label={isEnabled ? t('Disable') : t('Enable')}
-              className={
-                isEnabled
-                  ? 'text-destructive hover:text-destructive'
-                  : 'text-success hover:text-success'
-              }
-            />
-          }
-        >
-          {statusIcon}
-        </TooltipTrigger>
-        <TooltipContent>
-          {isEnabled ? t('Disable') : t('Enable')}
-        </TooltipContent>
-      </Tooltip>
+      {canOperate && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant='ghost'
+                size='icon-sm'
+                onClick={handleToggleStatus}
+                disabled={isTogglingStatus}
+                aria-label={isEnabled ? t('Disable') : t('Enable')}
+                className={
+                  isEnabled
+                    ? 'text-destructive hover:text-destructive'
+                    : 'text-success hover:text-success'
+                }
+              />
+            }
+          >
+            {statusIcon}
+          </TooltipTrigger>
+          <TooltipContent>
+            {isEnabled ? t('Disable') : t('Enable')}
+          </TooltipContent>
+        </Tooltip>
+      )}
 
       <DropdownMenu>
         <DropdownMenuTrigger
@@ -290,23 +297,27 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           )}
 
           {/* Query Balance */}
-          <DropdownMenuItem onClick={handleQueryBalance}>
-            {t('Query Balance')}
-            <DropdownMenuShortcut>
-              <DollarSign size={16} />
-            </DropdownMenuShortcut>
-          </DropdownMenuItem>
+          {canOperate && (
+            <DropdownMenuItem onClick={handleQueryBalance}>
+              {t('Query Balance')}
+              <DropdownMenuShortcut>
+                <DollarSign size={16} />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+          )}
 
           {/* Fetch Models */}
-          <DropdownMenuItem onClick={handleFetchModels}>
-            {t('Fetch Models')}
-            <DropdownMenuShortcut>
-              <Download size={16} />
-            </DropdownMenuShortcut>
-          </DropdownMenuItem>
+          {canOperate && (
+            <DropdownMenuItem onClick={handleFetchModels}>
+              {t('Fetch Models')}
+              <DropdownMenuShortcut>
+                <Download size={16} />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+          )}
 
           {/* Detect Upstream Updates (only for fetchable channel types) */}
-          {MODEL_FETCHABLE_TYPES.has(channel.type) && (
+          {canOperate && MODEL_FETCHABLE_TYPES.has(channel.type) && (
             <DropdownMenuItem
               onClick={() => upstream.detectChannelUpdates(channel)}
             >
@@ -318,7 +329,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           )}
 
           {/* Ollama Models (only for Ollama channels) */}
-          {channel.type === 4 && (
+          {canEditSensitive && channel.type === 4 && (
             <DropdownMenuItem onClick={handleManageOllamaModels}>
               {t('Manage Ollama Models')}
               <DropdownMenuShortcut>
@@ -346,7 +357,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           )}
 
           {/* Manage Keys (only for multi-key channels) */}
-          {isMultiKey && (
+          {canOperate && isMultiKey && (
             <DropdownMenuItem onClick={handleManageKeys}>
               {t('Manage Keys')}
               <DropdownMenuShortcut>
