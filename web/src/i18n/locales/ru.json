@@ -7380,6 +7380,25 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Channel error alerts": "Оповещения об ошибках каналов",
+    "Alerts are sent through PushPlus. Each token receives every alert, so add one token per person to notify several people.": "Оповещения отправляются через PushPlus. Каждый токен получает все оповещения, поэтому добавьте по одному токену на человека, чтобы уведомлять нескольких людей.",
+    "Alert on frequent channel errors": "Оповещать о частых ошибках канала",
+    "Send a PushPlus message when one channel reports more errors within a minute than the threshold.": "Отправлять сообщение PushPlus, когда канал за минуту сообщает об ошибках больше порогового значения.",
+    "Errors per minute threshold": "Порог ошибок в минуту",
+    "An alert is sent when a channel has more errors than this within the same minute.": "Оповещение отправляется, когда число ошибок канала за одну минуту превышает это значение.",
+    "Alert cooldown (minutes)": "Интервал между оповещениями (минуты)",
+    "After an alert, the same channel is not alerted again for this many minutes. 0 alerts at most once per minute.": "После оповещения тот же канал не оповещается повторно в течение указанного числа минут. При 0 — не чаще одного раза в минуту.",
+    "PushPlus tokens": "Токены PushPlus",
+    "one token per line": "по одному токену в строке",
+    "Saved tokens are hidden. Leave blank to keep them; entering tokens replaces the whole saved list.": "Сохранённые токены скрыты. Оставьте поле пустым, чтобы сохранить их; ввод токенов заменяет весь сохранённый список.",
+    "Only the root user can change PushPlus tokens.": "Только пользователь root может изменять токены PushPlus.",
+    "Send test notification": "Отправить тестовое уведомление",
+    "Sends a test message to every saved token.": "Отправляет тестовое сообщение на каждый сохранённый токен.",
+    "Test notification sent to {{count}} recipients": "Тестовое уведомление отправлено получателям: {{count}}",
+    "Test notification failed for {{failed}} of {{total}} recipients": "Не удалось отправить тестовое уведомление {{failed}} из {{total}} получателей",
+    "Enter a whole number of minutes from 0 to 1440": "Введите целое число минут от 0 до 1440",
+    "Enter at most 50 PushPlus tokens": "Укажите не более 50 токенов PushPlus",
+    "Save at least one PushPlus token first": "Сначала сохраните хотя бы один токен PushPlus"
   }
 }

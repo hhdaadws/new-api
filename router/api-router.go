@@ -238,6 +238,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			rootOptionRoute.PUT("/passkey/domains", controller.UpdatePasskeyDomains)
 			rootOptionRoute.POST("/payment_compliance", controller.ConfirmPaymentCompliance)
+			rootOptionRoute.POST("/channel_error_alert/test", controller.SendChannelErrorAlertTest)
 			rootOptionRoute.GET("/waffo-pancake/catalog", controller.ListWaffoPancakeCatalog)
 			rootOptionRoute.POST("/waffo-pancake/pair", controller.CreateWaffoPancakePair)
 			rootOptionRoute.POST("/waffo-pancake/save", controller.SaveWaffoPancake)

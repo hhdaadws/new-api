@@ -7380,6 +7380,25 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Channel error alerts": "Channel error alerts",
+    "Alerts are sent through PushPlus. Each token receives every alert, so add one token per person to notify several people.": "Alerts are sent through PushPlus. Each token receives every alert, so add one token per person to notify several people.",
+    "Alert on frequent channel errors": "Alert on frequent channel errors",
+    "Send a PushPlus message when one channel reports more errors within a minute than the threshold.": "Send a PushPlus message when one channel reports more errors within a minute than the threshold.",
+    "Errors per minute threshold": "Errors per minute threshold",
+    "An alert is sent when a channel has more errors than this within the same minute.": "An alert is sent when a channel has more errors than this within the same minute.",
+    "Alert cooldown (minutes)": "Alert cooldown (minutes)",
+    "After an alert, the same channel is not alerted again for this many minutes. 0 alerts at most once per minute.": "After an alert, the same channel is not alerted again for this many minutes. 0 alerts at most once per minute.",
+    "PushPlus tokens": "PushPlus tokens",
+    "one token per line": "one token per line",
+    "Saved tokens are hidden. Leave blank to keep them; entering tokens replaces the whole saved list.": "Saved tokens are hidden. Leave blank to keep them; entering tokens replaces the whole saved list.",
+    "Only the root user can change PushPlus tokens.": "Only the root user can change PushPlus tokens.",
+    "Send test notification": "Send test notification",
+    "Sends a test message to every saved token.": "Sends a test message to every saved token.",
+    "Test notification sent to {{count}} recipients": "Test notification sent to {{count}} recipients",
+    "Test notification failed for {{failed}} of {{total}} recipients": "Test notification failed for {{failed}} of {{total}} recipients",
+    "Enter a whole number of minutes from 0 to 1440": "Enter a whole number of minutes from 0 to 1440",
+    "Enter at most 50 PushPlus tokens": "Enter at most 50 PushPlus tokens",
+    "Save at least one PushPlus token first": "Save at least one PushPlus token first"
   }
 }

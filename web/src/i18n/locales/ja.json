@@ -7380,6 +7380,25 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "Channel error alerts": "チャネルエラー通知",
+    "Alerts are sent through PushPlus. Each token receives every alert, so add one token per person to notify several people.": "通知は PushPlus で送信されます。各トークンがすべての通知を受け取るため、複数の人に通知するには 1 人につき 1 つのトークンを追加してください。",
+    "Alert on frequent channel errors": "チャネルのエラー多発時に通知",
+    "Send a PushPlus message when one channel reports more errors within a minute than the threshold.": "1 つのチャネルで 1 分間のエラー数がしきい値を超えたときに PushPlus メッセージを送信します。",
+    "Errors per minute threshold": "1 分あたりのエラー数しきい値",
+    "An alert is sent when a channel has more errors than this within the same minute.": "同じ 1 分間でチャネルのエラー数がこの値を超えると通知が送信されます。",
+    "Alert cooldown (minutes)": "通知のクールダウン（分）",
+    "After an alert, the same channel is not alerted again for this many minutes. 0 alerts at most once per minute.": "通知後、同じチャネルについてはこの分数の間は再通知しません。0 の場合は最大で 1 分に 1 回通知します。",
+    "PushPlus tokens": "PushPlus トークン",
+    "one token per line": "1 行に 1 つのトークン",
+    "Saved tokens are hidden. Leave blank to keep them; entering tokens replaces the whole saved list.": "保存済みのトークンは表示されません。空欄のままにすると保持され、トークンを入力すると保存済みの一覧全体が置き換えられます。",
+    "Only the root user can change PushPlus tokens.": "PushPlus トークンを変更できるのは root ユーザーのみです。",
+    "Send test notification": "テスト通知を送信",
+    "Sends a test message to every saved token.": "保存済みのすべてのトークンにテストメッセージを送信します。",
+    "Test notification sent to {{count}} recipients": "{{count}} 人の受信者にテスト通知を送信しました",
+    "Test notification failed for {{failed}} of {{total}} recipients": "{{total}} 人中 {{failed}} 人の受信者へのテスト通知に失敗しました",
+    "Enter a whole number of minutes from 0 to 1440": "0 から 1440 までの整数の分数を入力してください",
+    "Enter at most 50 PushPlus tokens": "PushPlus トークンは最大 50 個までです",
+    "Save at least one PushPlus token first": "先に PushPlus トークンを 1 つ以上保存してください"
   }
 }

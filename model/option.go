@@ -243,6 +243,9 @@ func validateOptionValue(key string, value string) error {
 	if err := operation_setting.ValidateUpstreamErrorInterceptionOption(key, value); err != nil {
 		return err
 	}
+	if err := operation_setting.ValidateChannelErrorAlertOption(key, value); err != nil {
+		return err
+	}
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
 	}

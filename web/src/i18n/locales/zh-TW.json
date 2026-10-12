@@ -7380,6 +7380,25 @@
     "Zhipu": "智譜",
     "Zhipu GLM": "智譜GLM",
     "Zhipu V4": "智譜 V4",
-    "Zoom": "縮放"
+    "Zoom": "縮放",
+    "Channel error alerts": "管道錯誤告警",
+    "Alerts are sent through PushPlus. Each token receives every alert, so add one token per person to notify several people.": "告警透過 PushPlus 傳送。每個 token 都會收到全部告警，如需通知多人，請為每人新增一個 token。",
+    "Alert on frequent channel errors": "管道頻繁錯誤時告警",
+    "Send a PushPlus message when one channel reports more errors within a minute than the threshold.": "當某個管道在 1 分鐘內的錯誤次數超過閾值時，傳送 PushPlus 訊息。",
+    "Errors per minute threshold": "每分鐘錯誤次數閾值",
+    "An alert is sent when a channel has more errors than this within the same minute.": "同一分鐘內管道的錯誤次數超過此值時傳送告警。",
+    "Alert cooldown (minutes)": "告警冷卻時間（分鐘）",
+    "After an alert, the same channel is not alerted again for this many minutes. 0 alerts at most once per minute.": "傳送告警後，同一管道在此時長內不再重複告警。設為 0 時每分鐘最多告警一次。",
+    "PushPlus tokens": "PushPlus token",
+    "one token per line": "每行一個 token",
+    "Saved tokens are hidden. Leave blank to keep them; entering tokens replaces the whole saved list.": "已儲存的 token 不會顯示。留空則保持不變；輸入 token 將取代已儲存的全部清單。",
+    "Only the root user can change PushPlus tokens.": "僅 root 使用者可以修改 PushPlus token。",
+    "Send test notification": "傳送測試通知",
+    "Sends a test message to every saved token.": "向所有已儲存的 token 傳送一則測試訊息。",
+    "Test notification sent to {{count}} recipients": "測試通知已傳送給 {{count}} 位接收者",
+    "Test notification failed for {{failed}} of {{total}} recipients": "{{total}} 位接收者中有 {{failed}} 位測試通知傳送失敗",
+    "Enter a whole number of minutes from 0 to 1440": "請輸入 0 到 1440 之間的整數分鐘數",
+    "Enter at most 50 PushPlus tokens": "最多輸入 50 個 PushPlus token",
+    "Save at least one PushPlus token first": "請先儲存至少一個 PushPlus token"
   }
 }

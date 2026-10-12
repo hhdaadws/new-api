@@ -198,6 +198,7 @@ describe('request policy settings', () => {
     ['health', 'Save Changes'],
     ['filtering', 'Save sensitive words'],
     ['affinity', 'Save Changes'],
+    ['error-alerts', 'Save Changes'],
   ])(
     'opening %s and saving unchanged values does not write options',
     async (section, saveLabel) => {
@@ -386,6 +387,65 @@ describe('request policy settings', () => {
       expect(statusCode).toHaveAttribute('aria-invalid', 'true')
     )
     expect(api.put).not.toHaveBeenCalled()
+  })
+
+  it('saving alert tokens writes the distinct token list and clears the editor', async () => {
+    await renderPolicies('/system-settings/request-policies/error-alerts')
+    fireEvent.change(
+      await screen.findByRole('spinbutton', {
+        name: 'Errors per minute threshold',
+      }),
+      { target: { value: '5' } }
+    )
+    const tokens = screen.getByRole('textbox', { name: 'PushPlus tokens' })
+    fireEvent.change(tokens, {
+      target: { value: ' token-a\ntoken-b, token-a\n' },
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(tokens).toHaveValue(''))
+    expect(api.put).toHaveBeenCalledTimes(2)
+    expect(api.put).toHaveBeenNthCalledWith(1, '/api/option/', {
+      key: 'channel_error_alert.threshold',
+      value: 5,
+    })
+    expect(api.put).toHaveBeenNthCalledWith(2, '/api/option/', {
+      key: 'channel_error_alert.pushplus_tokens',
+      value: '["token-a","token-b"]',
+    })
+  })
+
+  it('sending a test notification calls the test endpoint without saving the form', async () => {
+    vi.spyOn(api, 'post').mockResolvedValue({
+      data: { success: true, data: [{ token: 'toke****en-a', success: true }] },
+    })
+    await renderPolicies('/system-settings/request-policies/error-alerts')
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Send test notification' })
+    )
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledExactlyOnceWith(
+        '/api/option/channel_error_alert/test'
+      )
+    )
+    expect(api.put).not.toHaveBeenCalled()
+  })
+
+  it('an administrator without root access cannot edit alert tokens or send a test', async () => {
+    useAuthStore.getState().auth.setUser({
+      id: 2,
+      username: 'operator',
+      role: ROLE.ADMIN,
+      permissions: {
+        admin_permissions: { system_setting: { read: true, write: true } },
+      },
+    })
+    await renderPolicies('/system-settings/request-policies/error-alerts')
+    expect(
+      await screen.findByRole('textbox', { name: 'PushPlus tokens' })
+    ).toBeDisabled()
+    expect(
+      screen.queryByRole('button', { name: 'Send test notification' })
+    ).not.toBeInTheDocument()
   })
 
   it.each([

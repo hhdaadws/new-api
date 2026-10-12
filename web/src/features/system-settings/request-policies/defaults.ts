@@ -45,6 +45,11 @@ export type ErrorInterceptionSettings = {
   'upstream_error_interception.message': string
   'upstream_error_interception.retry_on_match': boolean
 }
+export type ChannelErrorAlertSettings = {
+  'channel_error_alert.enabled': boolean
+  'channel_error_alert.threshold': number
+  'channel_error_alert.cooldown_minutes': number
+}
 export type FilteringSettings = Pick<
   SecuritySettings,
   'CheckSensitiveEnabled' | 'CheckSensitiveOnPromptEnabled' | 'SensitiveWords'
@@ -53,6 +58,7 @@ export type RequestPolicySettings = RetrySettings &
   HealthSettings &
   FilteringSettings &
   ErrorInterceptionSettings &
+  ChannelErrorAlertSettings &
   Pick<ChannelAffinitySettings, keyof ChannelAffinitySettings>
 
 export const defaultRequestPolicySettings: RequestPolicySettings = {
@@ -83,4 +89,7 @@ export const defaultRequestPolicySettings: RequestPolicySettings = {
   'upstream_error_interception.status_code': 502,
   'upstream_error_interception.message': 'bad response',
   'upstream_error_interception.retry_on_match': false,
+  'channel_error_alert.enabled': false,
+  'channel_error_alert.threshold': 10,
+  'channel_error_alert.cooldown_minutes': 10,
 }

@@ -7380,6 +7380,25 @@
     "Zhipu": "智谱",
     "Zhipu GLM": "智谱GLM",
     "Zhipu V4": "智谱 V4",
-    "Zoom": "缩放"
+    "Zoom": "缩放",
+    "Channel error alerts": "渠道报错告警",
+    "Alerts are sent through PushPlus. Each token receives every alert, so add one token per person to notify several people.": "告警通过 PushPlus 发送。每个 token 都会收到全部告警，如需通知多人，请为每人添加一个 token。",
+    "Alert on frequent channel errors": "渠道频繁报错时告警",
+    "Send a PushPlus message when one channel reports more errors within a minute than the threshold.": "当某个渠道在 1 分钟内的报错次数超过阈值时，发送 PushPlus 消息。",
+    "Errors per minute threshold": "每分钟报错次数阈值",
+    "An alert is sent when a channel has more errors than this within the same minute.": "同一分钟内渠道的报错次数超过该值时发送告警。",
+    "Alert cooldown (minutes)": "告警冷却时间（分钟）",
+    "After an alert, the same channel is not alerted again for this many minutes. 0 alerts at most once per minute.": "发送告警后，同一渠道在该时长内不再重复告警。设为 0 时每分钟最多告警一次。",
+    "PushPlus tokens": "PushPlus token",
+    "one token per line": "每行一个 token",
+    "Saved tokens are hidden. Leave blank to keep them; entering tokens replaces the whole saved list.": "已保存的 token 不会显示。留空则保持不变；输入 token 将替换已保存的全部列表。",
+    "Only the root user can change PushPlus tokens.": "仅 root 用户可以修改 PushPlus token。",
+    "Send test notification": "发送测试通知",
+    "Sends a test message to every saved token.": "向所有已保存的 token 发送一条测试消息。",
+    "Test notification sent to {{count}} recipients": "测试通知已发送给 {{count}} 位接收人",
+    "Test notification failed for {{failed}} of {{total}} recipients": "{{total}} 位接收人中有 {{failed}} 位测试通知发送失败",
+    "Enter a whole number of minutes from 0 to 1440": "请输入 0 到 1440 之间的整数分钟数",
+    "Enter at most 50 PushPlus tokens": "最多输入 50 个 PushPlus token",
+    "Save at least one PushPlus token first": "请先保存至少一个 PushPlus token"
   }
 }

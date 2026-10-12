@@ -7380,6 +7380,25 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Channel error alerts": "Alertes d’erreurs de canal",
+    "Alerts are sent through PushPlus. Each token receives every alert, so add one token per person to notify several people.": "Les alertes sont envoyées via PushPlus. Chaque jeton reçoit toutes les alertes ; ajoutez un jeton par personne pour prévenir plusieurs personnes.",
+    "Alert on frequent channel errors": "Alerter en cas d’erreurs fréquentes d’un canal",
+    "Send a PushPlus message when one channel reports more errors within a minute than the threshold.": "Envoie un message PushPlus lorsqu’un canal signale plus d’erreurs en une minute que le seuil.",
+    "Errors per minute threshold": "Seuil d’erreurs par minute",
+    "An alert is sent when a channel has more errors than this within the same minute.": "Une alerte est envoyée lorsqu’un canal dépasse ce nombre d’erreurs au cours d’une même minute.",
+    "Alert cooldown (minutes)": "Délai entre alertes (minutes)",
+    "After an alert, the same channel is not alerted again for this many minutes. 0 alerts at most once per minute.": "Après une alerte, le même canal n’est plus signalé pendant ce nombre de minutes. Avec 0, au plus une alerte par minute.",
+    "PushPlus tokens": "Jetons PushPlus",
+    "one token per line": "un jeton par ligne",
+    "Saved tokens are hidden. Leave blank to keep them; entering tokens replaces the whole saved list.": "Les jetons enregistrés sont masqués. Laissez vide pour les conserver ; saisir des jetons remplace toute la liste enregistrée.",
+    "Only the root user can change PushPlus tokens.": "Seul l’utilisateur root peut modifier les jetons PushPlus.",
+    "Send test notification": "Envoyer une notification de test",
+    "Sends a test message to every saved token.": "Envoie un message de test à chaque jeton enregistré.",
+    "Test notification sent to {{count}} recipients": "Notification de test envoyée à {{count}} destinataires",
+    "Test notification failed for {{failed}} of {{total}} recipients": "Échec de la notification de test pour {{failed}} destinataires sur {{total}}",
+    "Enter a whole number of minutes from 0 to 1440": "Saisissez un nombre entier de minutes entre 0 et 1440",
+    "Enter at most 50 PushPlus tokens": "Saisissez au maximum 50 jetons PushPlus",
+    "Save at least one PushPlus token first": "Enregistrez d’abord au moins un jeton PushPlus"
   }
 }

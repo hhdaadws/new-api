@@ -31,3 +31,15 @@ export async function savePolicyConfig(options: Record<string, string>) {
   )
   return requireServerSuccess(response.data).data
 }
+
+export type PushPlusSendResult = {
+  token: string
+  success: boolean
+  error?: string
+}
+export async function sendChannelErrorAlertTest() {
+  const response = await api.post<Response<PushPlusSendResult[]>>(
+    '/api/option/channel_error_alert/test'
+  )
+  return requireServerSuccess(response.data).data
+}

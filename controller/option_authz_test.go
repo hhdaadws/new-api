@@ -26,6 +26,7 @@ func TestUpdateOptionKeepsRootOnlyKeysFromAdmins(t *testing.T) {
 		{name: "OAuth provider", key: "oidc.client_id", role: common.RoleAdminUser, want: http.StatusForbidden},
 		{name: "outbound mail", key: "SMTPServer", role: common.RoleAdminUser, want: http.StatusForbidden},
 		{name: "public address", key: "ServerAddress", role: common.RoleAdminUser, want: http.StatusForbidden},
+		{name: "PushPlus alert recipients", key: "channel_error_alert.pushplus_tokens", role: common.RoleAdminUser, want: http.StatusForbidden},
 		// The invalid value is rejected by option validation, which proves the
 		// request passed the root-only guard without persisting anything.
 		{name: "ordinary setting passes the guard", key: "gemini.safety_settings", role: common.RoleAdminUser, want: http.StatusOK},

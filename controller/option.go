@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
@@ -37,7 +38,8 @@ var completionRatioMetaOptionKeys = []string{
 // isSecretOptionKey reports options whose values are credentials. They are
 // never returned by GetOptions.
 func isSecretOptionKey(key string) bool {
-	return strings.HasSuffix(key, "Token") ||
+	return key == operation_setting.ChannelErrorAlertTokensOptionKey ||
+		strings.HasSuffix(key, "Token") ||
 		strings.HasSuffix(key, "Secret") ||
 		strings.HasSuffix(key, "Key") ||
 		strings.HasSuffix(key, "secret") ||
@@ -209,6 +211,18 @@ func writePasskeyDomainSettingsError(c *gin.Context, err error) {
 		return
 	}
 	common.ApiError(c, err)
+}
+
+// SendChannelErrorAlertTest sends a test message to every saved PushPlus
+// token and reports the outcome per masked token.
+func SendChannelErrorAlertTest(c *gin.Context) {
+	tokens := operation_setting.GetChannelErrorAlertSetting().PushPlusTokens
+	if len(tokens) == 0 {
+		common.ApiErrorT(c, "Save at least one PushPlus token first")
+		return
+	}
+	results := service.SendPushPlusToTokens(tokens, i18n.T(c, i18n.MsgChannelErrorAlertTestSubject), i18n.T(c, i18n.MsgChannelErrorAlertTestContent))
+	common.ApiSuccess(c, results)
 }
 
 func UpdateOption(c *gin.Context) {

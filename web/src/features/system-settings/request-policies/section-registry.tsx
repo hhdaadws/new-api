@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { createSectionRegistry } from '../utils/section-registry'
+import { ChannelErrorAlertSection } from './channel-error-alert-section'
 import { ChannelHealthSection } from './channel-health-section'
 import type { RequestPolicySettings } from './defaults'
 import { ErrorInterceptionSection } from './error-interception-section'
@@ -47,6 +48,13 @@ const POLICY_SECTIONS = [
     titleKey: 'Channel health',
     build: (settings: RequestPolicySettings) => (
       <ChannelHealthSection defaultValues={settings} />
+    ),
+  },
+  {
+    id: 'error-alerts',
+    titleKey: 'Channel error alerts',
+    build: (settings: RequestPolicySettings) => (
+      <ChannelErrorAlertSection defaultValues={settings} />
     ),
   },
   {

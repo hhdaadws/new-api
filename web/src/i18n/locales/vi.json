@@ -7380,6 +7380,25 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Channel error alerts": "Cảnh báo lỗi kênh",
+    "Alerts are sent through PushPlus. Each token receives every alert, so add one token per person to notify several people.": "Cảnh báo được gửi qua PushPlus. Mỗi token nhận mọi cảnh báo, vì vậy hãy thêm một token cho mỗi người để thông báo cho nhiều người.",
+    "Alert on frequent channel errors": "Cảnh báo khi kênh lỗi thường xuyên",
+    "Send a PushPlus message when one channel reports more errors within a minute than the threshold.": "Gửi tin nhắn PushPlus khi một kênh báo lỗi nhiều hơn ngưỡng trong vòng một phút.",
+    "Errors per minute threshold": "Ngưỡng số lỗi mỗi phút",
+    "An alert is sent when a channel has more errors than this within the same minute.": "Cảnh báo được gửi khi số lỗi của một kênh trong cùng một phút vượt quá giá trị này.",
+    "Alert cooldown (minutes)": "Thời gian chờ giữa các cảnh báo (phút)",
+    "After an alert, the same channel is not alerted again for this many minutes. 0 alerts at most once per minute.": "Sau một cảnh báo, cùng một kênh sẽ không được cảnh báo lại trong số phút này. Đặt 0 để cảnh báo tối đa một lần mỗi phút.",
+    "PushPlus tokens": "Token PushPlus",
+    "one token per line": "mỗi dòng một token",
+    "Saved tokens are hidden. Leave blank to keep them; entering tokens replaces the whole saved list.": "Các token đã lưu được ẩn. Để trống để giữ nguyên; nhập token sẽ thay thế toàn bộ danh sách đã lưu.",
+    "Only the root user can change PushPlus tokens.": "Chỉ người dùng root mới có thể thay đổi token PushPlus.",
+    "Send test notification": "Gửi thông báo thử",
+    "Sends a test message to every saved token.": "Gửi một tin nhắn thử tới mọi token đã lưu.",
+    "Test notification sent to {{count}} recipients": "Đã gửi thông báo thử tới {{count}} người nhận",
+    "Test notification failed for {{failed}} of {{total}} recipients": "Gửi thông báo thử thất bại cho {{failed}} trên {{total}} người nhận",
+    "Enter a whole number of minutes from 0 to 1440": "Nhập số phút nguyên từ 0 đến 1440",
+    "Enter at most 50 PushPlus tokens": "Nhập tối đa 50 token PushPlus",
+    "Save at least one PushPlus token first": "Hãy lưu ít nhất một token PushPlus trước"
   }
 }
