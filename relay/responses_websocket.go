@@ -252,6 +252,9 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 		if info != nil && billingPrepared {
 			apiErr = RefundFailedRequestBilling(c, info, apiErr)
 		}
+		// Calls run outside the Distribute middleware, which writes the held
+		// error log for HTTP requests.
+		service.WriteHeldErrorLog(c)
 	}()
 	if modelName == "" {
 		return newResponsesWSInvalidRequestError(errors.New("model is required"))

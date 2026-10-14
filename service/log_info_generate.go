@@ -91,9 +91,11 @@ func AppendRelayLogAdminInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo,
 	}
 
 	AppendChannelAffinityAdminInfo(ctx, other)
-	if events := RequestPolicy(ctx).Events(); len(events) > 0 {
+	policy := RequestPolicy(ctx)
+	if events := policy.Events(); len(events) > 0 {
 		other.SetAdmin("request_policy", events)
 	}
+	policy.attachHeldErrorLog(other)
 }
 
 func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, modelRatio, groupRatio, completionRatio float64,

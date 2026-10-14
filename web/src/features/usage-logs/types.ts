@@ -128,6 +128,17 @@ export interface LogOtherData {
       status_code?: number
       message?: string
     }
+    // The error that sent the request to an error keyword retry rule's retry
+    // channel. Users see only the retry attempt's log, so this attempt's
+    // error is kept for admins in that log.
+    error_keyword_retry?: {
+      channel_id?: number
+      keyword?: string
+      status_code?: number
+      error_type?: string
+      error_code?: string
+      message?: string
+    }
     local_count_tokens?: boolean
     usage_billing_path?: UsageBillingPath | string
     channel_affinity?: ChannelAffinityInfo

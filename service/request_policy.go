@@ -50,6 +50,7 @@ type RequestPolicyState struct {
 	OutcomeRecorded   bool
 	mu                sync.Mutex
 	events            []PolicyEvent
+	keywordRetryLog   *keywordRetryLog
 }
 
 func RequestPolicy(c *gin.Context) *RequestPolicyState {

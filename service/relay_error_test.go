@@ -324,6 +324,7 @@ func TestUpstreamErrorInterception(t *testing.T) {
 
 func TestErrorKeywordRetryRules(t *testing.T) {
 	previousDB, previousType, previousOptions := model.DB, common.MainDatabaseType(), common.OptionMap
+	previousLogDB, previousErrorLog := model.LOG_DB, constant.ErrorLogEnabled
 	previousCache, previousRetries := common.MemoryCacheEnabled, common.RetryTimes
 	retrySetting := operation_setting.GetErrorKeywordRetrySetting()
 	previousEnabled := retrySetting.Enabled
@@ -331,6 +332,7 @@ func TestErrorKeywordRetryRules(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		model.DB, common.OptionMap = previousDB, previousOptions
+		model.LOG_DB, constant.ErrorLogEnabled = previousLogDB, previousErrorLog
 		common.SetMainDatabaseType(previousType)
 		common.MemoryCacheEnabled, common.RetryTimes = previousCache, previousRetries
 		retrySetting.Enabled = previousEnabled
@@ -342,8 +344,9 @@ func TestErrorKeywordRetryRules(t *testing.T) {
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
-	require.NoError(t, database.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.Option{}))
+	require.NoError(t, database.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.Option{}, &model.Log{}, &model.User{}))
 	model.DB, common.OptionMap = database, map[string]string{}
+	model.LOG_DB, constant.ErrorLogEnabled = database, true
 	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
 	common.MemoryCacheEnabled, common.RetryTimes = false, 0
 	for _, channel := range []*model.Channel{
@@ -442,6 +445,72 @@ func TestErrorKeywordRetryRules(t *testing.T) {
 			assert.False(t, param.CanAttempt(), "the retry channel's failure ends the request")
 		})
 	}
+
+	t.Run("users read only the outcome of a redirect and admins read the redirected error in it", func(t *testing.T) {
+		original := upstream("This model's maximum context length is 8192 tokens", http.StatusBadRequest)
+		wantDetails := map[string]any{
+			"channel_id": float64(1), "keyword": "context length", "status_code": float64(http.StatusBadRequest),
+			"error_type": "openai_error", "error_code": "upstream_code", "message": "This model's maximum context length is 8192 tokens",
+		}
+		redirectedRequest := func(t *testing.T) *gin.Context {
+			require.NoError(t, database.Where("1 = 1").Delete(&model.Log{}).Error)
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			param := &RetryParam{Ctx: c, TokenGroup: "default", ModelName: "gpt-test", Retry: common.GetPointer(0)}
+			_, redirected := param.RedirectOnErrorKeyword("default", 1, original)
+			require.True(t, redirected)
+			ProcessChannelError(c, types.ChannelError{ChannelId: 1}, original, nil)
+			return c
+		}
+		adminDetails := func(t *testing.T, other string) any {
+			var parsed struct {
+				AdminInfo map[string]any `json:"admin_info"`
+			}
+			require.NoError(t, common.UnmarshalJsonStr(other, &parsed))
+			return parsed.AdminInfo["error_keyword_retry"]
+		}
+
+		t.Run("a failed retry logs only its own error", func(t *testing.T) {
+			c := redirectedRequest(t)
+			ProcessChannelError(c, types.ChannelError{ChannelId: 2}, upstream("quota exceeded", http.StatusTooManyRequests), nil)
+			WriteHeldErrorLog(c)
+
+			var logs []model.Log
+			require.NoError(t, database.Find(&logs).Error)
+			require.Len(t, logs, 1)
+			assert.Equal(t, 2, logs[0].ChannelId)
+			assert.Equal(t, "status_code=429, quota exceeded", logs[0].Content)
+			assert.Equal(t, wantDetails, adminDetails(t, logs[0].Other))
+
+			userLogs, _, err := model.GetUserLogs(0, model.LogTypeUnknown, 0, 0, "", "", 0, 10, "", "", "")
+			require.NoError(t, err)
+			require.Len(t, userLogs, 1)
+			assert.NotContains(t, userLogs[0].Other, "context length", "users never read the redirected error")
+		})
+
+		t.Run("a successful retry carries the redirected error in its log", func(t *testing.T) {
+			c := redirectedRequest(t)
+			other := model.NewLogOther()
+			AppendRelayLogAdminInfo(c, nil, other)
+			WriteHeldErrorLog(c)
+
+			assert.Equal(t, wantDetails, adminDetails(t, other.JSONString()))
+			var count int64
+			require.NoError(t, database.Model(&model.Log{}).Count(&count).Error)
+			assert.Zero(t, count, "no error log is written for the redirected attempt")
+		})
+
+		t.Run("a request that ends without a later log writes the held error log once", func(t *testing.T) {
+			c := redirectedRequest(t)
+			WriteHeldErrorLog(c)
+			WriteHeldErrorLog(c)
+
+			var logs []model.Log
+			require.NoError(t, database.Find(&logs).Error)
+			require.Len(t, logs, 1)
+			assert.Equal(t, 1, logs[0].ChannelId)
+			assert.Equal(t, "status_code=400, This model's maximum context length is 8192 tokens", logs[0].Content)
+		})
+	})
 
 	t.Run("disabled rules keep the retry policy", func(t *testing.T) {
 		require.NoError(t, model.UpdateOption("error_keyword_retry.enabled", "false"))

@@ -109,6 +109,15 @@ func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			startTime = time.Now()
 		}
 		useTimeSeconds := int(time.Since(startTime).Seconds())
-		model.RecordErrorLog(c, userId, channelError.ChannelId, modelName, tokenName, logErr.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
+		content := logErr.MaskSensitiveErrorWithStatusCode()
+		isStream := common.GetContextKeyBool(c, constant.ContextKeyIsStream)
+		write := func() {
+			model.RecordErrorLog(c, userId, channelError.ChannelId, modelName, tokenName, content, tokenId, useTimeSeconds, isStream, userGroup, other)
+		}
+		// Users see only the outcome of an error keyword retry, so the error
+		// that triggered it goes to the admin details of the retry's log.
+		if !RequestPolicy(c).holdErrorLog(err, write) {
+			write()
+		}
 	}
 }

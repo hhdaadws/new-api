@@ -874,6 +874,40 @@ export function DetailsDialog(props: DetailsDialogProps) {
           </DetailSection>
         )}
 
+        {/* Error that triggered an error keyword retry (admin only) */}
+        {props.isAdmin && adminInfo?.error_keyword_retry && (
+          <DetailSection
+            icon={<AlertTriangle className='size-3.5' aria-hidden='true' />}
+            label={t('Original Channel Error')}
+            variant='danger'
+          >
+            {adminInfo.error_keyword_retry.channel_id !== undefined && (
+              <DetailRow
+                label={t('Channel')}
+                value={String(adminInfo.error_keyword_retry.channel_id)}
+                mono
+              />
+            )}
+            {adminInfo.error_keyword_retry.keyword && (
+              <DetailRow
+                label={t('Matched Keyword')}
+                value={adminInfo.error_keyword_retry.keyword}
+                mono
+              />
+            )}
+            {adminInfo.error_keyword_retry.status_code !== undefined && (
+              <DetailRow
+                label={t('Status Code')}
+                value={String(adminInfo.error_keyword_retry.status_code)}
+                mono
+              />
+            )}
+            <p className='text-xs wrap-break-word'>
+              {adminInfo.error_keyword_retry.message}
+            </p>
+          </DetailSection>
+        )}
+
         {/* Violation fee info */}
         {isViolation && other && (
           <DetailSection

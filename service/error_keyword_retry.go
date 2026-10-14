@@ -10,6 +10,8 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+
+	"github.com/gin-gonic/gin"
 )
 
 // errorKeywordRetry is the redirect an error keyword retry rule chose for a
@@ -18,6 +20,62 @@ type errorKeywordRetry struct {
 	channel *model.Channel
 	group   string
 	started bool
+}
+
+// keywordRetryLog holds the error log of an attempt that an error keyword retry
+// rule moved to another channel. Users read only the log of the retry attempt,
+// so administrators find this attempt's error in the admin details of that log
+// rather than in a log of its own.
+type keywordRetryLog struct {
+	err     *types.NewAPIError
+	details map[string]any
+	// write records the attempt's own error log. It runs only when the request
+	// ends without a later log to carry the details.
+	write func()
+	done  bool
+}
+
+// holdErrorLog keeps an attempt's error log instead of writing it when an error
+// keyword retry rule redirected that attempt's error. It reports whether the
+// log was kept.
+func (s *RequestPolicyState) holdErrorLog(err *types.NewAPIError, write func()) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	held := s.keywordRetryLog
+	if held == nil || held.err != err || held.write != nil {
+		return false
+	}
+	held.write = write
+	return true
+}
+
+// attachHeldErrorLog adds the held error of a redirected attempt to the admin
+// details of the log written after it.
+func (s *RequestPolicyState) attachHeldErrorLog(other *model.LogOther) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	held := s.keywordRetryLog
+	if other == nil || held == nil || held.write == nil || held.done {
+		return
+	}
+	held.done = true
+	other.SetAdmin("error_keyword_retry", held.details)
+}
+
+// WriteHeldErrorLog writes the held error log of a redirected attempt when the
+// request ended without a later log to carry it, so the failure is still
+// logged. It runs once at the end of each request.
+func WriteHeldErrorLog(c *gin.Context) {
+	state := RequestPolicy(c)
+	state.mu.Lock()
+	held := state.keywordRetryLog
+	if held == nil || held.write == nil || held.done {
+		state.mu.Unlock()
+		return
+	}
+	held.done = true
+	state.mu.Unlock()
+	held.write()
 }
 
 // CanAttempt reports whether a retry loop may run another attempt. After an
@@ -41,6 +99,9 @@ func (p *RetryParam) CanAttempt() bool {
 // Rules never override a pinned channel, a strict session, or an error the
 // gateway marked as not retryable, such as a response that already reached the
 // client. A nil err matches no rule but still ends a redirected request.
+//
+// The redirected error's log is held for the log of the retry attempt; see
+// keywordRetryLog.
 func (p *RetryParam) RedirectOnErrorKeyword(group string, channelID int, err *types.NewAPIError) (PolicyDecision, bool) {
 	if p.keywordRetry != nil {
 		return PolicyDecision{Action: "stop", Reason: "error_keyword_retry_failed", Source: "error_keyword_rule"}, true
@@ -86,6 +147,17 @@ func (p *RetryParam) RedirectOnErrorKeyword(group string, channelID int, err *ty
 			continue
 		}
 		p.keywordRetry = &errorKeywordRetry{channel: target, group: group}
+		state := RequestPolicy(p.Ctx)
+		state.mu.Lock()
+		state.keywordRetryLog = &keywordRetryLog{err: err, details: map[string]any{
+			"channel_id":  channelID,
+			"keyword":     words[0],
+			"status_code": err.StatusCode,
+			"error_type":  err.GetErrorType(),
+			"error_code":  err.GetErrorCode(),
+			"message":     err.MaskSensitiveError(),
+		}}
+		state.mu.Unlock()
 		logger.LogInfo(p.Ctx, common.LogText("error keyword retry: channel #%d error matched %q, retrying on channel #%d", channelID, words[0], target.Id))
 		return PolicyDecision{Action: "retry", Reason: "error_keyword_matched", Source: "error_keyword_rule"}, true
 	}
