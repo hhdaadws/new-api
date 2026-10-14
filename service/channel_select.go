@@ -48,6 +48,9 @@ type RetryParam struct {
 	RequestPath  string
 	Retry        *int
 	resetNextTry bool
+	// keywordRetry is set once an error keyword retry rule redirects the
+	// request; see RedirectOnErrorKeyword.
+	keywordRetry *errorKeywordRetry
 }
 
 func (p *RetryParam) GetRetry() int {
@@ -111,7 +114,14 @@ func (p *RetryParam) ResetRetryNextTry() {
 //
 //	Retry=3: GroupB, priority1 (startRetryIndex=2, priorityRetry=1)
 //	         分组B, 优先级1
+//
+// The attempt after an error keyword retry redirect runs on the rule's retry
+// channel, in the group of the failed attempt, without a random selection.
 func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
+	if redirect := param.keywordRetry; redirect != nil && !redirect.started {
+		redirect.started = true
+		return redirect.channel, redirect.group, nil
+	}
 	var channel *model.Channel
 	var err error
 	selectGroup := param.TokenGroup

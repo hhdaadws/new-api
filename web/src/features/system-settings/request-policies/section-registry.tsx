@@ -21,6 +21,7 @@ import { ChannelErrorAlertSection } from './channel-error-alert-section'
 import { ChannelHealthSection } from './channel-health-section'
 import type { RequestPolicySettings } from './defaults'
 import { ErrorInterceptionSection } from './error-interception-section'
+import { ErrorKeywordRetrySection } from './error-keyword-retry-section'
 import { RequestChecksSection } from './request-checks-section'
 import { RoutingPolicySection } from './routing-section'
 
@@ -42,6 +43,13 @@ const POLICY_SECTIONS = [
     id: 'routing',
     titleKey: 'Sessions and retries',
     build: () => <RoutingPolicySection />,
+  },
+  {
+    id: 'error-keyword-retry',
+    titleKey: 'Error keyword retry',
+    build: (settings: RequestPolicySettings) => (
+      <ErrorKeywordRetrySection defaultValues={settings} />
+    ),
   },
   {
     id: 'health',

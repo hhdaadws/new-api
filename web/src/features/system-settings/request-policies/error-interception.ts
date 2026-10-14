@@ -42,11 +42,11 @@ export function interceptionKeywordsToText(stored: string): string {
 }
 
 /**
- * Convert editor text into the stored JSON array. Lines are trimmed, blank
- * lines are dropped, and duplicates are removed ignoring case (matching is
- * case-insensitive), keeping the first spelling.
+ * Split one-keyword-per-line editor text into keywords. Lines are trimmed,
+ * blank lines are dropped, and duplicates are removed ignoring case (matching
+ * is case-insensitive), keeping the first spelling.
  */
-export function interceptionKeywordsFromText(text: string): string {
+export function parseKeywordLines(text: string): string[] {
   const seen = new Set<string>()
   const keywords: string[] = []
   for (const line of text.split(/\r?\n/)) {
@@ -56,7 +56,12 @@ export function interceptionKeywordsFromText(text: string): string {
     seen.add(normalized)
     keywords.push(keyword)
   }
-  return JSON.stringify(keywords)
+  return keywords
+}
+
+/** Convert editor text into the stored JSON array of keywords. */
+export function interceptionKeywordsFromText(text: string): string {
+  return JSON.stringify(parseKeywordLines(text))
 }
 
 export function createErrorInterceptionSchema(t: Translate) {

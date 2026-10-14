@@ -159,7 +159,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo.RetryIndex = 0
 	relayInfo.LastError = nil
 
-	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+	for ; retryParam.CanAttempt(); retryParam.IncreaseRetry() {
 		relayInfo.StreamStatus = nil
 		relayInfo.PerformanceBusinessRejection = false
 		relayInfo.PerformanceOutputTokens = 0
@@ -216,6 +216,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		relayInfo.LastError = newAPIError
 
 		decision := service.DecideRelayRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry())
+		if redirect, ok := retryParam.RedirectOnErrorKeyword(relayInfo.UsingGroup, channel.Id, newAPIError); ok {
+			decision = redirect
+		}
 		service.RecordPolicyFailure(c, channel.Id, newAPIError, decision)
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, relayInfo)
 
@@ -512,7 +515,7 @@ func executeTaskSubmissionWith(
 		Retry:       common.GetPointer(0),
 	}
 
-	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+	for ; retryParam.CanAttempt(); retryParam.IncreaseRetry() {
 		stage = "select_channel"
 		if requestErr := c.Request.Context().Err(); requestErr != nil {
 			diagnostics.cancelled("before_attempt", retryParam.GetRetry()+1)
@@ -569,6 +572,16 @@ func executeTaskSubmissionWith(
 		taskAPIError := taskSubmissionAPIError(taskErr)
 		relayInfo.LastError = taskAPIError
 		decision := decideTaskRetry(c, taskErr, common.RetryTimes-retryParam.GetRetry())
+		// An accepted task, a local rejection or an origin-task channel never
+		// moves to a rule's retry channel; the nil error still lets the rule
+		// end a request it already redirected.
+		redirectErr := taskAPIError
+		if lockedCh, _ := relayInfo.LockedChannel.(*model.Channel); lockedCh != nil || taskErr.NoRetry || taskErr.LocalError {
+			redirectErr = nil
+		}
+		if redirect, ok := retryParam.RedirectOnErrorKeyword(relayInfo.UsingGroup, channel.Id, redirectErr); ok {
+			decision = redirect
+		}
 		service.RecordPolicyFailure(c, channel.Id, taskAPIError, decision)
 		if !taskErr.LocalError {
 			processChannelError(c,

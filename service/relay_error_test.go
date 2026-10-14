@@ -321,3 +321,133 @@ func TestUpstreamErrorInterception(t *testing.T) {
 		})
 	}
 }
+
+func TestErrorKeywordRetryRules(t *testing.T) {
+	previousDB, previousType, previousOptions := model.DB, common.MainDatabaseType(), common.OptionMap
+	previousCache, previousRetries := common.MemoryCacheEnabled, common.RetryTimes
+	retrySetting := operation_setting.GetErrorKeywordRetrySetting()
+	previousEnabled := retrySetting.Enabled
+	previousRules, err := common.Marshal(operation_setting.ErrorKeywordRetryRules())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		model.DB, common.OptionMap = previousDB, previousOptions
+		common.SetMainDatabaseType(previousType)
+		common.MemoryCacheEnabled, common.RetryTimes = previousCache, previousRetries
+		retrySetting.Enabled = previousEnabled
+		operation_setting.LoadErrorKeywordRetryRules(string(previousRules))
+	})
+	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := database.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
+	require.NoError(t, database.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.Option{}))
+	model.DB, common.OptionMap = database, map[string]string{}
+	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
+	common.MemoryCacheEnabled, common.RetryTimes = false, 0
+	for _, channel := range []*model.Channel{
+		{Id: 1, Name: "primary", Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Group: "default", Models: "gpt-test"},
+		{Id: 2, Name: "backup outside the group", Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Group: "vip", Models: "gpt-test"},
+		{Id: 3, Name: "disabled backup", Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusManuallyDisabled, Group: "default", Models: "gpt-test"},
+		{Id: 4, Name: "backup without the model", Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Group: "default", Models: "other-model"},
+	} {
+		require.NoError(t, channel.Insert())
+	}
+
+	t.Run("saving validates the rules before they reach the relay", func(t *testing.T) {
+		for _, tc := range []struct {
+			name, value, key string
+			index            int
+		}{
+			{name: "not an array", value: `{}`, key: "Error keyword retry rules must be a JSON array of rules"},
+			{name: "blank group", value: `[{"group":" ","channel_id":1,"keywords":["x"],"retry_channel_id":2}]`, key: "Rule {{index}}: choose a group", index: 1},
+			{name: "missing retry channel", value: `[{"group":"default","channel_id":1,"keywords":["x"],"retry_channel_id":2},{"group":"default","channel_id":1,"keywords":["x"]}]`, key: "Rule {{index}}: choose the channel and the retry channel", index: 2},
+			{name: "retry on the same channel", value: `[{"group":"default","channel_id":1,"keywords":["x"],"retry_channel_id":1}]`, key: "Rule {{index}}: the retry channel must differ from the channel", index: 1},
+			{name: "only blank keywords", value: `[{"group":"default","channel_id":1,"keywords":[" ",""],"retry_channel_id":2}]`, key: "Rule {{index}}: enter at least one keyword", index: 1},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				err := model.UpdateOption(operation_setting.ErrorKeywordRetryRulesOptionKey, tc.value)
+				var message *common.Message
+				require.ErrorAs(t, err, &message)
+				assert.Equal(t, tc.key, message.Key)
+				if tc.index > 0 {
+					assert.Equal(t, tc.index, message.Params["index"])
+				}
+			})
+		}
+		require.NoError(t, model.UpdateOption("error_keyword_retry.enabled", "true"))
+		require.NoError(t, model.UpdateOption(operation_setting.ErrorKeywordRetryRulesOptionKey, `[
+			{"group":"default","channel_id":1,"keywords":["Context Length"],"retry_channel_id":3},
+			{"group":" default ","channel_id":1,"keywords":[" context length ","","quota"],"retry_channel_id":2},
+			{"group":"default","channel_id":1,"keywords":["model busy"],"retry_channel_id":4}
+		]`))
+		assert.True(t, retrySetting.Enabled)
+		rules := operation_setting.ErrorKeywordRetryRules()
+		require.Len(t, rules, 3)
+		assert.Equal(t, operation_setting.ErrorKeywordRetryRule{Group: "default", ChannelID: 1, Keywords: []string{"context length", "quota"}, RetryChannelID: 2}, rules[1])
+	})
+
+	upstream := func(message string, status int, options ...types.NewAPIErrorOptions) *types.NewAPIError {
+		return types.WithOpenAIError(types.OpenAIError{Message: message, Type: "invalid_request_error", Code: "upstream_code"}, status, options...)
+	}
+	for _, tc := range []struct {
+		name      string
+		group     string
+		channelID int
+		err       *types.NewAPIError
+		setup     func(*gin.Context)
+		redirect  bool
+	}{
+		{name: "keyword in a status outside the retry rules redirects to the first usable retry channel", group: "default", channelID: 1, err: upstream("This model's maximum CONTEXT LENGTH is 8192 tokens", http.StatusBadRequest), redirect: true},
+		{name: "keyword in the error code redirects", group: "default", channelID: 1, err: types.WithOpenAIError(types.OpenAIError{Message: "slow down", Type: "requests", Code: "insufficient_quota"}, http.StatusTooManyRequests), redirect: true},
+		{name: "another group keeps the retry policy", group: "vip", channelID: 1, err: upstream("context length", http.StatusBadRequest)},
+		{name: "another channel keeps the retry policy", group: "default", channelID: 2, err: upstream("context length", http.StatusBadRequest)},
+		{name: "error without a keyword keeps the retry policy", group: "default", channelID: 1, err: upstream("bad gateway", http.StatusBadGateway)},
+		{name: "retry channel without the model is skipped", group: "default", channelID: 1, err: upstream("model busy", http.StatusServiceUnavailable)},
+		{name: "error marked not retryable is never redirected", group: "default", channelID: 1, err: upstream("context length", http.StatusInternalServerError, types.ErrOptionWithSkipRetry())},
+		{name: "gateway local error is never redirected", group: "default", channelID: 1, err: types.NewError(errors.New("context length"), types.ErrorCodeInvalidRequest)},
+		{name: "pinned channel is never redirected", group: "default", channelID: 1, err: upstream("context length", http.StatusBadRequest), setup: func(c *gin.Context) {
+			GetChannelConstraints(c).AddPin(dto.ChannelPin{ChannelId: 1, Source: dto.PinSourceToken, Rank: dto.PinRankToken, RetryMode: dto.PinRetrySingleAttempt})
+		}},
+		{name: "strict session is never redirected", group: "default", channelID: 1, err: upstream("context length", http.StatusBadRequest), setup: func(c *gin.Context) {
+			c.Set(ginKeyChannelAffinitySkipRetry, true)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			if tc.setup != nil {
+				tc.setup(c)
+			}
+			param := &RetryParam{Ctx: c, TokenGroup: tc.group, ModelName: "gpt-test", Retry: common.GetPointer(0)}
+			decision, redirected := param.RedirectOnErrorKeyword(tc.group, tc.channelID, tc.err)
+			param.IncreaseRetry()
+			if !tc.redirect {
+				assert.False(t, redirected)
+				assert.False(t, param.CanAttempt(), "without a redirect the retry budget decides")
+				return
+			}
+			require.True(t, redirected)
+			assert.Equal(t, PolicyDecision{Action: "retry", Reason: "error_keyword_matched", Source: "error_keyword_rule"}, decision)
+			assert.True(t, param.CanAttempt(), "the redirect runs even when the retry budget is used up")
+			channel, group, err := CacheGetRandomSatisfiedChannel(param)
+			require.NoError(t, err)
+			assert.Equal(t, 2, channel.Id)
+			assert.Equal(t, "default", group, "the redirect stays in the group of the failed attempt")
+
+			decision, redirected = param.RedirectOnErrorKeyword(group, channel.Id, upstream("context length", http.StatusTooManyRequests))
+			param.IncreaseRetry()
+			assert.True(t, redirected)
+			assert.Equal(t, PolicyDecision{Action: "stop", Reason: "error_keyword_retry_failed", Source: "error_keyword_rule"}, decision)
+			assert.False(t, param.CanAttempt(), "the retry channel's failure ends the request")
+		})
+	}
+
+	t.Run("disabled rules keep the retry policy", func(t *testing.T) {
+		require.NoError(t, model.UpdateOption("error_keyword_retry.enabled", "false"))
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		param := &RetryParam{Ctx: c, TokenGroup: "default", ModelName: "gpt-test", Retry: common.GetPointer(0)}
+		_, redirected := param.RedirectOnErrorKeyword("default", 1, upstream("context length", http.StatusBadRequest))
+		assert.False(t, redirected)
+	})
+}

@@ -27,6 +27,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -1425,6 +1426,100 @@ func TestResponsesWebSocketPreRoutingRejectionsFollowHealthClassification(t *tes
 			requests, successes := waitPerfCounters(t, 1)
 			assert.Equal(t, int64(1), requests)
 			assert.Zero(t, successes)
+		})
+	}
+}
+
+func TestResponsesHTTPErrorKeywordRetry(t *testing.T) {
+	for _, tc := range []struct {
+		name                   string
+		retries                int
+		retryStatus            int
+		retryBody, wantMessage string
+		charged                []int
+	}{
+		{
+			name:        "matching error is retried on the rule's channel even without a retry budget",
+			retryStatus: http.StatusOK,
+			retryBody:   `{"id":"completed","status":"completed","usage":{"input_tokens":1000,"output_tokens":1,"total_tokens":1001}}`,
+			charged:     []int{1000},
+		},
+		{
+			// The budget would allow another attempt after the retry channel.
+			name:        "a failing retry channel ends the request with its own error",
+			retries:     2,
+			retryStatus: http.StatusServiceUnavailable,
+			retryBody:   `{"error":{"type":"server_error","code":"retry_unavailable","message":"retry channel is down"}}`,
+			wantMessage: "retry channel is down",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newResponsesWSBillingTest(t, `tier("request", fixed(0.002))`, func(*websocket.Conn, *http.Request) {})
+			previousRetries := common.RetryTimes
+			retrySetting := operation_setting.GetErrorKeywordRetrySetting()
+			previousEnabled := retrySetting.Enabled
+			previousRules, err := common.Marshal(operation_setting.ErrorKeywordRetryRules())
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				common.RetryTimes, retrySetting.Enabled = previousRetries, previousEnabled
+				operation_setting.LoadErrorKeywordRetryRules(string(previousRules))
+			})
+			common.RetryTimes = tc.retries
+
+			var primaryAttempts, retryAttempts atomic.Int64
+			primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				primaryAttempts.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = fmt.Fprint(w, `{"error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"This model's maximum context length is 8192 tokens"}}`)
+			}))
+			t.Cleanup(primary.Close)
+			require.NoError(t, model.DB.Model(fixture.channel).Update("base_url", primary.URL).Error)
+			backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				retryAttempts.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.retryStatus)
+				_, _ = fmt.Fprint(w, tc.retryBody)
+			}))
+			t.Cleanup(backup.Close)
+			// The retry channel serves the model outside the request's group.
+			retryChannel := &model.Channel{Name: "keyword-retry-backup", Key: "backup-key", Status: common.ChannelStatusEnabled, Type: constant.ChannelTypeOpenAI, Group: "vip", Models: "ws-billing", BaseURL: &backup.URL}
+			require.NoError(t, model.DB.Create(retryChannel).Error)
+			t.Cleanup(func() { require.NoError(t, model.DB.Delete(retryChannel).Error) })
+			retrySetting.Enabled = true
+			operation_setting.LoadErrorKeywordRetryRules(fmt.Sprintf(`[{"group":"default","channel_id":%d,"keywords":["context length"],"retry_channel_id":%d}]`, fixture.channel.Id, retryChannel.Id))
+
+			request, err := http.NewRequest(http.MethodPost, fixture.gatewayURL+"/v1/responses", strings.NewReader(`{"model":"ws-billing","input":"hello"}`))
+			require.NoError(t, err)
+			request.Header.Set("Authorization", "Bearer sk-"+fixture.token.Key)
+			request.Header.Set("Content-Type", "application/json")
+			response, err := http.DefaultClient.Do(request)
+			require.NoError(t, err)
+			body, err := io.ReadAll(response.Body)
+			require.NoError(t, err)
+			require.NoError(t, response.Body.Close())
+			select {
+			case <-fixture.httpDone:
+			case <-time.After(3 * time.Second):
+				t.Fatal("HTTP request did not finish")
+			}
+			fixture.closeAndWait(t)
+
+			assert.Equal(t, int64(1), primaryAttempts.Load(), "the matching channel is not tried again")
+			assert.Equal(t, int64(1), retryAttempts.Load(), "the rule's retry channel is tried once")
+			assert.Equal(t, tc.retryStatus, response.StatusCode, string(body))
+			if tc.wantMessage != "" {
+				assert.Contains(t, string(body), tc.wantMessage)
+				assert.NotContains(t, string(body), "context length")
+				// The reservation is refunded asynchronously.
+				require.Eventually(t, func() bool {
+					var token model.Token
+					var user model.User
+					return model.DB.First(&token, fixture.token.Id).Error == nil && token.RemainQuota == 3000 &&
+						model.DB.First(&user, fixture.user.Id).Error == nil && user.Quota == 100000
+				}, 3*time.Second, 10*time.Millisecond)
+			}
+			assertResponsesWSAccounting(t, fixture, tc.charged)
 		})
 	}
 }

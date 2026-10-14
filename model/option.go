@@ -246,6 +246,9 @@ func validateOptionValue(key string, value string) error {
 	if err := operation_setting.ValidateChannelErrorAlertOption(key, value); err != nil {
 		return err
 	}
+	if err := operation_setting.ValidateErrorKeywordRetryOption(key, value); err != nil {
+		return err
+	}
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
 	}
@@ -691,6 +694,10 @@ func updateOptionMap(key string, value string) (err error) {
 func handleConfigUpdate(key, value string) bool {
 	if key == operation_setting.ToolPriceOptionKey {
 		operation_setting.LoadToolPricesFromJSONString(value)
+		return true
+	}
+	if key == operation_setting.ErrorKeywordRetryRulesOptionKey {
+		operation_setting.LoadErrorKeywordRetryRules(value)
 		return true
 	}
 

@@ -34,6 +34,10 @@ export function policyLabel(t: TFunction, value: string): string {
       return t('Status matches the retry rules')
     case 'upstream_error_keyword':
       return t('Upstream error keyword matched')
+    case 'error_keyword_matched':
+      return t('Error keyword matched a retry rule')
+    case 'error_keyword_retry_failed':
+      return t('The retry channel of the rule failed')
     case 'session_rule_matched':
       return t('Session rule matched')
     case 'channel_selected':
@@ -50,6 +54,8 @@ export function policyLabel(t: TFunction, value: string): string {
       return t('Global and channel settings')
     case 'session_rule':
       return t('Session rule')
+    case 'error_keyword_rule':
+      return t('Error keyword retry rule')
     case 'system':
       return t('System constraint')
     case 'routing':

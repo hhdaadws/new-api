@@ -288,7 +288,7 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 		}
 	} else {
 		retry := &service.RetryParam{Ctx: c, TokenGroup: common.GetContextKeyString(c, appconstant.ContextKeyUsingGroup), ModelName: modelName, RequestPath: c.Request.URL.Path, Retry: common.GetPointer(0)}
-		for ; retry.GetRetry() <= common.RetryTimes; retry.IncreaseRetry() {
+		for ; retry.CanAttempt(); retry.IncreaseRetry() {
 			var channel *appmodel.Channel
 			channel, apiErr = selectResponsesWSChannel(c, modelName, retry)
 			if apiErr != nil {
@@ -324,6 +324,9 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 				service.ResetStatusCode(apiErr, c.GetString("status_code_mapping"))
 				info.LastError = apiErr
 				decision := service.DecideRelayRetry(c, apiErr, common.RetryTimes-retry.GetRetry())
+				if redirect, ok := retry.RedirectOnErrorKeyword(info.UsingGroup, channel.Id, apiErr); ok {
+					decision = redirect
+				}
 				service.RecordPolicyFailure(c, channel.Id, apiErr, decision)
 				service.ProcessChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, info.ApiKey, channel.GetAutoBan()), apiErr, info)
 				if decision.Action == "retry" {

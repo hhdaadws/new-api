@@ -31,6 +31,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -54,6 +55,13 @@ type PolicyBeforeLoad = (context: { params: { section: string } }) => void
 
 let queryClient: QueryClient
 let settings: RequestPolicySettings
+
+// Channels offered by the error keyword retry editor.
+const retryChannels = [
+  { id: 1, name: 'Primary', group: 'default', status: 1 },
+  { id: 2, name: 'Backup', group: 'vip', status: 1 },
+  { id: 3, name: 'Spare', group: 'default,vip', status: 2 },
+]
 
 function optionsResponse() {
   return {
@@ -154,6 +162,17 @@ beforeEach(() => {
   })
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
     if (url === '/api/option/') return { data: optionsResponse() }
+    if (url === '/api/group/') {
+      return { data: { success: true, data: ['vip', 'default'] } }
+    }
+    if (url === '/api/channel/search') {
+      return {
+        data: {
+          success: true,
+          data: { items: retryChannels, total: retryChannels.length },
+        },
+      }
+    }
     if (url === '/api/option/request_policy') {
       return {
         data: {
@@ -199,6 +218,7 @@ describe('request policy settings', () => {
     ['filtering', 'Save sensitive words'],
     ['affinity', 'Save Changes'],
     ['error-alerts', 'Save Changes'],
+    ['error-keyword-retry', 'Save Changes'],
   ])(
     'opening %s and saving unchanged values does not write options',
     async (section, saveLabel) => {
@@ -446,6 +466,134 @@ describe('request policy settings', () => {
     expect(
       screen.queryByRole('button', { name: 'Send test notification' })
     ).not.toBeInTheDocument()
+  })
+
+  it('adding a retry rule saves the rules before turning the feature on', async () => {
+    const user = userEvent.setup()
+    await renderPolicies(
+      '/system-settings/request-policies/error-keyword-retry'
+    )
+    await user.click(
+      await screen.findByRole('button', { name: 'Add retry rule' })
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('combobox', { name: 'Group' }))
+    await user.click(await screen.findByRole('option', { name: 'default' }))
+    await user.click(within(dialog).getByRole('combobox', { name: 'Channel' }))
+    expect(
+      screen.queryByRole('option', { name: '#2 Backup' })
+    ).not.toBeInTheDocument()
+    await user.click(screen.getByRole('option', { name: '#1 Primary' }))
+    fireEvent.change(
+      within(dialog).getByRole('textbox', { name: 'Error keywords' }),
+      { target: { value: ' context length \n\nContext Length\nquota' } }
+    )
+    await user.click(
+      within(dialog).getByRole('combobox', { name: 'Retry channel' })
+    )
+    await user.click(screen.getByRole('option', { name: '#2 Backup' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    )
+    expect(screen.getByText('#1 Primary')).toBeVisible()
+    expect(screen.getByText('#2 Backup')).toBeVisible()
+
+    await user.click(
+      screen.getByRole('switch', {
+        name: 'Retry matching errors on a chosen channel',
+      })
+    )
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(2))
+    expect(api.put).toHaveBeenNthCalledWith(1, '/api/option/', {
+      key: 'error_keyword_retry.rules',
+      value:
+        '[{"group":"default","channel_id":1,"keywords":["context length","quota"],"retry_channel_id":2}]',
+    })
+    expect(api.put).toHaveBeenNthCalledWith(2, '/api/option/', {
+      key: 'error_keyword_retry.enabled',
+      value: true,
+    })
+  })
+
+  it('a retry rule without keywords stays in the dialog and is not added', async () => {
+    const user = userEvent.setup()
+    await renderPolicies(
+      '/system-settings/request-policies/error-keyword-retry'
+    )
+    await user.click(
+      await screen.findByRole('button', { name: 'Add retry rule' })
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('combobox', { name: 'Group' }))
+    await user.click(await screen.findByRole('option', { name: 'default' }))
+    await user.click(within(dialog).getByRole('combobox', { name: 'Channel' }))
+    await user.click(screen.getByRole('option', { name: '#1 Primary' }))
+    await user.click(
+      within(dialog).getByRole('combobox', { name: 'Retry channel' })
+    )
+    await user.click(screen.getByRole('option', { name: '#2 Backup' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    expect(
+      await within(dialog).findByText('Enter at least one keyword')
+    ).toBeVisible()
+    expect(
+      within(dialog).getByRole('textbox', { name: 'Error keywords' })
+    ).toHaveAttribute('aria-invalid', 'true')
+    expect(dialog).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'No retry rules yet. Add a rule to choose where a matching error is retried.'
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('choosing another group clears a channel outside that group', async () => {
+    const user = userEvent.setup()
+    await renderPolicies(
+      '/system-settings/request-policies/error-keyword-retry'
+    )
+    await user.click(
+      await screen.findByRole('button', { name: 'Add retry rule' })
+    )
+    const dialog = await screen.findByRole('dialog')
+    const group = within(dialog).getByRole('combobox', { name: 'Group' })
+    const channel = within(dialog).getByRole('combobox', { name: 'Channel' })
+    await user.click(group)
+    await user.click(await screen.findByRole('option', { name: 'default' }))
+    await user.click(channel)
+    await user.click(screen.getByRole('option', { name: '#1 Primary' }))
+    expect(channel).toHaveValue('#1 Primary')
+    await user.click(group)
+    await user.click(await screen.findByRole('option', { name: 'vip' }))
+    await waitFor(() => expect(channel).toHaveValue(''))
+  })
+
+  it('deleting a saved retry rule writes the remaining rules', async () => {
+    settings['error_keyword_retry.rules'] = JSON.stringify([
+      {
+        group: 'default',
+        channel_id: 1,
+        keywords: ['quota'],
+        retry_channel_id: 3,
+      },
+    ])
+    const user = userEvent.setup()
+    await renderPolicies(
+      '/system-settings/request-policies/error-keyword-retry'
+    )
+    expect(await screen.findByText('#1 Primary')).toBeVisible()
+    expect(screen.getByText('#3 Spare (Disabled)')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledExactlyOnceWith('/api/option/', {
+        key: 'error_keyword_retry.rules',
+        value: '[]',
+      })
+    )
   })
 
   it.each([
