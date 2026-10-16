@@ -36,8 +36,8 @@ const SENSITIVE_MASK = '••••'
  * renderer via `flexRender`, so the table's information and interactions are
  * preserved: row selection, provider/multi-key/IO.NET type badge, id,
  * name/remark + warning icons, status (with tooltips), groups, inline
- * priority/weight spinners, balance refresh, response/test times, tag
- * expand-collapse, and the per-row (or per-tag) actions menu.
+ * priority/weight spinners, balance refresh, response/test times, cache hit
+ * rate, tag expand-collapse, and the per-row (or per-tag) actions menu.
  */
 function ChannelCardComponent({
   row,
@@ -71,6 +71,7 @@ function ChannelCardComponent({
   const balanceCell = renderCell('balance')
   const responseCell = renderCell('response_time')
   const testCell = renderCell('test_time')
+  const cacheHitCell = renderCell('cache_hit_rate')
 
   const labelClass = 'text-muted-foreground text-[11px] font-medium select-none'
 
@@ -143,6 +144,14 @@ function ChannelCardComponent({
                 <dt className={labelClass}>{t('Last Tested')}</dt>
                 <dd className='min-w-0 text-sm [&_[data-slot=status-badge]]:!ml-0'>
                   {testCell ?? <span className='text-muted-foreground'>-</span>}
+                </dd>
+              </div>
+              <div className='row-span-2 grid min-w-0 grid-rows-subgrid'>
+                <dt className={labelClass}>{t('Cache Hit Rate')}</dt>
+                <dd className='min-w-0 text-sm tabular-nums [&_[data-slot=status-badge]]:!ml-0'>
+                  {cacheHitCell ?? (
+                    <span className='text-muted-foreground'>-</span>
+                  )}
                 </dd>
               </div>
             </dl>

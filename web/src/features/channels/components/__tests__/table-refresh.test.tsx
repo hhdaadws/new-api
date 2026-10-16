@@ -96,6 +96,22 @@ async function renderChannelsPage(searchGate: () => Promise<void>) {
         },
       }
     }
+    if (url === '/api/channel/cache_stats') {
+      return {
+        data: {
+          success: true,
+          data: {
+            '3': {
+              request_count: 4,
+              hit_count: 2,
+              input_tokens: 1000,
+              cache_read_tokens: 400,
+              cache_write_tokens: 0,
+            },
+          },
+        },
+      }
+    }
     return { data: { success: true, data: ['vip'] } }
   })
   const client = new QueryClient({
@@ -151,4 +167,19 @@ it('refetches the channel list with the current filters and marks Refresh busy w
   expect(refresh).toHaveAttribute('aria-busy', 'true')
   release()
   await waitFor(() => expect(refresh).toHaveAttribute('aria-busy', 'false'))
+})
+
+it('loads the cache hit rate of the listed channels and refetches it on Refresh', async () => {
+  const get = await renderChannelsPage(() => Promise.resolve())
+  const cacheStatsCalls = () =>
+    get.mock.calls.filter(([url]) => url === '/api/channel/cache_stats')
+
+  expect((await screen.findAllByText('40%')).length).toBeGreaterThan(0)
+  expect(cacheStatsCalls()).toHaveLength(1)
+  expect(cacheStatsCalls()[0][1]?.params).toEqual({ ids: '3', hours: 24 })
+
+  await userEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+
+  await waitFor(() => expect(cacheStatsCalls()).toHaveLength(2))
+  expect(cacheStatsCalls()[1][1]?.params).toEqual({ ids: '3', hours: 24 })
 })

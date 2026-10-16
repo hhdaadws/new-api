@@ -88,6 +88,7 @@ import {
 } from '../lib'
 import { parseUpstreamUpdateMeta } from '../lib/upstream-update-utils'
 import type { Channel } from '../types'
+import { ChannelCacheHitCell } from './channel-cache-hit-cell'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
 import { TaskPluginChannelBadge } from './channel-type-badge'
 import { useChannels } from './channels-provider'
@@ -1207,6 +1208,16 @@ export function useChannelsColumns(
           )
         },
         size: 110,
+      },
+
+      // Prompt cache hit rate column
+      {
+        id: 'cache_hit_rate',
+        header: t('Cache Hit Rate'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => <ChannelCacheHitCell channel={row.original} />,
+        size: 120,
+        enableSorting: false,
       },
 
       // Test Time column

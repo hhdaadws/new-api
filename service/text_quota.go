@@ -395,6 +395,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	adminRejectReason := common.GetContextKeyString(ctx, constant.ContextKeyAdminRejectReason)
 	summary := calculateTextQuotaSummary(ctx, relayInfo, billingUsage)
+	if originUsage != nil {
+		ObserveChannelCacheUsage(relayInfo.ChannelId, channelCacheSample(summary, isLegacyClaudeDerivedOpenAIUsage(relayInfo, billingUsage)))
+	}
 
 	var tieredResult *billingexpr.TieredResult
 	var tieredTokens billingexpr.TokenParams

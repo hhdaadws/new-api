@@ -447,6 +447,19 @@ export const RESPONSE_TIME_THRESHOLDS = {
   POOR: 5000,
 } as const
 
+// ============================================================================
+// Prompt Cache Hit Rate
+// ============================================================================
+
+/** Window of the channel list's cache hit rate, in hours. */
+export const CHANNEL_CACHE_STATS_HOURS = 24
+
+/** Token cache hit rate thresholds, in percent. */
+export const CACHE_HIT_RATE_THRESHOLDS = {
+  HIGH: 50,
+  MEDIUM: 20,
+} as const
+
 export const RESPONSE_TIME_CONFIG = {
   EXCELLENT: { variant: 'success' as const, label: 'Excellent' },
   GOOD: { variant: 'success' as const, label: 'Good' },

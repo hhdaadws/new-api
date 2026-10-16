@@ -186,6 +186,21 @@ export interface GetChannelResponse {
   data?: Channel
 }
 
+/**
+ * Prompt cache counters of settled text requests. input_tokens includes cache
+ * reads and writes, so cache_read_tokens / input_tokens is the token hit rate.
+ */
+export interface ChannelCacheStats {
+  request_count: number
+  hit_count: number
+  input_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+}
+
+/** Counters keyed by channel id; channels without traffic are absent. */
+export type ChannelCacheStatsMap = Record<string, ChannelCacheStats>
+
 export interface ChannelOpsResponse {
   success: boolean
   message?: string

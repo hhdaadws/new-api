@@ -189,6 +189,47 @@ func GetChannelDefaultBaseURLs(c *gin.Context) {
 	common.ApiSuccess(c, baseURLs)
 }
 
+// maxChannelCacheStatIds keeps the comma-separated id list within common
+// proxy URL limits; the console splits larger pages into several requests.
+const maxChannelCacheStatIds = 500
+
+// GetChannelCacheStats returns the prompt cache counters of the channels in
+// ids over the last hours (24 by default), keyed by channel id.
+func GetChannelCacheStats(c *gin.Context) {
+	hours := 24
+	if raw := c.Query("hours"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > service.MaxChannelCacheStatHours {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
+		hours = parsed
+	}
+	ids := make([]int, 0)
+	for part := range strings.SplitSeq(c.Query("ids"), ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		id, err := strconv.Atoi(part)
+		if err != nil || id <= 0 {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
+		ids = append(ids, id)
+	}
+	if len(ids) > maxChannelCacheStatIds {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	stats, err := service.GetChannelCacheStats(ids, hours)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, stats)
+}
+
 func GetAllChannels(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	channelData := make([]*model.Channel, 0)

@@ -27,6 +27,7 @@ import type {
   BatchSetTagParams,
   Channel,
   ChannelBalanceResponse,
+  ChannelCacheStatsMap,
   ChannelOpsResponse,
   ChannelTestResponse,
   CopyChannelParams,
@@ -131,6 +132,36 @@ export async function searchChannels(
 ): Promise<SearchChannelsResponse> {
   const res = await api.get('/api/channel/search', { params })
   return res.data
+}
+
+// The server accepts at most 500 ids per request; smaller batches also keep
+// the query string short behind proxies.
+const CHANNEL_CACHE_STATS_BATCH_SIZE = 200
+
+/**
+ * Get prompt cache counters of the given channels over the last `hours`
+ */
+export async function getChannelCacheStats(
+  ids: number[],
+  hours: number
+): Promise<ChannelCacheStatsMap> {
+  const batches: number[][] = []
+  for (let i = 0; i < ids.length; i += CHANNEL_CACHE_STATS_BATCH_SIZE) {
+    batches.push(ids.slice(i, i + CHANNEL_CACHE_STATS_BATCH_SIZE))
+  }
+  const results = await Promise.all(
+    batches.map(async (batch) => {
+      const res = await api.get<{
+        success: boolean
+        message?: string
+        data?: ChannelCacheStatsMap
+      }>('/api/channel/cache_stats', {
+        params: { ids: batch.join(','), hours },
+      })
+      return requireServerSuccess(res.data).data ?? {}
+    })
+  )
+  return Object.assign({}, ...results)
 }
 
 /**

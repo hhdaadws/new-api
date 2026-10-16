@@ -121,6 +121,8 @@ func main() {
 	// 数据看板
 	go model.UpdateQuotaData()
 
+	service.StartChannelCacheStatsTask()
+
 	if os.Getenv("CHANNEL_UPDATE_FREQUENCY") != "" {
 		frequency, err := strconv.Atoi(os.Getenv("CHANNEL_UPDATE_FREQUENCY"))
 		if err != nil {
@@ -242,6 +244,7 @@ func main() {
 	if common.DataExportEnabled {
 		model.SaveQuotaDataCache()
 	}
+	service.FlushChannelCacheStats()
 	common.SysLog(common.LogText("server exited"))
 }
 
