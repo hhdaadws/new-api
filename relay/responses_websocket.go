@@ -360,7 +360,7 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 				}
 			}
 			s.registerChannelClose(channel.Id)
-			s.startTargetReader(target)
+			s.startTargetReader(target, modelName)
 			apiErr = nil
 			break
 		}
@@ -401,6 +401,9 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 			if err := common.Unmarshal(incoming.body, &event); err != nil {
 				info.StreamStatus.RecordError("invalid upstream websocket event")
 			} else {
+				// event keeps the upstream model for diagnostics; the client
+				// sees only the model it requested.
+				incoming.body = service.ReplaceResponseModel(incoming.body, modelName)
 				if event.Type != "error" && event.StreamID != "" && event.StreamID != create.StreamID {
 					if err := s.writeClient(incoming.kind, incoming.body); err != nil {
 						s.shutdown(websocket.CloseInternalServerErr, "")
@@ -629,7 +632,9 @@ func buildResponsesWSCreatePayload(c *gin.Context, info *relaycommon.RelayInfo, 
 	return event, nil
 }
 
-func (s *responsesWSSession) startTargetReader(target *websocket.Conn) {
+// startTargetReader forwards upstream messages; model is the one the
+// connection is locked to, which the client sees in place of upstream names.
+func (s *responsesWSSession) startTargetReader(target *websocket.Conn, model string) {
 	limit := int64(helper.DefaultMaxScannerBufferSize)
 	if appconstant.StreamScannerMaxBufferMB > 0 {
 		limit = int64(appconstant.StreamScannerMaxBufferMB) << 20
@@ -661,7 +666,7 @@ func (s *responsesWSSession) startTargetReader(target *websocket.Conn) {
 				s.shutdown(code, "upstream connection closed")
 				return
 			}
-			if writeErr := s.writeClient(kind, body); writeErr != nil {
+			if writeErr := s.writeClient(kind, service.ReplaceResponseModel(body, model)); writeErr != nil {
 				s.shutdown(websocket.CloseInternalServerErr, "")
 				return
 			}

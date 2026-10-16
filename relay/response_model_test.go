@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -171,7 +172,7 @@ func TestResponseModelRetryResetsObservation(t *testing.T) {
 	assert.False(t, info.ResponseModel.Mismatch())
 }
 
-func TestResponseModelHandlersCaptureBeforeConversion(t *testing.T) {
+func TestResponseModelHandlersRecordUpstreamAndReturnRequested(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	previousTimeout := constant.StreamingTimeout
 	constant.StreamingTimeout = 30
@@ -216,8 +217,10 @@ func TestResponseModelHandlersCaptureBeforeConversion(t *testing.T) {
 		{"gemini to responses stream", geminiStream, types.RelayFormatOpenAIResponses, true, gemini.GeminiResponsesStreamHandler},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
 			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+			common.SetContextKey(c, constant.ContextKeyOriginalModel, "requested")
 			info := &relaycommon.RelayInfo{
 				OriginModelName: "requested", RelayFormat: tc.format, RelayMode: relayconstant.RelayModeChatCompletions,
 				IsStream: tc.stream, DisablePing: true, StartTime: time.Now(),
@@ -233,8 +236,42 @@ func TestResponseModelHandlersCaptureBeforeConversion(t *testing.T) {
 			assert.True(t, info.ResponseModel.Mismatch())
 			other := service.GenerateTextOtherInfo(c, info, 1, 1, 1, 0, 0, 0, 1)
 			assert.Equal(t, *info.ResponseModel, other.Snapshot()["response_model"])
+			// The client sees only the requested model, whether the upstream
+			// declared one or a converter synthesized the mapped one.
+			body := recorder.Body.String()
+			assert.Contains(t, body, `"requested"`)
+			assert.NotContains(t, body, "returned")
+			assert.NotContains(t, body, "mapped")
+			if length := recorder.Header().Get("Content-Length"); length != "" {
+				assert.Equal(t, strconv.Itoa(len(body)), length)
+			}
 		})
 	}
+}
+
+func TestReplaceResponseModel(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data string
+		want string
+	}{
+		{name: "top-level model", data: `{"id":"c1","model":"mapped","usage":{"total_tokens":5}}`, want: `{"id":"c1","model":"requested","usage":{"total_tokens":5}}`},
+		{name: "responses stream event", data: `{"type":"response.created","response":{"id":"r1","model":"mapped"}}`, want: `{"type":"response.created","response":{"id":"r1","model":"requested"}}`},
+		{name: "claude message_start", data: `{"type":"message_start","message":{"model":"mapped"}}`, want: `{"type":"message_start","message":{"model":"requested"}}`},
+		{name: "realtime session", data: `{"type":"session.created","session":{"model":"mapped"}}`, want: `{"type":"session.created","session":{"model":"requested"}}`},
+		{name: "gemini modelVersion", data: ` {"modelVersion":"mapped-001","candidates":[]}`, want: ` {"modelVersion":"requested","candidates":[]}`},
+		{name: "choice message without model", data: `{"choices":[{"message":{"content":"model"}}],"model":"requested"}`, want: `{"choices":[{"message":{"content":"model"}}],"model":"requested"}`},
+		{name: "non-string model", data: `{"model":{"name":"mapped"}}`, want: `{"model":{"name":"mapped"}}`},
+		{name: "done marker", data: `[DONE]`, want: `[DONE]`},
+		{name: "array body", data: `[{"model":"mapped"}]`, want: `[{"model":"mapped"}]`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := []byte(tc.data)
+			assert.Equal(t, tc.want, string(service.ReplaceResponseModel(data, "requested")))
+			assert.Equal(t, tc.data, string(data), "the caller's payload must not change")
+		})
+	}
+	assert.Equal(t, `{"model":"mapped"}`, string(service.ReplaceResponseModel([]byte(`{"model":"mapped"}`), "")))
 }
 
 func TestResponseModelSharedResponsesAccumulator(t *testing.T) {

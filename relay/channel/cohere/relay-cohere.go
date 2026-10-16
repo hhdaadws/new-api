@@ -161,7 +161,7 @@ func cohereStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 				common.SysLog(common.LogText("error marshalling stream response: %s", err.Error()))
 				return true
 			}
-			c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonStr)})
+			c.Render(-1, common.CustomEvent{Data: "data: " + string(service.RewriteResponseModel(c, jsonStr))})
 			return true
 		case <-stopChan:
 			c.Render(-1, common.CustomEvent{Data: "data: [DONE]"})
@@ -212,7 +212,7 @@ func cohereHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	}
 	c.Writer.Header().Set("Content-Type", "application/json")
 	c.Writer.WriteHeader(resp.StatusCode)
-	_, _ = c.Writer.Write(jsonResponse)
+	_, _ = c.Writer.Write(service.RewriteResponseModel(c, jsonResponse))
 	return &usage, nil
 }
 

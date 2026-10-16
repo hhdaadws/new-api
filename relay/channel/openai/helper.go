@@ -114,7 +114,7 @@ func sendGeminiStreamResults(c *gin.Context, results []relayconvert.ResponseResu
 			logger.LogError(c, common.LogText("failed to marshal gemini response: %s", err.Error()))
 			return err
 		}
-		c.Render(-1, common.CustomEvent{Data: "data: " + string(data)})
+		c.Render(-1, common.CustomEvent{Data: "data: " + string(service.RewriteResponseModel(c, data))})
 		_ = helper.FlushWriter(c)
 	}
 	return nil
