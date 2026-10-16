@@ -24,7 +24,10 @@ import {
 } from '@tanstack/react-table'
 import { render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
+
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { usageLogSchema, type UsageLog } from '../../data/schema'
 import { useCommonLogsColumns } from '../columns/common-logs-columns'
@@ -84,6 +87,11 @@ function Fixture(props: {
 }
 
 function renderLogs(props: Parameters<typeof Fixture>[0] = {}) {
+  useAuthStore.getState().auth.setUser({
+    id: 1,
+    username: 'tester',
+    role: (props.admin ?? true) ? ROLE.ADMIN : ROLE.USER,
+  })
   return render(
     <QueryClientProvider
       client={
@@ -96,6 +104,10 @@ function renderLogs(props: Parameters<typeof Fixture>[0] = {}) {
     </QueryClientProvider>
   )
 }
+
+afterEach(() => {
+  useAuthStore.setState(useAuthStore.getInitialState(), true)
+})
 
 it('shows model mismatch evidence when tapping the mobile model badge', async () => {
   const user = userEvent.setup()
@@ -325,6 +337,32 @@ it('shows mapped model names in full when inspecting a mobile model badge', asyn
       'provider-production-mapped-model-with-a-long-name'
     )
   ).toBeVisible()
+})
+
+it('copies the model without routing details when a regular user taps the mobile model badge', async () => {
+  const user = userEvent.setup()
+  renderLogs({
+    admin: false,
+    logs: [
+      {
+        ...log,
+        other: JSON.stringify({
+          is_model_mapped: true,
+          upstream_model_name: 'mapped-model',
+          response_model: {
+            requested_model: longName,
+            upstream_model: 'mapped-model',
+            returned_model: 'unexpected-model',
+          },
+        }),
+      },
+    ],
+  })
+  const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+  await user.click(screen.getByRole('button', { name: `Model: ${longName}` }))
+  expect(copy).toHaveBeenCalledWith(longName)
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(screen.queryByText(/mapped-model|unexpected-model/)).toBeNull()
 })
 
 it('shows loading placeholders without displaying stale log fields', () => {

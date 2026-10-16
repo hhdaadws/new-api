@@ -20,6 +20,7 @@ import type { TaskLog, TaskPluginInfo, TaskPluginRuntimeInfo } from '../types'
 
 export interface TaskDetailAccess {
   plugin?: TaskPluginInfo
+  actualModel?: string
   runtime?: TaskPluginRuntimeInfo
   upstreamTaskId?: string
   nodeName?: string
@@ -34,6 +35,7 @@ export function resolveTaskDetailAccess(
 
   const access: TaskDetailAccess = {
     plugin: log.admin_info?.task_plugin,
+    actualModel: log.properties?.upstream_model_name,
   }
   if (!isRoot) return access
 

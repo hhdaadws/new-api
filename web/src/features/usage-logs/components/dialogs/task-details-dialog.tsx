@@ -149,10 +149,10 @@ export function TaskDetailsDialog(props: TaskDetailsDialogProps) {
               mono
             />
           ) : null}
-          {properties?.upstream_model_name ? (
+          {access.actualModel ? (
             <DetailRow
               label={t('Actual Model')}
-              value={properties.upstream_model_name}
+              value={access.actualModel}
               mono
             />
           ) : null}

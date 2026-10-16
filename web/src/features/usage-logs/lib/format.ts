@@ -234,14 +234,20 @@ export function getResponseTimeColor(
 }
 
 /**
- * Format model name with mapping indicator
+ * Format model name with mapping indicator. Model routing (the upstream and
+ * response models) is shown to admin views only.
  */
-export function formatModelName(log: UsageLog): {
+export function formatModelName(
+  log: UsageLog,
+  isAdmin: boolean
+): {
   name: string
   isMapped: boolean
   actualModel?: string
   responseModel?: LogOtherData['response_model']
 } {
+  if (!isAdmin) return { name: log.model_name, isMapped: false }
+
   const other = parseLogOther(log.other)
   const isMapped = !!(
     other?.is_model_mapped &&

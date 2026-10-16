@@ -33,6 +33,7 @@ const task: TaskLog = {
   quota: 100,
   submit_time: 1,
   status: 'SUCCESS',
+  properties: { upstream_model_name: 'mapped-model' },
   admin_info: {
     task_plugin: {
       key: 'document-parser',
@@ -61,15 +62,17 @@ describe('task detail access', () => {
     assert.deepEqual(resolveTaskDetailAccess(task, false, false), {})
   })
 
-  test('gives admins plugin identity without root diagnostics', () => {
+  test('gives admins plugin identity and the actual model without root diagnostics', () => {
     assert.deepEqual(resolveTaskDetailAccess(task, true, false), {
       plugin: task.admin_info?.task_plugin,
+      actualModel: 'mapped-model',
     })
   })
 
   test('adds runtime and upstream diagnostics for root', () => {
     assert.deepEqual(resolveTaskDetailAccess(task, true, true), {
       plugin: task.admin_info?.task_plugin,
+      actualModel: 'mapped-model',
       runtime: task.root_info?.task_plugin,
       upstreamTaskId: 'upstream-private',
       nodeName: 'node-a',
