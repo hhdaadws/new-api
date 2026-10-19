@@ -1062,6 +1062,91 @@ func TestResponsesHTTPHealthCountsFinalResult(t *testing.T) {
 	}
 }
 
+func TestResponsesStreamFirstTokenTimeoutRetriesOnAnotherChannel(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		retryStatus int
+		wantStatus  int
+		wantBody    string
+		charged     []int
+	}{
+		{name: "the next channel answers the stream", retryStatus: http.StatusOK, wantStatus: http.StatusOK, wantBody: `"id":"retried"`, charged: []int{1000}},
+		{name: "a failing retry ends with the timed-out channel's response", retryStatus: http.StatusInternalServerError, wantStatus: http.StatusGatewayTimeout, wantBody: "upstream too slow"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newResponsesWSBillingTest(t, `tier("request", fixed(0.002))`, func(*websocket.Conn, *http.Request) {})
+			oldRetries := common.RetryTimes
+			common.RetryTimes = 1
+			t.Cleanup(func() { common.RetryTimes = oldRetries })
+			// The first channel accepts the stream but sends no data event in time.
+			fixture.httpUpstream = func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = fmt.Fprint(w, ": processing\n\nevent: response.created\n")
+				w.(http.Flusher).Flush()
+				<-r.Context().Done()
+			}
+			fixture.channel.SetSetting(dto.ChannelSettings{ResponsesWebSocketEnabled: true, StreamFirstTokenTimeoutSeconds: 1, RequestTimeoutStatusCode: http.StatusGatewayTimeout, RequestTimeoutMessage: "upstream too slow"})
+			require.NoError(t, model.DB.Model(fixture.channel).Update("setting", fixture.channel.Setting).Error)
+			var retryAttempts atomic.Int64
+			backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				retryAttempts.Add(1)
+				if tc.retryStatus != http.StatusOK {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(tc.retryStatus)
+					_, _ = fmt.Fprint(w, `{"error":{"type":"server_error","code":"retry_unavailable","message":"retry channel is down"}}`)
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = fmt.Fprint(w, `data: {"type":"response.created","response":{"id":"retried","status":"in_progress"}}`+"\n\n")
+				_, _ = fmt.Fprint(w, `data: {"type":"response.completed","response":{"id":"retried","status":"completed","usage":{"input_tokens":1000,"output_tokens":1,"total_tokens":1001}}}`+"\n\n")
+				_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+			}))
+			t.Cleanup(backup.Close)
+			// A lower priority puts the backup on the retry attempt.
+			priority := int64(-5)
+			retryChannel := &model.Channel{Name: "first-token-retry-backup", Key: "backup-key", Status: common.ChannelStatusEnabled, Type: constant.ChannelTypeOpenAI, Group: "default", Models: "ws-billing", BaseURL: &backup.URL, Priority: &priority}
+			require.NoError(t, model.DB.Create(retryChannel).Error)
+			require.NoError(t, model.DB.Create(&model.Ability{ChannelId: retryChannel.Id, Model: "ws-billing", Group: "default", Enabled: true, Priority: &priority}).Error)
+			t.Cleanup(func() {
+				require.NoError(t, model.DB.Where("channel_id = ?", retryChannel.Id).Delete(&model.Ability{}).Error)
+				require.NoError(t, model.DB.Delete(retryChannel).Error)
+			})
+
+			request, err := http.NewRequest(http.MethodPost, fixture.gatewayURL+"/v1/responses", strings.NewReader(`{"model":"ws-billing","input":"hello","stream":true}`))
+			require.NoError(t, err)
+			request.Header.Set("Authorization", "Bearer sk-"+fixture.token.Key)
+			request.Header.Set("Content-Type", "application/json")
+			response, err := http.DefaultClient.Do(request)
+			require.NoError(t, err)
+			body, err := io.ReadAll(response.Body)
+			require.NoError(t, err)
+			require.NoError(t, response.Body.Close())
+			select {
+			case <-fixture.httpDone:
+			case <-time.After(3 * time.Second):
+				t.Fatal("HTTP request did not finish")
+			}
+			fixture.closeAndWait(t)
+
+			assert.Equal(t, int64(1), retryAttempts.Load())
+			assert.Equal(t, tc.wantStatus, response.StatusCode, string(body))
+			assert.Contains(t, string(body), tc.wantBody)
+			assert.NotContains(t, string(body), "PING", "the timed-out attempt sent the client nothing")
+			if tc.wantStatus != http.StatusOK {
+				assert.NotContains(t, string(body), "retry channel is down")
+				// The reservation is refunded asynchronously.
+				require.Eventually(t, func() bool {
+					var token model.Token
+					var user model.User
+					return model.DB.First(&token, fixture.token.Id).Error == nil && token.RemainQuota == 3000 &&
+						model.DB.First(&user, fixture.user.Id).Error == nil && user.Quota == 100000
+				}, 3*time.Second, 10*time.Millisecond)
+			}
+			assertResponsesWSAccounting(t, fixture, tc.charged)
+		})
+	}
+}
+
 func TestResponsesWebSocketLocalErrorsKeepStreamIdentity(t *testing.T) {
 	fixture := newResponsesWSBillingTest(t, `tier("request", fixed(0.002))`, func(*websocket.Conn, *http.Request) {
 		t.Error("local rejection reached upstream")

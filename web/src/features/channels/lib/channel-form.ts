@@ -87,6 +87,20 @@ export const MAX_REQUEST_TIMEOUT_MESSAGE_LENGTH = 1000
 export const DEFAULT_REQUEST_TIMEOUT_STATUS_CODE = 502
 export const DEFAULT_REQUEST_TIMEOUT_MESSAGE = 'bad response'
 
+/**
+ * Whether a channel request timeout is set for either stream mode; the
+ * timeout status code and message only apply then.
+ */
+export function hasChannelRequestTimeout(values: {
+  request_timeout_seconds?: number
+  stream_first_token_timeout_seconds?: number
+}): boolean {
+  return (
+    (values.request_timeout_seconds ?? 0) > 0 ||
+    (values.stream_first_token_timeout_seconds ?? 0) > 0
+  )
+}
+
 export function normalizeHttpProtocol(
   value: string | undefined | null
 ): 'auto' | 'http1' {
@@ -281,6 +295,7 @@ export const channelFormSchema = z
     http_protocol: z.enum(['auto', 'http1']).optional(),
     http2_connection_shards: z.number().int().optional(),
     request_timeout_seconds: z.number().int().optional(),
+    stream_first_token_timeout_seconds: z.number().int().optional(),
     request_timeout_status_code: z.number().int().optional(),
     request_timeout_message: z.string().optional(),
     tls_insecure_skip_verify: z.boolean().optional(),
@@ -444,8 +459,19 @@ export const channelFormSchema = z
         ERROR_MESSAGES.INVALID_REQUEST_TIMEOUT_SECONDS
       )
     }
+    const firstTokenSeconds = data.stream_first_token_timeout_seconds ?? 0
+    if (
+      firstTokenSeconds < 0 ||
+      firstTokenSeconds > MAX_REQUEST_TIMEOUT_SECONDS
+    ) {
+      addRequiredIssue(
+        ctx,
+        'stream_first_token_timeout_seconds',
+        ERROR_MESSAGES.INVALID_STREAM_FIRST_TOKEN_TIMEOUT_SECONDS
+      )
+    }
     // The response settings only matter once a timeout is set.
-    if (timeoutSeconds > 0) {
+    if (hasChannelRequestTimeout(data)) {
       const statusCode =
         data.request_timeout_status_code ?? DEFAULT_REQUEST_TIMEOUT_STATUS_CODE
       if (statusCode < 400 || statusCode > 599) {
@@ -510,6 +536,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   http_protocol: HTTP_PROTOCOL_AUTO,
   http2_connection_shards: 1,
   request_timeout_seconds: 0,
+  stream_first_token_timeout_seconds: 0,
   request_timeout_status_code: DEFAULT_REQUEST_TIMEOUT_STATUS_CODE,
   request_timeout_message: DEFAULT_REQUEST_TIMEOUT_MESSAGE,
   tls_insecure_skip_verify: false,
@@ -558,6 +585,7 @@ export function transformChannelToFormDefaults(
     http_protocol: HTTP_PROTOCOL_AUTO as 'auto' | 'http1',
     http2_connection_shards: 1,
     request_timeout_seconds: 0,
+    stream_first_token_timeout_seconds: 0,
     request_timeout_status_code: DEFAULT_REQUEST_TIMEOUT_STATUS_CODE,
     request_timeout_message: DEFAULT_REQUEST_TIMEOUT_MESSAGE,
     tls_insecure_skip_verify: false,
@@ -583,6 +611,8 @@ export function transformChannelToFormDefaults(
         http_protocol: protocol,
         http2_connection_shards: protocol === HTTP_PROTOCOL_HTTP1 ? 1 : shards,
         request_timeout_seconds: Number(parsed.request_timeout_seconds) || 0,
+        stream_first_token_timeout_seconds:
+          Number(parsed.stream_first_token_timeout_seconds) || 0,
         request_timeout_status_code:
           Number(parsed.request_timeout_status_code) ||
           DEFAULT_REQUEST_TIMEOUT_STATUS_CODE,
@@ -748,8 +778,14 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
   }
 
   const timeoutSeconds = formData.request_timeout_seconds ?? 0
+  const firstTokenSeconds = formData.stream_first_token_timeout_seconds ?? 0
   if (timeoutSeconds > 0) {
     settingObj.request_timeout_seconds = timeoutSeconds
+  }
+  if (firstTokenSeconds > 0) {
+    settingObj.stream_first_token_timeout_seconds = firstTokenSeconds
+  }
+  if (hasChannelRequestTimeout(formData)) {
     settingObj.request_timeout_status_code =
       formData.request_timeout_status_code ??
       DEFAULT_REQUEST_TIMEOUT_STATUS_CODE

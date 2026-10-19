@@ -76,6 +76,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError *types.NewAPIError
 		ws          *websocket.Conn
 		relayInfo   *relaycommon.RelayInfo
+		// timeoutErr is the latest channel request timeout of the request.
+		timeoutErr *types.NewAPIError
 	)
 
 	if relayFormat == types.RelayFormatOpenAIRealtime {
@@ -92,6 +94,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if newAPIError != nil {
 			service.RecordRequestPolicyTermination(c, newAPIError)
 			logger.LogError(c, common.LogText("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
+			// A request that timed out on a channel answers with that channel's
+			// timeout response when its retries fail too. A violation fee error
+			// is kept, since it tells the client why it was charged.
+			if timeoutErr != nil && !service.IsViolationFeeCode(newAPIError.GetErrorCode()) {
+				newAPIError = timeoutErr
+			}
 			if intercepted := service.InterceptUpstreamError(newAPIError); intercepted != nil {
 				newAPIError = intercepted
 			}
@@ -207,7 +215,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		default:
 			// Realtime sessions are long-lived, so only HTTP relays honor the
 			// channel request timeout.
-			requestTimeout := helper.StartChannelRequestTimeout(c)
+			requestTimeout := helper.StartChannelRequestTimeout(c, relayInfo)
 			switch relayFormat {
 			case types.RelayFormatClaude:
 				newAPIError = relay.ClaudeHelper(c, relayInfo)
@@ -227,6 +235,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
+		if newAPIError.GetErrorCode() == types.ErrorCodeUpstreamTimeout {
+			timeoutErr = newAPIError
+		}
 
 		decision := service.DecideRelayRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry())
 		if redirect, ok := retryParam.RedirectOnErrorKeyword(relayInfo.UsingGroup, channel.Id, newAPIError); ok {

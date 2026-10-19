@@ -361,7 +361,9 @@ export const ERROR_MESSAGES = {
   INVALID_HTTP1_WITH_SHARDS:
     'HTTP/2 connection shards must be 1 when HTTP/1.1 is selected',
   INVALID_REQUEST_TIMEOUT_SECONDS:
-    'Request timeout must be between 0 and 86400 seconds',
+    'Non-stream timeout must be between 0 and 86400 seconds',
+  INVALID_STREAM_FIRST_TOKEN_TIMEOUT_SECONDS:
+    'Stream first token timeout must be between 0 and 86400 seconds',
   INVALID_REQUEST_TIMEOUT_STATUS_CODE:
     'Timeout status code must be between 400 and 599',
   INVALID_REQUEST_TIMEOUT_MESSAGE:

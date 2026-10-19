@@ -172,6 +172,7 @@ import {
   DEFAULT_REQUEST_TIMEOUT_STATUS_CODE,
   MAX_REQUEST_TIMEOUT_MESSAGE_LENGTH,
   channelFormSchema,
+  hasChannelRequestTimeout,
   channelsQueryKeys,
   getAdvancedCustomStats,
   transformChannelToFormDefaults,
@@ -304,6 +305,7 @@ const SENSITIVE_FORM_FIELDS = [
   'http_protocol',
   'http2_connection_shards',
   'request_timeout_seconds',
+  'stream_first_token_timeout_seconds',
   'request_timeout_status_code',
   'request_timeout_message',
   'tls_insecure_skip_verify',
@@ -633,7 +635,7 @@ export function ChannelMutateDrawer({
   const currentHeaderOverride = formValues.header_override
   const currentProxy = formValues.proxy
   const currentHttpProtocol = formValues.http_protocol
-  const requestTimeoutEnabled = (formValues.request_timeout_seconds ?? 0) > 0
+  const requestTimeoutEnabled = hasChannelRequestTimeout(formValues)
   const {
     unlocked: doubaoApiEditUnlocked,
     handleClick: handleApiConfigSecretClick,
@@ -2228,29 +2230,56 @@ export function ChannelMutateDrawer({
         disabled={sensitiveLocked}
         className='space-y-4 disabled:opacity-60'
       >
-        <FormField
-          control={form.control}
-          name='request_timeout_seconds'
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('Timeout (seconds)')}</FormLabel>
-              <FormControl>
-                <Input
-                  type='number'
-                  placeholder='0'
-                  {...field}
-                  onChange={(e) => field.onChange(Number(e.target.value))}
-                />
-              </FormControl>
-              <FormDescription>
-                {t(
-                  'Cut off requests routed to this channel that have not finished within this many seconds. 0 disables the timeout.'
-                )}
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <div className='grid items-start gap-4 sm:grid-cols-2'>
+          <FormField
+            control={form.control}
+            name='request_timeout_seconds'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Non-stream total timeout (seconds)')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type='number'
+                    placeholder='0'
+                    {...field}
+                    onChange={(e) => field.onChange(Number(e.target.value))}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Cut off non-stream requests that have not finished within this many seconds. 0 disables the limit.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='stream_first_token_timeout_seconds'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>
+                  {t('Stream first token timeout (seconds)')}
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    type='number'
+                    placeholder='0'
+                    {...field}
+                    onChange={(e) => field.onChange(Number(e.target.value))}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Cut off stream requests whose upstream has sent no stream data within this many seconds, measured like the first token time in logs. Keep-alive pings wait until the first data arrives. 0 disables the limit.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
         <div className='grid gap-4 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]'>
           <FormField
             control={form.control}
@@ -2292,7 +2321,7 @@ export function ChannelMutateDrawer({
         </div>
         <p className='text-muted-foreground text-sm'>
           {t(
-            'Returned to the client when the timeout fires. Timed-out requests are not retried on other channels. If a stream has already started, it ends with an error event instead.'
+            'A timed-out request is retried on another channel when the retry settings allow it. When no attempt is left or the retries fail too, the client receives this status code and message. A response that already reached the client ends with an error event instead.'
           )}
         </p>
       </fieldset>

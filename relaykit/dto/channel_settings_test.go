@@ -728,7 +728,7 @@ func TestChannelSettingsValidateHTTPTransport(t *testing.T) {
 
 func TestChannelSettingsRequestTimeout(t *testing.T) {
 	require.NoError(t, (&ChannelSettings{}).ValidateRequestTimeout())
-	require.NoError(t, (&ChannelSettings{RequestTimeoutSeconds: 30, RequestTimeoutStatusCode: 504, RequestTimeoutMessage: "slow upstream"}).ValidateRequestTimeout())
+	require.NoError(t, (&ChannelSettings{RequestTimeoutSeconds: 30, StreamFirstTokenTimeoutSeconds: 10, RequestTimeoutStatusCode: 504, RequestTimeoutMessage: "slow upstream"}).ValidateRequestTimeout())
 
 	invalid := []struct {
 		name     string
@@ -737,6 +737,8 @@ func TestChannelSettingsRequestTimeout(t *testing.T) {
 	}{
 		{name: "negative seconds", settings: ChannelSettings{RequestTimeoutSeconds: -1}, field: "request_timeout_seconds"},
 		{name: "seconds above max", settings: ChannelSettings{RequestTimeoutSeconds: MaxRequestTimeoutSeconds + 1}, field: "request_timeout_seconds"},
+		{name: "negative first token seconds", settings: ChannelSettings{StreamFirstTokenTimeoutSeconds: -1}, field: "stream_first_token_timeout_seconds"},
+		{name: "first token seconds above max", settings: ChannelSettings{StreamFirstTokenTimeoutSeconds: MaxRequestTimeoutSeconds + 1}, field: "stream_first_token_timeout_seconds"},
 		{name: "success status", settings: ChannelSettings{RequestTimeoutStatusCode: 200}, field: "request_timeout_status_code"},
 		{name: "status above 599", settings: ChannelSettings{RequestTimeoutStatusCode: 600}, field: "request_timeout_status_code"},
 		{name: "message too long", settings: ChannelSettings{RequestTimeoutMessage: strings.Repeat("超", MaxRequestTimeoutMessageLength+1)}, field: "request_timeout_message"},

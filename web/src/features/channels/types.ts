@@ -94,6 +94,7 @@ export interface ChannelSettings {
   http_protocol?: 'auto' | 'http1' | string
   http2_connection_shards?: number
   request_timeout_seconds?: number
+  stream_first_token_timeout_seconds?: number
   request_timeout_status_code?: number
   request_timeout_message?: string
   tls_insecure_skip_verify?: boolean

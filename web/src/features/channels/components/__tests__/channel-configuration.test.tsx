@@ -1714,7 +1714,7 @@ test('an invalid edit switches categories and replaces configured styling with t
   ).not.toBeInTheDocument()
 })
 
-test('a channel request timeout enables its response fields and saves them into the channel setting', async () => {
+test('a stream first token timeout alone enables the timeout response fields and saves them into the channel setting', async () => {
   const put = vi
     .spyOn(api, 'put')
     .mockResolvedValue({ data: { success: true } })
@@ -1730,9 +1730,10 @@ test('a channel request timeout enables its response fields and saves them into 
   expect(message).toBeDisabled()
   expect(otherTab).not.toHaveAccessibleName(/Configured/)
 
-  fireEvent.change(within(block).getByLabelText('Timeout (seconds)'), {
-    target: { value: '30' },
-  })
+  fireEvent.change(
+    within(block).getByLabelText('Stream first token timeout (seconds)'),
+    { target: { value: '15' } }
+  )
   expect(statusCode).toBeEnabled()
   expect(statusCode).toHaveValue(502)
   expect(message).toHaveValue('bad response')
@@ -1743,18 +1744,20 @@ test('a channel request timeout enables its response fields and saves them into 
   await user.click(screen.getByRole('button', { name: 'Update Channel' }))
   await waitFor(() => expect(put).toHaveBeenCalled())
   const payload = put.mock.calls[0]?.[1] as { setting: string }
-  expect(JSON.parse(payload.setting)).toMatchObject({
-    request_timeout_seconds: 30,
+  const setting = JSON.parse(payload.setting)
+  expect(setting).toMatchObject({
+    stream_first_token_timeout_seconds: 15,
     request_timeout_status_code: 504,
     request_timeout_message: 'upstream too slow',
   })
+  expect(setting).not.toHaveProperty('request_timeout_seconds')
 })
 
-test('a saved channel request timeout loads its values, rejects a non-error status code, and is omitted once cleared', async () => {
+test('saved channel request timeouts load their values, reject a non-error status code, and are omitted once both are cleared', async () => {
   editingChannel = {
     ...editingChannel,
     setting:
-      '{"request_timeout_seconds":45,"request_timeout_status_code":503,"request_timeout_message":"try later"}',
+      '{"request_timeout_seconds":45,"stream_first_token_timeout_seconds":10,"request_timeout_status_code":503,"request_timeout_message":"try later"}',
   }
   const put = vi
     .spyOn(api, 'put')
@@ -1766,9 +1769,15 @@ test('a saved channel request timeout loads its values, rejects a non-error stat
   expect(otherTab).toHaveAccessibleName(/Configured/)
   await user.click(otherTab)
   const block = screen.getByRole('group', { name: 'Request Timeout' })
-  const seconds = within(block).getByLabelText('Timeout (seconds)')
+  const seconds = within(block).getByLabelText(
+    'Non-stream total timeout (seconds)'
+  )
+  const firstTokenSeconds = within(block).getByLabelText(
+    'Stream first token timeout (seconds)'
+  )
   const statusCode = within(block).getByLabelText('Timeout Status Code')
   expect(seconds).toHaveValue(45)
+  expect(firstTokenSeconds).toHaveValue(10)
   expect(statusCode).toHaveValue(503)
   expect(within(block).getByLabelText('Timeout Error Message')).toHaveValue(
     'try later'
@@ -1784,11 +1793,14 @@ test('a saved channel request timeout loads its values, rejects a non-error stat
   expect(put).not.toHaveBeenCalled()
 
   fireEvent.change(seconds, { target: { value: '0' } })
+  fireEvent.change(firstTokenSeconds, { target: { value: '0' } })
+  expect(statusCode).toBeDisabled()
   await user.click(screen.getByRole('button', { name: 'Update Channel' }))
   await waitFor(() => expect(put).toHaveBeenCalled())
   const payload = put.mock.calls[0]?.[1] as { setting: string }
   const setting = JSON.parse(payload.setting)
   expect(setting).not.toHaveProperty('request_timeout_seconds')
+  expect(setting).not.toHaveProperty('stream_first_token_timeout_seconds')
   expect(setting).not.toHaveProperty('request_timeout_status_code')
   expect(setting).not.toHaveProperty('request_timeout_message')
 })

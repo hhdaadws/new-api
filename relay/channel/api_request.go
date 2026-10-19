@@ -541,13 +541,18 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 			policy.String())
 	}
 
+	requestTimeout, _ := common2.GetContextKeyType[*helper.ChannelRequestTimeout](c, appconstant.ContextKeyChannelRequestTimeout)
+	// A stream waiting for its first data event under a channel request
+	// timeout sends no pings, so the timeout can still retry it elsewhere.
+	awaitFirstResponse := requestTimeout.WatchFirstResponse()
+
 	var stopPinger context.CancelFunc
 	var pingerDone <-chan struct{}
 	if info.IsStream {
 		helper.SetEventStreamHeaders(c)
 		// 处理流式请求的 ping 保活
 		generalSettings := operation_setting.GetGeneralSetting()
-		if generalSettings.PingIntervalEnabled && !info.DisablePing {
+		if generalSettings.PingIntervalEnabled && !info.DisablePing && !awaitFirstResponse {
 			pingInterval := time.Duration(generalSettings.PingIntervalSeconds) * time.Second
 			stopPinger, pingerDone = startPingKeepAlive(c, pingInterval)
 			// 使用defer确保在任何情况下都能停止ping goroutine
@@ -561,8 +566,8 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		}
 	}
 
-	if upstreamCtx, ok := common2.GetContextKeyType[context.Context](c, appconstant.ContextKeyChannelUpstreamContext); ok {
-		req = req.WithContext(upstreamCtx)
+	if requestTimeout != nil {
+		req = req.WithContext(requestTimeout.UpstreamContext())
 	}
 	resp, err := relayClient.Do(req)
 	if err != nil {
@@ -571,6 +576,12 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	}
 	if resp == nil {
 		return nil, errors.New("resp is nil")
+	}
+	if awaitFirstResponse {
+		if err := requestTimeout.AwaitFirstResponse(resp); err != nil {
+			logger.LogError(c, common2.LogText("do request failed: %s", err.Error()))
+			return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
+		}
 	}
 	if common2.DebugEnabled {
 		policy := service.NormalizeHTTPTransportPolicy(info.ChannelSetting)

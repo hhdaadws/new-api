@@ -145,6 +145,9 @@ func TestDecideRelayRetryReasons(t *testing.T) {
 		{name: "success status never retries", err: upstream(http.StatusOK), retries: 1, want: PolicyDecision{Action: "stop", Reason: "system_retry_exclusion", Source: "system"}},
 		{name: "skip retry error", err: types.NewErrorWithStatusCode(errors.New("local"), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry()), retries: 1, want: PolicyDecision{Action: "stop", Reason: "non_retryable_error", Source: "system"}},
 		{name: "channel error retries without budget", err: types.NewError(errors.New("no key"), types.ErrorCodeChannelNoAvailableKey), retries: 0, want: PolicyDecision{Action: "retry", Reason: "channel_error", Source: "system"}},
+		{name: "channel request timeout retries whatever its status", err: types.NewErrorWithStatusCode(errors.New("bad response"), types.ErrorCodeUpstreamTimeout, http.StatusGatewayTimeout), retries: 1, want: PolicyDecision{Action: "retry", Reason: "channel_request_timeout", Source: "channel"}},
+		{name: "channel request timeout needs the budget", err: types.NewErrorWithStatusCode(errors.New("bad response"), types.ErrorCodeUpstreamTimeout, http.StatusBadGateway), retries: 0, want: PolicyDecision{Action: "stop", Reason: "attempt_budget_exhausted", Source: "global"}},
+		{name: "channel request timeout after the response started", err: types.NewErrorWithStatusCode(errors.New("bad response"), types.ErrorCodeUpstreamTimeout, http.StatusBadGateway, types.ErrOptionWithSkipRetry()), retries: 1, want: PolicyDecision{Action: "stop", Reason: "non_retryable_error", Source: "system"}},
 		{name: "single attempt pin", err: upstream(http.StatusTooManyRequests), retries: 1, setup: func(c *gin.Context) {
 			GetChannelConstraints(c).AddPin(dto.ChannelPin{ChannelId: 1, Source: dto.PinSourceToken, Rank: dto.PinRankToken, RetryMode: dto.PinRetrySingleAttempt})
 		}, want: PolicyDecision{Action: "stop", Reason: "pinned_channel", Source: "channel_constraint"}},

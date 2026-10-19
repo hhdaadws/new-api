@@ -17,6 +17,8 @@ export function policyLabel(t: TFunction, value: string): string {
       return t('Total attempt budget exhausted')
     case 'channel_error':
       return t('Channel error')
+    case 'channel_request_timeout':
+      return t('Channel request timed out')
     case 'unrecognized_status':
       return t('Unrecognized status code')
     case 'task_accepted':

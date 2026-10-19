@@ -34,11 +34,17 @@ type ChannelSettings struct {
 	// HTTP2ConnectionShards spreads HTTP/2 traffic across N independent transports
 	// (1-8). Zero/unset means 1. Ignored when HTTPProtocol is "http1".
 	HTTP2ConnectionShards int `json:"http2_connection_shards,omitempty"`
-	// RequestTimeoutSeconds cuts a relay attempt that is still unfinished this
-	// many seconds after the channel was selected. Zero disables the limit.
+	// RequestTimeoutSeconds cuts a non-stream relay attempt that is still
+	// unfinished this many seconds after the channel was selected. Zero
+	// disables the limit.
 	RequestTimeoutSeconds int `json:"request_timeout_seconds,omitempty"`
+	// StreamFirstTokenTimeoutSeconds cuts a stream relay attempt whose upstream
+	// has not sent its first stream data event this many seconds after the
+	// channel was selected. Zero disables the limit.
+	StreamFirstTokenTimeoutSeconds int `json:"stream_first_token_timeout_seconds,omitempty"`
 	// RequestTimeoutStatusCode and RequestTimeoutMessage shape the error the
-	// client receives on timeout; unset values use 502 and "bad response".
+	// client receives when a timed-out request has no attempt left or its
+	// retries fail as well; unset values use 502 and "bad response".
 	RequestTimeoutStatusCode int    `json:"request_timeout_status_code,omitempty"`
 	RequestTimeoutMessage    string `json:"request_timeout_message,omitempty"`
 	// TLSInsecureSkipVerify accepts upstream certificates that fail
@@ -111,6 +117,9 @@ func (s *ChannelSettings) ValidateRequestTimeout() error {
 	}
 	if s.RequestTimeoutSeconds < 0 || s.RequestTimeoutSeconds > MaxRequestTimeoutSeconds {
 		return fmt.Errorf("invalid request_timeout_seconds: %d", s.RequestTimeoutSeconds)
+	}
+	if s.StreamFirstTokenTimeoutSeconds < 0 || s.StreamFirstTokenTimeoutSeconds > MaxRequestTimeoutSeconds {
+		return fmt.Errorf("invalid stream_first_token_timeout_seconds: %d", s.StreamFirstTokenTimeoutSeconds)
 	}
 	if s.RequestTimeoutStatusCode != 0 && (s.RequestTimeoutStatusCode < 400 || s.RequestTimeoutStatusCode > 599) {
 		return fmt.Errorf("invalid request_timeout_status_code: %d", s.RequestTimeoutStatusCode)

@@ -82,6 +82,10 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 	if types.IsSkipRetryError(err) {
 		return false
 	}
+	// A channel that answers slowly is not broken.
+	if err.GetErrorCode() == types.ErrorCodeUpstreamTimeout {
+		return false
+	}
 	if operation_setting.ShouldDisableByStatusCode(err.StatusCode) {
 		return true
 	}

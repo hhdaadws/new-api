@@ -25,7 +25,11 @@ import {
   OPENAI_FIELD_PASSTHROUGH_TYPES,
 } from '../constants'
 import { CHANNEL_TYPE_ADVANCED_CUSTOM } from './advanced-custom'
-import { channelFormSchema, type ChannelFormValues } from './channel-form'
+import {
+  channelFormSchema,
+  hasChannelRequestTimeout,
+  type ChannelFormValues,
+} from './channel-form'
 import { supportsResponsesWebSocket } from './responses-websocket'
 
 export type ChannelProviderTarget =
@@ -92,6 +96,7 @@ const CONFIGURATION_BLOCKS = {
     section: 'other',
     fields: [
       'request_timeout_seconds',
+      'stream_first_token_timeout_seconds',
       'request_timeout_status_code',
       'request_timeout_message',
     ],
@@ -187,7 +192,7 @@ export function getChannelConfigurationState(
       values.tls_insecure_skip_verify ||
       values.disable_task_polling_sleep
     ),
-    requestTimeout: (values.request_timeout_seconds ?? 0) > 0,
+    requestTimeout: hasChannelRequestTimeout(values),
     upstreamModelDetection:
       MODEL_FETCHABLE_TYPES.has(values.type) &&
       Boolean(

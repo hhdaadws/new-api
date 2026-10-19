@@ -43,6 +43,11 @@ func DecideRelayRetry(c *gin.Context, err *types.NewAPIError, retryTimes int) Po
 	if retryTimes <= 0 {
 		return PolicyDecision{Action: "stop", Reason: "attempt_budget_exhausted", Source: "global"}
 	}
+	// The channel picks the status code of its timeout response, so the status
+	// code rules do not decide whether a timeout moves to another channel.
+	if err.GetErrorCode() == types.ErrorCodeUpstreamTimeout {
+		return PolicyDecision{Action: "retry", Reason: "channel_request_timeout", Source: "channel"}
+	}
 	code := err.StatusCode
 	if code >= 200 && code < 300 {
 		return PolicyDecision{Action: "stop", Reason: "system_retry_exclusion", Source: "system"}
