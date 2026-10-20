@@ -44,6 +44,7 @@ export type ErrorInterceptionSettings = {
   'upstream_error_interception.status_code': number
   'upstream_error_interception.message': string
   'upstream_error_interception.retry_on_match': boolean
+  'upstream_error_interception.intercept_quota_errors': boolean
 }
 export type ErrorKeywordRetrySettings = {
   'error_keyword_retry.enabled': boolean
@@ -95,6 +96,7 @@ export const defaultRequestPolicySettings: RequestPolicySettings = {
   'upstream_error_interception.status_code': 502,
   'upstream_error_interception.message': 'bad response',
   'upstream_error_interception.retry_on_match': false,
+  'upstream_error_interception.intercept_quota_errors': false,
   'error_keyword_retry.enabled': false,
   'error_keyword_retry.rules': '[]',
   'channel_error_alert.enabled': false,

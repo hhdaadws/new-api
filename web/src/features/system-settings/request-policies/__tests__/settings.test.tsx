@@ -395,6 +395,22 @@ describe('request policy settings', () => {
     )
   })
 
+  it('turning on quota error interception writes only that option', async () => {
+    await renderPolicies('/system-settings/request-policies/error-interception')
+    const quotaSwitch = await screen.findByRole('switch', {
+      name: 'Also intercept insufficient quota errors',
+    })
+    expect(quotaSwitch).not.toBeChecked()
+    await userEvent.click(quotaSwitch)
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledExactlyOnceWith('/api/option/', {
+        key: 'upstream_error_interception.intercept_quota_errors',
+        value: true,
+      })
+    )
+  })
+
   it('an interception status code outside 400-599 shows validation and does not write options', async () => {
     await renderPolicies('/system-settings/request-policies/error-interception')
     const statusCode = await screen.findByRole('spinbutton', {

@@ -91,6 +91,10 @@ export function ErrorInterceptionSection(props: ErrorInterceptionSectionProps) {
       message: props.defaultValues['upstream_error_interception.message'],
       retryOnMatch:
         props.defaultValues['upstream_error_interception.retry_on_match'],
+      interceptQuotaErrors:
+        props.defaultValues[
+          'upstream_error_interception.intercept_quota_errors'
+        ],
     }),
     [props.defaultValues]
   )
@@ -118,6 +122,8 @@ export function ErrorInterceptionSection(props: ErrorInterceptionSectionProps) {
       'upstream_error_interception.status_code': values.statusCode,
       'upstream_error_interception.message': values.message,
       'upstream_error_interception.retry_on_match': values.retryOnMatch,
+      'upstream_error_interception.intercept_quota_errors':
+        values.interceptQuotaErrors,
     }
     const updates = (
       Object.keys(next) as Array<keyof ErrorInterceptionSettings>
@@ -195,6 +201,30 @@ export function ErrorInterceptionSection(props: ErrorInterceptionSectionProps) {
                       <FormDescription>
                         {t(
                           'When off, a matched error is returned immediately without trying other channels.'
+                        )}
+                      </FormDescription>
+                    </SettingsSwitchContent>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </SettingsSwitchItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name='interceptQuotaErrors'
+                render={({ field }) => (
+                  <SettingsSwitchItem>
+                    <SettingsSwitchContent>
+                      <FormLabel>
+                        {t('Also intercept insufficient quota errors')}
+                      </FormLabel>
+                      <FormDescription>
+                        {t(
+                          "When a user's or token's quota cannot cover a request, clients receive the status code and message below instead of the quota error."
                         )}
                       </FormDescription>
                     </SettingsSwitchContent>

@@ -265,6 +265,43 @@ func TestUpstreamErrorInterception(t *testing.T) {
 		assert.Nil(t, InterceptUpstreamError(upstreamJSON("rate limited", http.StatusTooManyRequests)))
 	})
 
+	t.Run("insufficient quota errors are replaced only when quota interception is on", func(t *testing.T) {
+		quotaErrors := []*types.NewAPIError{
+			types.NewErrorWithStatusCode(errors.New("user quota is not enough, remaining: $0.01"), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog()),
+			types.NewErrorWithStatusCode(errors.New("token quota is not enough"), types.ErrorCodePreConsumeTokenQuotaFailed, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog()),
+		}
+		for _, tc := range []struct {
+			name           string
+			enabled        bool
+			interceptQuota bool
+			want           bool
+		}{
+			{name: "both switches on", enabled: true, interceptQuota: true, want: true},
+			{name: "quota switch off", enabled: true, interceptQuota: false, want: false},
+			{name: "interception off", enabled: false, interceptQuota: true, want: false},
+		} {
+			configure(tc.enabled, false)
+			setting.InterceptQuotaErrors = tc.interceptQuota
+			for _, quotaErr := range quotaErrors {
+				intercepted := InterceptUpstreamError(quotaErr)
+				if !tc.want {
+					assert.Nil(t, intercepted, "%s: %s", tc.name, quotaErr.GetErrorCode())
+					continue
+				}
+				require.NotNil(t, intercepted, "%s: %s", tc.name, quotaErr.GetErrorCode())
+				assert.Equal(t, http.StatusServiceUnavailable, intercepted.StatusCode)
+				assert.Equal(t, types.ErrorCodeBadResponse, intercepted.GetErrorCode())
+				assert.Equal(t, "service busy", intercepted.ToOpenAIError().Message)
+				assert.Equal(t, "service busy", intercepted.ToClaudeError().Message)
+			}
+		}
+
+		configure(true, false)
+		setting.InterceptQuotaErrors = true
+		assert.Nil(t, InterceptUpstreamError(types.NewError(errors.New("upstream vendor"), types.ErrorCodeInvalidRequest)), "other gateway local errors are never replaced")
+		assert.False(t, MatchUpstreamErrorKeyword(quotaErrors[0]), "quota errors do not take part in keyword retry decisions")
+	})
+
 	t.Run("non-JSON error body surfaces the matched keyword without the body", func(t *testing.T) {
 		configure(true, false)
 		resp := &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader("<html>Upstream Vendor gateway error secret-host</html>"))}

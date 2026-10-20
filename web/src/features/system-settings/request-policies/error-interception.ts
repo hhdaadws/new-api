@@ -76,6 +76,7 @@ export function createErrorInterceptionSchema(t: Translate) {
       .max(MAX_INTERCEPTION_STATUS_CODE, statusCodeMessage),
     message: z.string().trim().min(1, t('Error message is required')),
     retryOnMatch: z.boolean(),
+    interceptQuotaErrors: z.boolean(),
   })
 }
 

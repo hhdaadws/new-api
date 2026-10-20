@@ -66,14 +66,17 @@ func MatchUpstreamErrorKeyword(err *types.NewAPIError) bool {
 }
 
 // InterceptUpstreamError returns the configured replacement for an upstream
-// error that matches an interception keyword, or nil when it does not match.
+// error that matches an interception keyword, or for an insufficient user or
+// token quota error when quota errors are intercepted too; otherwise nil.
 // The replacement is a fresh error because SetMessage does not change what
 // clients see for upstream OpenAI/Claude errors.
 func InterceptUpstreamError(err *types.NewAPIError) *types.NewAPIError {
-	if !MatchUpstreamErrorKeyword(err) {
+	setting := operation_setting.GetUpstreamErrorInterceptionSetting()
+	code := err.GetErrorCode()
+	quotaError := code == types.ErrorCodeInsufficientUserQuota || code == types.ErrorCodePreConsumeTokenQuotaFailed
+	if !MatchUpstreamErrorKeyword(err) && !(setting.Enabled && setting.InterceptQuotaErrors && quotaError) {
 		return nil
 	}
-	setting := operation_setting.GetUpstreamErrorInterceptionSetting()
 	statusCode := setting.StatusCode
 	if statusCode < 400 || statusCode > 599 {
 		statusCode = operation_setting.DefaultUpstreamErrorInterceptionStatusCode

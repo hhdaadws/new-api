@@ -11,13 +11,15 @@ import (
 
 // UpstreamErrorInterceptionSetting replaces upstream error responses that
 // contain any configured keyword with a fixed status code and message before
-// they reach the client.
+// they reach the client. InterceptQuotaErrors also replaces the gateway's own
+// rejection of a request the user's or token's quota cannot cover.
 type UpstreamErrorInterceptionSetting struct {
-	Enabled      bool     `json:"enabled"`
-	Keywords     []string `json:"keywords"`
-	StatusCode   int      `json:"status_code"`
-	Message      string   `json:"message"`
-	RetryOnMatch bool     `json:"retry_on_match"`
+	Enabled              bool     `json:"enabled"`
+	Keywords             []string `json:"keywords"`
+	StatusCode           int      `json:"status_code"`
+	Message              string   `json:"message"`
+	RetryOnMatch         bool     `json:"retry_on_match"`
+	InterceptQuotaErrors bool     `json:"intercept_quota_errors"`
 }
 
 const (
@@ -29,11 +31,12 @@ const (
 )
 
 var upstreamErrorInterceptionSetting = UpstreamErrorInterceptionSetting{
-	Enabled:      false,
-	Keywords:     []string{},
-	StatusCode:   DefaultUpstreamErrorInterceptionStatusCode,
-	Message:      DefaultUpstreamErrorInterceptionMessage,
-	RetryOnMatch: false,
+	Enabled:              false,
+	Keywords:             []string{},
+	StatusCode:           DefaultUpstreamErrorInterceptionStatusCode,
+	Message:              DefaultUpstreamErrorInterceptionMessage,
+	RetryOnMatch:         false,
+	InterceptQuotaErrors: false,
 }
 
 func init() {

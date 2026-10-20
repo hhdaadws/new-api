@@ -31,6 +31,7 @@ const validValues = {
   statusCode: 502,
   message: 'bad response',
   retryOnMatch: false,
+  interceptQuotaErrors: false,
 }
 
 describe('interceptionKeywordsToText', () => {
