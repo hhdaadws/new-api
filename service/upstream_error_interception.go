@@ -58,10 +58,15 @@ func MatchUpstreamErrorKeyword(err *types.NewAPIError) bool {
 	if _, local := gatewayLocalErrorCodes[code]; local {
 		return false
 	}
+	// Clients receive the type and code of an upstream error along with its
+	// message, and error keyword retry rules match the code too, so a keyword
+	// in any of them intercepts the error.
+	openAIError := err.ToOpenAIError()
 	text := err.Error()
-	if message := err.ToOpenAIError().Message; message != text {
-		text += "\n" + message
+	if openAIError.Message != text {
+		text += "\n" + openAIError.Message
 	}
+	text += "\n" + openAIError.Type + "\n" + string(code)
 	return matchUpstreamErrorKeywordText(text) != ""
 }
 

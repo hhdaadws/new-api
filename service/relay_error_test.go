@@ -224,7 +224,7 @@ func TestUpstreamErrorInterception(t *testing.T) {
 	configure := func(enabled, retryOnMatch bool) {
 		*setting = operation_setting.UpstreamErrorInterceptionSetting{
 			Enabled:      enabled,
-			Keywords:     []string{"Upstream Vendor", "quota exhausted"},
+			Keywords:     []string{"Upstream Vendor", "quota exhausted", "overloaded_error"},
 			StatusCode:   http.StatusServiceUnavailable,
 			Message:      "service busy",
 			RetryOnMatch: retryOnMatch,
@@ -242,6 +242,8 @@ func TestUpstreamErrorInterception(t *testing.T) {
 	}{
 		{name: "upstream JSON error matches case-insensitively", enabled: true, err: upstreamJSON("powered by upstream vendor", http.StatusTooManyRequests), want: true},
 		{name: "upstream status error matches", enabled: true, err: types.NewOpenAIError(errors.New("Quota Exhausted for key"), types.ErrorCodeBadResponseStatusCode, http.StatusForbidden), want: true},
+		{name: "keyword in the upstream error code matches", enabled: true, err: types.WithOpenAIError(types.OpenAIError{Message: "try again later", Type: "server_error", Code: "Overloaded_Error"}, http.StatusServiceUnavailable), want: true},
+		{name: "keyword in the upstream Claude error type matches", enabled: true, err: types.WithClaudeError(types.ClaudeError{Type: "overloaded_error", Message: "Overloaded"}, 529), want: true},
 		{name: "no keyword", enabled: true, err: upstreamJSON("rate limited", http.StatusTooManyRequests), want: false},
 		{name: "disabled", enabled: false, err: upstreamJSON("upstream vendor", http.StatusTooManyRequests), want: false},
 		{name: "gateway local error never matches", enabled: true, err: types.NewError(errors.New("upstream vendor"), types.ErrorCodeInvalidRequest), want: false},
